@@ -1,14 +1,19 @@
 /**
  * Hooks page functionality
  */
-import { createChoices, getChoicesValues, type Choices } from "../choices";
-import { FuzzySearch, type SearchItem } from "../search";
+import {
+  createChoices,
+  getChoicesValues,
+  setChoicesValues,
+  type Choices,
+} from "../choices";
 import {
   fetchData,
-  debounce,
-  getRawGitHubUrl,
+  getQueryParam,
+  getQueryParamValues,
   showToast,
-  loadJSZip,
+  downloadZipBundle,
+  updateQueryParams,
 } from "../utils";
 import { setupModal, openFileModal } from "../modal";
 import {
@@ -18,23 +23,19 @@ import {
   type RenderableHook,
 } from "./hooks-render";
 
-interface Hook extends SearchItem, RenderableHook {}
+interface Hook extends RenderableHook {}
 
 interface HooksData {
   items: Hook[];
   filters: {
-    hooks: string[];
     tags: string[];
   };
 }
 
 const resourceType = "hook";
 let allItems: Hook[] = [];
-let search = new FuzzySearch<Hook>();
-let hookSelect: Choices;
 let tagSelect: Choices;
 let currentFilters = {
-  hooks: [] as string[],
   tags: [] as string[],
 };
 let currentSort: HookSortOption = "title";
@@ -45,57 +46,30 @@ function sortItems(items: Hook[]): Hook[] {
 }
 
 function applyFiltersAndRender(): void {
-  const searchInput = document.getElementById(
-    "search-input"
-  ) as HTMLInputElement;
   const countEl = document.getElementById("results-count");
-  const query = searchInput?.value || "";
+  let results = [...allItems];
 
-  let results = query ? search.search(query) : [...allItems];
-
-  if (currentFilters.hooks.length > 0) {
-    results = results.filter((item) =>
-      item.hooks.some((h) => currentFilters.hooks.includes(h))
-    );
-  }
   if (currentFilters.tags.length > 0) {
     results = results.filter((item) =>
-      item.tags.some((t) => currentFilters.tags.includes(t))
+      item.tags.some((tag) => currentFilters.tags.includes(tag))
     );
   }
 
   results = sortItems(results);
 
-  renderItems(results, query);
-  const activeFilters: string[] = [];
-  if (currentFilters.hooks.length > 0)
-    activeFilters.push(
-      `${currentFilters.hooks.length} hook event${
-        currentFilters.hooks.length > 1 ? "s" : ""
-      }`
-    );
-  if (currentFilters.tags.length > 0)
-    activeFilters.push(
-      `${currentFilters.tags.length} tag${
-        currentFilters.tags.length > 1 ? "s" : ""
-      }`
-    );
-  let countText = `${results.length} of ${allItems.length} hooks`;
-  if (activeFilters.length > 0) {
-    countText += ` (filtered by ${activeFilters.join(", ")})`;
+  renderItems(results);
+  let countText = `${results.length} hook${results.length === 1 ? "" : "s"}`;
+  if (currentFilters.tags.length > 0) {
+    countText = `${results.length} of ${allItems.length} hooks (filtered by ${currentFilters.tags.length} tag${currentFilters.tags.length > 1 ? "s" : ""})`;
   }
   if (countEl) countEl.textContent = countText;
 }
 
-function renderItems(items: Hook[], query = ""): void {
+function renderItems(items: Hook[]): void {
   const list = document.getElementById("resource-list");
   if (!list) return;
 
-  list.innerHTML = renderHooksHtml(items, {
-    query,
-    highlightTitle: (title, highlightQuery) =>
-      search.highlight(title, highlightQuery),
-  });
+  list.innerHTML = renderHooksHtml(items);
 }
 
 function setupResourceListHandlers(list: HTMLElement | null): void {
@@ -127,6 +101,15 @@ function setupResourceListHandlers(list: HTMLElement | null): void {
   resourceListHandlersReady = true;
 }
 
+function syncUrlState(): void {
+  updateQueryParams({
+    q: "",
+    hook: [],
+    tag: currentFilters.tags,
+    sort: currentSort === "title" ? "" : currentSort,
+  });
+}
+
 async function downloadHook(
   hookId: string,
   btn: HTMLButtonElement
@@ -137,12 +120,11 @@ async function downloadHook(
     return;
   }
 
-  // Build file list: README.md + all assets
   const files = [
     { name: "README.md", path: hook.readmeFile },
-    ...hook.assets.map((a) => ({
-      name: a,
-      path: `${hook.path}/${a}`,
+    ...hook.assets.map((asset) => ({
+      name: asset,
+      path: `${hook.path}/${asset}`,
     })),
   ];
 
@@ -157,42 +139,7 @@ async function downloadHook(
     '<svg class="spinner" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 0a8 8 0 1 0 8 8h-1.5A6.5 6.5 0 1 1 8 1.5V0z"/></svg> Preparing...';
 
   try {
-    const JSZip = await loadJSZip();
-    const zip = new JSZip();
-    const folder = zip.folder(hook.id);
-
-    const fetchPromises = files.map(async (file) => {
-      const url = getRawGitHubUrl(file.path);
-      try {
-        const response = await fetch(url);
-        if (!response.ok) return null;
-        const content = await response.text();
-        return { name: file.name, content };
-      } catch {
-        return null;
-      }
-    });
-
-    const results = await Promise.all(fetchPromises);
-    let addedFiles = 0;
-    for (const result of results) {
-      if (result && folder) {
-        folder.file(result.name, result.content);
-        addedFiles++;
-      }
-    }
-
-    if (addedFiles === 0) throw new Error("Failed to fetch any files");
-
-    const blob = await zip.generateAsync({ type: "blob" });
-    const downloadUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = downloadUrl;
-    link.download = `${hook.id}.zip`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(downloadUrl);
+    await downloadZipBundle(hook.id, files);
 
     btn.innerHTML =
       '<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg> Downloaded!';
@@ -215,9 +162,6 @@ async function downloadHook(
 
 export async function initHooksPage(): Promise<void> {
   const list = document.getElementById("resource-list");
-  const searchInput = document.getElementById(
-    "search-input"
-  ) as HTMLInputElement;
   const clearFiltersBtn = document.getElementById("clear-filters");
   const sortSelect = document.getElementById(
     "sort-select"
@@ -234,59 +178,53 @@ export async function initHooksPage(): Promise<void> {
   }
 
   allItems = data.items;
-  search.setItems(allItems);
 
-  // Setup hook event filter
-  hookSelect = createChoices("#filter-hook", {
-    placeholderValue: "All Events",
-  });
-  hookSelect.setChoices(
-    data.filters.hooks.map((h) => ({ value: h, label: h })),
-    "value",
-    "label",
-    true
-  );
-  document.getElementById("filter-hook")?.addEventListener("change", () => {
-    currentFilters.hooks = getChoicesValues(hookSelect);
-    applyFiltersAndRender();
-  });
-
-  // Setup tag filter
   tagSelect = createChoices("#filter-tag", {
     placeholderValue: "All Tags",
   });
   tagSelect.setChoices(
-    data.filters.tags.map((t) => ({ value: t, label: t })),
+    data.filters.tags.map((tag) => ({ value: tag, label: tag })),
     "value",
     "label",
     true
   );
+
+  const initialTags = getQueryParamValues("tag").filter((tag) =>
+    data.filters.tags.includes(tag)
+  );
+  const initialSort = getQueryParam("sort");
+
+  if (initialTags.length > 0) {
+    currentFilters.tags = initialTags;
+    setChoicesValues(tagSelect, initialTags);
+  }
+  if (initialSort === "lastUpdated") {
+    currentSort = initialSort;
+    if (sortSelect) sortSelect.value = initialSort;
+  }
+
   document.getElementById("filter-tag")?.addEventListener("change", () => {
     currentFilters.tags = getChoicesValues(tagSelect);
     applyFiltersAndRender();
+    syncUrlState();
   });
 
   sortSelect?.addEventListener("change", () => {
     currentSort = sortSelect.value as HookSortOption;
     applyFiltersAndRender();
+    syncUrlState();
+  });
+
+  clearFiltersBtn?.addEventListener("click", () => {
+    currentFilters = { tags: [] };
+    currentSort = "title";
+    tagSelect.removeActiveItems();
+    if (sortSelect) sortSelect.value = "title";
+    applyFiltersAndRender();
+    syncUrlState();
   });
 
   applyFiltersAndRender();
-  searchInput?.addEventListener(
-    "input",
-    debounce(() => applyFiltersAndRender(), 200)
-  );
-
-  clearFiltersBtn?.addEventListener("click", () => {
-    currentFilters = { hooks: [], tags: [] };
-    currentSort = "title";
-    hookSelect.removeActiveItems();
-    tagSelect.removeActiveItems();
-    if (searchInput) searchInput.value = "";
-    if (sortSelect) sortSelect.value = "title";
-    applyFiltersAndRender();
-  });
-
   setupModal();
 }
 
