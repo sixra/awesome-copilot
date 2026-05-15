@@ -708,6 +708,35 @@
       }
     },
     {
+      "name": "winappcli",
+      "description": "Windows app development, packaging, and distribution. Helps with creating Windows installers (MSIX), code signing, certificates, Windows SDK and Windows App SDK setup, package identity for Windows APIs (push notifications, background tasks, share target), appxmanifest authoring, and Microsoft Store distribution. Supports Electron, .NET, C++, Rust, Flutter, and Tauri apps.",
+      "version": "0.3.1",
+      "author": {
+        "name": "Microsoft",
+        "url": "https://github.com/microsoft/WinAppCli"
+      },
+      "homepage": "https://github.com/microsoft/WinAppCli",
+      "keywords": [
+        "windows",
+        "msix",
+        "packaging",
+        "installer",
+        "code-signing",
+        "appxmanifest",
+        "microsoft-store",
+        "electron",
+        "tauri",
+        "desktop-app"
+      ],
+      "license": "MIT",
+      "repository": "https://github.com/microsoft/WinAppCli",
+      "source": {
+        "source": "github",
+        "repo": "microsoft/WinAppCli",
+        "ref": "stable"
+      }
+    },
+    {
       "name": "winui",
       "description": "Agents and skills for WinUI 3 app development. Create new WinUI 3 desktop apps, convert from other frameworks (WPF, WinForms, Electron, Tauri, Flutter) to WinUI 3, or add features to existing WinUI 3 applications. Includes MSIX packaging, code signing, UI automation testing, and Windows App SDK guidance.",
       "version": "0.3.0",
