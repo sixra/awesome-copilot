@@ -416,7 +416,7 @@
       "name": "gem-team",
       "source": "gem-team",
       "description": "Self-Learning Multi-agent orchestration framework for spec-driven development and automated verification.",
-      "version": "1.61.0"
+      "version": "1.66.0"
     },
     {
       "name": "git-ape",
@@ -583,9 +583,28 @@
     },
     {
       "name": "modernize-java",
-      "source": "modernize-java",
-      "description": "AI-powered Java modernization and upgrade assistant. Helps upgrade Java and Spring Boot applications to the latest versions.",
-      "version": "1.0.0"
+      "description": "GitHub Copilot modernization – Java Upgrade CLI Plugin helps you upgrade Java applications from the command line. It brings intelligent modernization capabilities to your terminal and CI/CD pipelines: analyze your project and generate an upgrade plan, automatically transform your codebase, fix build issues, validate against known CVEs, and output a detailed summary of file changes and updated dependencies.",
+      "version": "1.9.2",
+      "author": {
+        "name": "microsoft",
+        "url": "https://github.com/microsoft/modernize-java"
+      },
+      "repository": "https://github.com/microsoft/modernize-java",
+      "homepage": "https://github.com/microsoft/modernize-java",
+      "license": "MIT",
+      "keywords": [
+        "java",
+        "modernization",
+        "upgrade",
+        "spring-boot"
+      ],
+      "source": {
+        "source": "github",
+        "repo": "microsoft/modernize-java",
+        "path": "plugins/modernize-java",
+        "ref": "1.9.2",
+        "sha": "b570196c070bf1eb9d7ad34a263b228ef16034a0"
+      }
     },
     {
       "name": "napkin",
