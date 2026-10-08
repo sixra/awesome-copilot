@@ -14,8 +14,8 @@ Run azd from the workspace root, with `AZURE_DEV_USER_AGENT=microsoft_foundry_sk
 Skip any step whose result already exists.
 
 1. Take the Basic sample's `manifestUrl` from `azd ai agent sample list --language python --output json` (the recommended Basic entry).
-2. Run `azd ai agent init . -e <env> --no-prompt -m <manifestUrl> --deploy-mode code --runtime python_3_13 --entry-point main.py --agent-name <agent>`. Add `--model <model>` when the spec differs from the sample default. Never run `azd init -t` first: agent init would rewrite the provider and nest the project.
-3. Rename the sample folder to `src/agents/<agent>` and its service key to `<agent>`, and set the top-level `name` to the solution. For each further agent, copy a working agent folder to `src/agents/<name>` and run `azd ai agent init --src ./src/agents/<name> --agent-name <name> --no-prompt --deploy-mode code --runtime python_3_13 --entry-point main.py`.
+2. Scaffold the first agent as in [scaffold into an existing workspace](references/azd-layout.md#scaffold-into-an-existing-workspace): `azd ai agent init .` with `--no-prompt` in an empty `.scaffold` folder, then move it into place. Never run `azd init -t` first: agent init would rewrite the provider and nest the project.
+3. Rename its service key to `<agent>`, point its `project` at `src/agents/<agent>`, and set the top-level `name` to the solution. For each further agent, copy a working agent folder to `src/agents/<name>` and run `azd ai agent init --src ./src/agents/<name> --agent-name <name> --no-prompt --deploy-mode code --runtime python_3_13 --entry-point main.py`.
 4. `azd env set` each deployment-plan variable, one per command, with `AZURE_RESOURCE_GROUP` first. Read them back with `azd env get-values`.
 5. Sanity-check `azure.yaml`:
    - `services.ai-project.deployments[]` is not empty.
@@ -30,15 +30,15 @@ Lay out `azure.yaml`, `infra/foundry` and `infra/app` exactly as in [azd-layout.
 - **Layers:** a Foundry layer, then a Bicep app layer.
 - **Declarative services:** skills, MCP connections and the toolbox.
 - **Apps:** Container Apps with `remoteBuild`.
-- **Identity:** every row of the RBAC contract.
+- **Identity:** every row of the RBAC contract, plus a `postdeploy` hook for the runtime instance rows and MCP allow-lists ([grants after deploy](references/azd-layout.md#grants-after-deploy)).
 
-Validate with `az bicep build --file infra/app/main.bicep`. Then run `azd provision --no-prompt`. If provisioning falls back to another region or resource group, record the variance and its reason in `.azure/deployment-plan.md` and `docs/spec.md` before continuing. Upsert `FOUNDRY_PROJECT` (the `AZURE_AI_PROJECT_ID` value) and `RESOURCE_GROUP` into the root `.env`.
+Validate with `az bicep build --file infra/app/main.bicep`. Then run `azd provision --no-prompt`. Record the actual regions and resource groups, including the Foundry provider's group (`azd env get-value AZURE_FOUNDRY_RESOURCE_GROUP`), in the plan's Region, Resource groups and Environment variables rows, and any fallback with its reason in the plan and `docs/spec.md`, before continuing. Upsert `FOUNDRY_PROJECT` (the `AZURE_AI_PROJECT_ID` value) and `RESOURCE_GROUP` into the root `.env`.
 
 ## 3. Build
 
 1. **Contract first.** Code against the frozen contract in `docs/spec.md`. Contract changes go to the spec first.
 2. **Integration checkpoint.** Pass the [hosted integration checkpoint](../agentic-loop/references/hosted-integration-checkpoint.md) before fan-out. Build a minimal agent that loads one toolbox skill and makes one safe MCP tool call.
-   1. Prove it locally with `azd ai agent run --no-client`, in the background, and `azd ai agent invoke --local "<probe>"`.
+   1. Prove readiness and skill load locally with `azd ai agent run --no-client`, in the background, and `azd ai agent invoke --local "<probe>"`. `AgenticIdentityToken` tool calls work only hosted.
    2. Run `azd deploy <service>` for the MCP server, skill, connection, toolbox and agent services, in `uses` order.
    3. Prove the hosted version with `azd ai agent invoke <agent> "<probe>"`.
 3. **Workstreams.** Build the spec workstreams in parallel when subagents are available. Each worker owns its exclusive files and runs its acceptance checks. Shared files stay with the lead: `azure.yaml`, `infra/`, the contract, `.env` and lockfiles.

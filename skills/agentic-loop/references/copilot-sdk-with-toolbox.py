@@ -437,10 +437,11 @@ def _byok_provider() -> tuple[ProviderConfig | None, str | None]:
     if not endpoint or not model:
         return None, None
     # BYOK calls the model endpoint directly with this token, so it authenticates as the
-    # hosted-agent runtime managed identities (instance + blueprint) — NOT the implicit-access
-    # agent identity. Grant them 'Cognitive Services OpenAI User' on the Foundry AI account or
-    # inference fails with 401 PermissionDenied. Static token: fine for short invocations; a
-    # long-lived session would need to re-mint it before the ~1h access token expires.
+    # hosted-agent runtime instance managed identity — NOT the implicit-access agent identity.
+    # Grant it 'Cognitive Services OpenAI User' on the Foundry AI account or inference fails
+    # with 401 PermissionDenied (the blueprint principal takes no role assignments). Static
+    # token: fine for short invocations; a long-lived session would need to re-mint it before
+    # the ~1h access token expires.
     token = _credential().get_token("https://ai.azure.com/.default").token
     provider: ProviderConfig = {"type": "azure", "base_url": endpoint, "wire_api": "responses", "bearer_token": token}
     return provider, model

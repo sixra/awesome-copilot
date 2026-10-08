@@ -10,16 +10,16 @@
 | azd environment | `{solution}-{stage}` (at most 20 characters) |
 | Subscription | `{name}` (`{id}`), tenant `{tenantId}` |
 | Signed-in principal | `{upn or appId}` (`{objectId}`) |
-| Resource group | `rg-{environment}` (new; `az group exists` returned false) |
+| Resource groups | App: `rg-{environment}` (new; `az group exists` returned false). Foundry: {the provider's group, recorded after provisioning} |
 | Region | Preferred `{region}` → chosen `{region}`, because {placement evidence} |
-| Agent scaffold | `azd ai agent init .` with the Basic sample manifest `{manifestUrl}` |
+| Agent scaffold | `azd ai agent init .` with the Basic sample manifest `{manifestUrl}`, in an empty `.scaffold` folder, then moved into place |
 | Infra | `azure.yaml` layers: `foundry` (`microsoft.foundry`) → `app` (Bicep with AVM, `infra/app`) |
 
 ## Models
 
 | Deployment | Model and version | SKU | Capacity | Quota evidence |
 | --- | --- | --- | --- | --- |
-| `gpt-5.4-mini` | `gpt-5.4-mini` {version} | GlobalStandard | {TPM} | {free quota in region} |
+| `gpt-5.4-mini` | `gpt-5.4-mini` {version} | GlobalStandard | {TPM} (~{c} concurrent E2E cases at {tokens} per case) | {free quota in region} |
 
 ## Resources
 
@@ -37,6 +37,7 @@ Verdict from the agentic-loop RBAC preflight: `READY` or `BLOCKED`.
 | Principal | Role | Scope | Created by |
 | --- | --- | --- | --- |
 | {identity} | {role} | {scope} | app layer |
+| {deployer} (`AZURE_PRINCIPAL_ID`) | Monitoring Metrics Publisher | Application Insights | app layer |
 
 {When BLOCKED: the ready-to-run grant block for an owner.}
 

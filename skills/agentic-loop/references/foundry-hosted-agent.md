@@ -6,6 +6,8 @@ Reference for the `agentic-loop` skill: runtime concerns for an agent hosted on 
 
 Default to the **Responses API** protocol for hosted agents. Responses exposes an OpenAI-compatible `/responses` endpoint, and the platform manages conversation history, streaming, and session lifecycle. Prefer it for new hosted agents and generated plans.
 
+A tool-using agent streams each tool call as output items, because evaluators score only output items; never return a bare `TextResponse` from it. With `azure-ai-agentserver-responses` 2.2.0 (check the installed API first), the `@app.response_handler` of `ResponsesAgentServerHost()` returns an async generator that creates `ResponseEventStream(response_id=context.response_id, request=request)`, yields `emit_created()` and `emit_in_progress()`, then the events of `output_item_function_call(name, call_id, arguments)` and `output_item_function_call_output(call_id, output)` for each call, then those of `output_item_message(text)`, kept last so `output_text` stays the answer, and finally `emit_completed()`.
+
 Use the **invocations** protocol only when the user explicitly requests it, when an existing deployed agent already depends on it, or when a required sample/runtime is not yet available through Responses. If invocations is selected, document the reason in `./docs/spec.md` (SDD) or the root `README.md` (rapid).
 
 ## Python dependency contract (`requirements.txt`)
@@ -27,9 +29,11 @@ When post-processing the spec, declare the hosted agent's Python dependencies so
 
 Keep the Copilot SDK, toolbox, and skill-download rows for the default agentic-loop hosted agent. Drop them only for an explicit MAF/non-toolbox variant. Do **not** add `azure-search-documents` to the default runtime dependency set; Foundry IQ grounding is consumed through the toolbox MCP endpoint. Add Search SDK dependencies only for the direct-retrieval escape hatch in [`foundry-iq-grounding.md`](foundry-iq-grounding.md#escape-hatch-direct-in-code-retrieval). Drop the model-tracing row only if no in-process model calls are made. Keep the observability core rows because telemetry is **ON by default**.
 
+Resolve versions against the index the build uses as well, because a mirror or proxy can lag the official index. Hashed locks keep only sha256, sha384 or sha512 hashes; pip rejects others ("Allowed hash algorithms for --hash are sha256, sha384, sha512").
+
 ## Copilot SDK compatibility
 
-Generated code and documentation examples must match the latest stable package release rather than a stale example from a moving upstream branch. At implementation time, query the official package index, install the latest stable release, inspect its package metadata and API signatures, and record the resolved version in the generated application's contract and lockfile.
+Generated code and documentation examples must match the latest stable package release rather than a stale example from a moving upstream branch. At implementation time, query the official package index, install the latest stable release, inspect its package metadata and API signatures, and record the resolved version in the generated application's contract and lockfile. If the build's index lacks that release, lock the newest stable release it serves (never a pre-release), inspect that API, and record the gap.
 
 | Contract | Latest stable `github-copilot-sdk` resolved at implementation time |
 | --- | --- |

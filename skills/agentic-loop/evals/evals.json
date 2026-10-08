@@ -296,6 +296,134 @@
         "Opens the canvas once with canvasId agentic-loop-canvas and instanceId agentic-loop.",
         "Ensures microsoft-foundry is available, asking before installing it."
       ]
+    },
+    {
+      "id": 21,
+      "prompt": "Our Agentic Loop SDD claims solution provisioned, but the hosted integration checkpoint fails. The toolbox's `tools/list` against our keyless MCP server returns HTTP 403, and that container app's authentication shows `allowedApplications: []`. The first hosted invoke returns 500 while the agent downloads its skill. Our script that grants Azure roles to the agent blueprint principal fails with `PrincipalTypeNotSupported`. The Foundry account and project are in `rg-claims-dev-foundry`, the container apps are in `rg-claims-dev`, and the app layer's role assignments on the account failed. We will re-provision the app layer later in Verify. Give a bounded fix plan only; do not run anything.",
+      "expected_output": "A fix plan that grants runtime roles to the agent instance identity only, adds project Foundry User for skill download, persists the MCP allow-list through an azd env var, Bicep and a live patch, scopes account grants to the Foundry resource group, keeps deployed images across re-provision and retries to a deadline instead of redeploying.",
+      "files": [],
+      "expectations": [
+        "Reads the `instance_identity` and `blueprint` principal and client IDs from `azd ai agent show <agent> --output json` and grants Azure roles to the runtime instance principal only, never the blueprint.",
+        "Grants the runtime instance identity Foundry User on the project so the skill download succeeds, plus only the other RBAC contract rows the agent needs, without blanket or subscription-wide grants.",
+        "Allows the instance and blueprint client IDs of every agent whose toolbox reaches the MCP app, stores the sorted list in an azd env var that Bicep maps to `allowedApplications`, and patches the live `authConfigs/current`; it explains the 403 by the empty list.",
+        "Creates the account and project role assignments in a module scoped to the Foundry resource group (`resourceGroup(aiResourceGroupName)` from `AZURE_FOUNDRY_RESOURCE_GROUP`) or in the postdeploy hook, not in the app resource group.",
+        "Sets each container app image from `${SERVICE_<NAME>_IMAGE_NAME=}` with a placeholder fallback, so the planned re-provision keeps the deployed images.",
+        "Puts the post-deploy grants in an idempotent `postdeploy` hook that checks before creating, then retries the first hosted invoke with backoff until a fixed deadline instead of redeploying unchanged code.",
+        "Records the actual resource groups and regions, including `AZURE_FOUNDRY_RESOURCE_GROUP`, in the deployment plan."
+      ]
+    },
+    {
+      "id": 22,
+      "prompt": "Review this Agentic Loop spec excerpt before the Specify gate and return only the corrected rules and seed rows. Today is 2026-10-08. (1) Seed S2: a prior claim dated 2021-05-14, 'outside 36 months; bureau count 1'; `get_bureau_reports` defaults to `months=36`. (2) Seed S7 has loss type `water_damage (flood)` and seed S8 has `water_damage`. (3) Fraud signal WEATHER fires on any 'weather-related' loss type. (4) Fraud signal OVER_LIMIT fires when the claimed amount exceeds `limit_usd` from `get_coverage`, but only the adjudicator agent has `get_coverage`. (5) Fraud signal RECENT_POLICY fires when the policy started within 30 days. (6) Routing queues claims by `max(decision.fraud_score, assessment.fraud_score)`, sorted by `routing.priority`; `decision` is null when the adjudicator fails. (7) The two-column RBAC table (Principal | Role) has the row `| backend MI | AcrPull | grant after provision |`. (8) The toolbox note says to call the MCP server with `Authorization: Bearer <access-token>`.",
+      "expected_output": "Executable seed and decision rules: frozen counts and anchored windows, closed trigger lists, inputs traced to the consuming agent's tools, null-safe routing, well-formed tables, credentials described in words and recomputed seed outcomes.",
+      "files": [],
+      "expectations": [
+        "S2 states bureau count 0 for the default 36-month window, because 2021-05-14 falls outside it, or explicitly freezes a different window.",
+        "Loss types come from one closed enum and labels carry no decision facts: S7 and S8 either share one value with the flood detail in a separate frozen field, or flood becomes its own enum value, never a parenthetical such as `water_damage (flood)`.",
+        "WEATHER fires on a closed list of loss types instead of an open 'weather-related' category.",
+        "OVER_LIMIT reads only the fraud agent's own tools or frozen facts, for example by adding `get_coverage` to its tool list or freezing `limit_usd` per seed, not a tool that only the adjudicator has.",
+        "RECENT_POLICY names its anchor date, such as the loss date, and each seed freezes the dates the rule depends on.",
+        "Routing defines the result when `decision` is null or invalid, and its sort key covers every enum value plus null.",
+        "Every RBAC row has as many cells as its header, whether the table keeps two columns or adopts the plan template's columns, and the post-provision instruction moves out of the row.",
+        "The `Authorization` header is described in words, as the Bearer scheme with an access token, not written as a literal.",
+        "Each seed's expected outcome is recomputed from the corrected rules: which signals fire and why, plus the score and routing wherever the excerpt supplies the weights they need; missing weights are flagged, not invented."
+      ]
+    },
+    {
+      "id": 23,
+      "prompt": "Implement is pinning Python dependencies for a hosted agent and a FastMCP server. The official index has github-copilot-sdk 1.0.17 and fastmcp 4.0.11 as the latest stable releases. The build uses an approved package proxy that serves only up to github-copilot-sdk 1.0.16 and fastmcp 4.0.10, plus a 1.0.17rc1 pre-release of the SDK. A `--generate-hashes` lock compiled through the proxy contains `--hash=md5:` entries, and the ACR remote build fails. The spec's Runtime versions row says `azure-identity` 'latest stable'. What exactly should we pin and record? Return the plan only.",
+      "expected_output": "Pins the newest stable releases the build's index serves (never a pre-release), inspects that API, keeps only sha256/sha384/sha512 hashes, replaces 'latest' with exact versions and records the gap to the official latest release.",
+      "files": [],
+      "expectations": [
+        "Resolves the latest stable releases from the official package index and also checks what the build's proxy index serves before pinning.",
+        "Pins github-copilot-sdk 1.0.16 and fastmcp 4.0.10, the newest stable releases the proxy serves, and never 1.0.17rc1 or another pre-release.",
+        "Inspects the API of the pinned github-copilot-sdk release instead of assuming the 1.0.17 API.",
+        "Records the gap between each official latest release and its pinned version in the contract or implementation notes.",
+        "Regenerates or filters the hashed lock so it keeps only sha256, sha384 or sha512 hashes, matching pip's allowed hash algorithms.",
+        "Replaces 'latest stable' with an exact version for every direct dependency and exact image tags, and confirms the build's index or registry serves each pin."
+      ]
+    },
+    {
+      "id": 24,
+      "prompt": "Verify is about to run 10 multi-turn E2E claim scenarios against `gpt-5.4-mini` (GlobalStandard, capacity 100). One scenario took 3 minutes, and its Responses `usage` totaled 60K tokens. An earlier run at concurrency 10 hit 429s and produced AGENT_ERROR results. How should we run and record the E2E suite now, and what does Deploy reuse?",
+      "expected_output": "Parallel E2E at a measured concurrency c = 4, computed from capacity, measured tokens and duration, recorded in docs/verify.md and reused by Deploy, with a 429 after retries counted as a failure.",
+      "files": [],
+      "expectations": [
+        "Runs the E2E cases in parallel at a measured concurrency, not sequentially by default or at a hard-coded concurrency of 1.",
+        "Computes c = max(1, ⌊0.8 × TPM × minutes per case ÷ tokens per case⌋) with TPM = capacity × 1000, which gives c = 4 for these measurements.",
+        "Takes tokens per case and duration from one measured case's Responses `usage` and timing, not from a guess.",
+        "Records c and its inputs (TPM, tokens per case and minutes per case) in `docs/verify.md`.",
+        "Treats a 429 that persists after retries as a test failure, not as a pass or a skip.",
+        "Has Deploy rerun the E2E suite at the concurrency recorded in `docs/verify.md`."
+      ]
+    },
+    {
+      "id": 25,
+      "prompt": "Implement must scaffold the first hosted agent, `fraud`, from the Basic sample manifest into our existing SDD workspace. It already has `docs/`, a root `azure.yaml` with the foundry layer and `.azure/deployment-plan.md`. Everything runs with `--no-prompt`, and `azd ai agent init .` failed with 'confirmation declined; app was not initialized'. A teammate suggests adding `--force` or running `azd init -t` with the sample template first. Give the exact steps only.",
+      "expected_output": "Scaffolds in an empty `.scaffold` folder, moves the sample to `src/agents/fraud`, merges root files, copies only the azd environment, unstages and removes `.scaffold` and writes `.agentignore`, without `--force` or `azd init -t`.",
+      "files": [],
+      "expectations": [
+        "Runs `azd ai agent init .` with `--no-prompt`, the manifest URL and `--agent-name fraud` inside a new, empty `.scaffold` folder.",
+        "Rejects both `--force` and `azd init -t <template>`.",
+        "Moves the sample folder to `src/agents/fraud`, points the service's `project` there, and merges `azure.yaml` into the existing root file instead of overwriting it.",
+        "Copies only `.scaffold/.azure/config.json` and the environment folder into `.azure/`, never moving or overwriting `.azure/` or `deployment-plan.md`.",
+        "Unstages the files init git-staged, deletes `.scaffold`, and confirms that `git status --short` lists no `.scaffold` path.",
+        "Writes `.agentignore` in the agent folder so the code package carries runtime files only."
+      ]
+    },
+    {
+      "id": 26,
+      "prompt": "Deploy an approved SDD solution whose `azure.yaml` defines `infra.layers` named `foundry` and `app`, and whose postdeploy hook grants the agents' runtime roles and MCP allow-lists. `azd provision --preview` fails. After `azd up`, `azd show -o json` lists the services without endpoints, and `azd ai agent monitor fraud` fails with 'A session ID is required for log streaming'. The backend uses internal ingress. Give the Deploy steps and checks only.",
+      "expected_output": "Per-layer previews, `azd up` with exit code and hook readback, endpoints from `azd env get-values`, HTTPS probes of public endpoints only, session-scoped monitoring and E2E at the recorded concurrency.",
+      "files": [],
+      "expectations": [
+        "Previews each layer with `azd provision --preview <layer> --no-prompt` (foundry and app) instead of a plain `--preview`.",
+        "Runs `azd up --no-prompt`, records its exit code, and reads back the postdeploy effects: role assignments with `az role assignment list --assignee <principalId> --all` and each MCP app's `authConfigs/current`.",
+        "Runs `azd hooks run postdeploy --no-prompt` when a grant or allow-list is missing, then checks again.",
+        "Reads endpoints from `azd env get-values` (`SERVICE_<NAME>_URI`, `AGENT_<NAME>_RESPONSES_ENDPOINT`) instead of `azd show`.",
+        "Probes only public endpoints over HTTPS and does not treat the unreachable internal backend as a failure.",
+        "Reads the session ID from the invoke's `Session:` line and runs `azd ai agent monitor <agent> --session-id <id>`.",
+        "Reruns the E2E suite at the concurrency recorded in `docs/verify.md`, plus every check Verify deferred to Deploy."
+      ]
+    },
+    {
+      "id": 27,
+      "prompt": "You are the reviewer for the Verify gate. `docs/verify.md` says every acceptance criterion passes and that the backend request span shares an `operation_Id` with both hosted agents. `az containerapp revision list` for `ca-backend` shows a new revision created during Verify, after the backend was deployed to get that span, because local telemetry export failed without Monitoring Metrics Publisher on Application Insights. Should the gate pass? Return the verdict and the required fixes only.",
+      "expected_output": "A failed Verify gate: the backend was deployed during Verify, which the phase forbids. The fix proves backend telemetry locally with the deployer's Monitoring Metrics Publisher grant.",
+      "files": [],
+      "expectations": [
+        "Fails the gate because a backend revision was created during Verify, which breaks Verify's rule against deploying the frontend or backend, regardless of the passing trace.",
+        "Confirms from container app revision timestamps, not only from `docs/verify.md`, whether any frontend or backend was deployed during Verify.",
+        "Requires the backend telemetry check to pass locally or carry an approved waiver, rather than relying on a backend deployed in Verify.",
+        "Fixes local export by granting the deployer Monitoring Metrics Publisher on Application Insights, as the deployment plan's RBAC rows specify.",
+        "Does not weaken the gate or accept a deferral to Deploy for a check that can run locally."
+      ]
+    },
+    {
+      "id": 28,
+      "prompt": "Our hosted fraud agent (Python, `azure-ai-agentserver-responses` 2.2.0) calls three MCP tools through its toolbox per turn and returns `TextResponse(context, request, text=text)`. Foundry task_adherence scores it 3/10 with 'no TOOL_CALLS provided', yet the traces show that the tool calls ran. Explain the cause, then give the handler change and a unit test, with code only where needed.",
+      "expected_output": "Explains that evaluators score only output items, then streams a function_call and function_call_output item per tool call before the final message with ResponseEventStream, and adds a unit test.",
+      "files": [],
+      "expectations": [
+        "Explains that evaluators score only the response's output items, so a bare `TextResponse` hides the tool calls.",
+        "Checks the installed `azure-ai-agentserver-responses` API before writing the handler.",
+        "Builds the response with `ResponseEventStream(response_id=context.response_id, request=request)`, emitting the created and in-progress events first.",
+        "Emits a function call item and a function call output item with the matching `call_id` for each tool call (`output_item_function_call` and `output_item_function_call_output`).",
+        "Emits the final message item last, so `output_text` stays the answer, and then emits completed.",
+        "Adds a unit test that the events contain one call/output pair per tool call and end with the message, then reruns the evaluation."
+      ]
+    },
+    {
+      "id": 29,
+      "prompt": "In Verify we ran `azd ai agent eval run --agent fraud` and then `azd ai agent eval run --agent adjudicator` in the same azd environment. The adjudicator results seem to use the fraud agent's criteria. What went wrong, and what is the correct per-agent sequence?",
+      "expected_output": "Identifies the reused LAST_EVAL_ID, clears it before each agent's eval run, checks the Agent line and reruns the adjudicator evaluation.",
+      "files": [],
+      "expectations": [
+        "Identifies that `eval run` reused the azd environment's `LAST_EVAL_ID`, so the adjudicator run used the fraud eval definition.",
+        "Runs `azd env set LAST_EVAL_ID \"\"` before each agent's `azd ai agent eval run --agent <svc>`, after that agent's `eval generate`.",
+        "Checks that the run's `Agent: <name> v<N>` line names the intended agent and version before accepting the results.",
+        "Discards the mismatched adjudicator results and reruns that agent's evaluation."
+      ]
     }
   ]
 }

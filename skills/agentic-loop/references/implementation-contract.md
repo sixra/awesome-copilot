@@ -16,7 +16,7 @@ Reference for the `agentic-loop` skill: the small contract that must be frozen b
 | Response body | Exact JSON shape, status/error mapping, and streaming behavior | Backend API | Frontend/client | API contract test |
 | Citations | Source, section, anchor/chunk id, and claim association | Foundry IQ/toolbox | Agent, backend, frontend | Known-answer citation test |
 | Grounding refusal | Exact deterministic refusal text used when no cited evidence supports the answer | Product/API contract | Agent, backend, evals | No-supported-source test |
-| Runtime versions | Python, Node, hosted-agent runtime, and latest stable package versions resolved during implementation, including `github-copilot-sdk` | Package index and build manifests | All services and CI | Lockfile/manifests match CI |
+| Runtime versions | Python, Node, hosted-agent runtime and each direct dependency, including `github-copilot-sdk`, resolved during implementation to the latest stable release, API-verified before generating code and pinned exactly; exact image tags (digest preferred), never a floating "latest" | Official package index, the build's package index and registries | All services and CI | Lockfile/manifests match CI; the build's index or registry serves each pinned version |
 
 For environment variables, add one row per value when that is clearer than a comma-separated list. Record both the producer and every consumer; this catches values that provisioning emits under one name while runtime code expects another.
 

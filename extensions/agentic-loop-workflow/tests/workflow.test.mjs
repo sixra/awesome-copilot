@@ -211,7 +211,9 @@ test("failed gate: bounded fix loop, blocked checkpoint, next round on resume", 
     assert.match(fix.prompt, /without deploying the frontend or backend/, "Verify fixes never deploy the app before the deploy gate");
     const gate = CANVAS.gate.exec(logMatches(run.state, CANVAS.gate).at(-1));
     assert.deepEqual(gate.slice(1), ["Verify", "failed", "1 issue: E2E test test_claim_upload fails with HTTP 500 · Verify · review 2 failed"], "failed gates lead with their issues");
-    assert.doesNotMatch(run.state.calls.find(call => call.label === "Verify · review").prompt, /Re-review/, "the first review of round 1 checks from scratch");
+    const review = run.state.calls.find(call => call.label === "Verify · review").prompt;
+    assert.doesNotMatch(review, /Re-review/, "the first review of round 1 checks from scratch");
+    assert.match(review, /no frontend or backend was deployed during Verify/, "Verify reviews check that nothing was deployed before the deploy gate");
     const recheck = run.state.calls.find(call => call.label === "Verify · review 2").prompt;
     assert.match(recheck, /Re-review after fix 1\. First confirm, with evidence, that each of these issues is resolved and that the changes broke nothing nearby; report any that persist as issues:\n- E2E test test_claim_upload fails with HTTP 500\nThen finish the remaining checks\./);
     assert.doesNotMatch(recheck, /Verify · fix 1 done/, "re-reviews never see the fixer's own report");

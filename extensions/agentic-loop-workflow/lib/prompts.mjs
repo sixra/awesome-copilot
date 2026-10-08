@@ -63,17 +63,17 @@ export const TASKS = Object.freeze({
         worker: "Build your workstream against the frozen contract in docs/spec.md and run its acceptance checks.",
         build: "Build the remaining work in sequence (section 3 step 3), then run section 3 step 4 (Integration) and section 4 (Record). Self-check the Gate.",
         integration: "Run section 3 step 4 (Integration) and section 4 (Record): merge the workstreams, finish any that failed, resolve their issues, run builds, linters and unit tests, lock Python dependencies and write docs/implementation.md. Self-check the Gate.",
-        review: "Check the Gate: confirm the provisioned resources in Azure, rerun the hosted checkpoint invocation, rerun builds and unit tests, confirm the backend calls each agent through its dedicated endpoint with scope https://ai.azure.com/.default, and check the code against the contract and the spec scope.",
+        review: "Check the Gate: confirm the provisioned resources in Azure and that their regions and resource groups match .azure/deployment-plan.md, rerun the hosted checkpoint invocation, rerun builds and unit tests, confirm the backend calls each agent through its dedicated endpoint with scope https://ai.azure.com/.default, and check the code against the contract and the spec scope.",
         fix: "Fix the issues, complete any unfinished Implement steps, rerun the affected checks and update docs/implementation.md.",
     },
     Verify: {
         lead: "Run sections 1-5, except the Test table's Review row: an independent reviewer runs it next.",
-        review: "Run the Test table's Review row: check the code and the evidence in docs/verify.md against every requirement, the contract and the RBAC rows. Rerun the acceptance and contract tests, starting components as section 2 describes when they are not running, and confirm the evaluation and telemetry evidence.",
+        review: "Run the Test table's Review row: check the code and the evidence in docs/verify.md against every requirement, the contract and the RBAC rows. Rerun the acceptance and contract tests, starting components as section 2 describes when they are not running, and confirm the evaluation and telemetry evidence. Confirm from the container app revisions that no frontend or backend was deployed during Verify.",
         fix: "Fix each issue as section 4 describes without deploying the frontend or backend, rerun the failing check and then the suite, and update docs/verify.md.",
     },
     Deploy: {
         lead: "Deployment to the planned target is approved. Run sections 1, 2 and 4.",
-        review: "Check the Gate without changing or deploying anything: probe each endpoint from azd show over HTTPS, confirm healthy active revisions, invoke each hosted agent once, rerun the deployed smoke tests, and check docs/deploy.md and README.md against what is deployed.",
+        review: "Check the Gate without changing or deploying anything: probe each public endpoint from azd env get-values over HTTPS, confirm healthy active revisions, invoke each hosted agent once, rerun the deployed smoke tests, and check docs/deploy.md and README.md against what is deployed.",
         fix: "Deployment to the planned target is approved. Fix the issues with section 3 (Common failures), redeploy only what changed, rerun the failed checks and update docs/deploy.md.",
     },
 });

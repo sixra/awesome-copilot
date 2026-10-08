@@ -21,16 +21,16 @@ Run these checks read-only and report every gap at once.
 
 ## 2. Deploy
 
-1. When the infrastructure changed, run `azd provision --preview --no-prompt` and review deletions and replacements. Stop on surprises.
-2. Run `azd up --no-prompt`, or `azd deploy --no-prompt` when the infrastructure is unchanged. Wait for it to finish and record the exit code.
-3. Read the endpoints from `azd show -o json`. Confirm each container app has an active, healthy revision (`az containerapp revision list`).
+1. When the infrastructure changed, run `azd provision --preview <layer> --no-prompt` for each `infra.layers` name (a plain `--preview` fails on multiple layers) and review deletions and replacements. Stop on surprises.
+2. Run `azd up --no-prompt`, or `azd deploy --no-prompt` when the infrastructure is unchanged. Wait for it to finish, record the exit code, and read back the [grants after deploy](../agentic-loop-implement/references/azd-layout.md#grants-after-deploy).
+3. Read the endpoints from `azd env get-values` (`SERVICE_<NAME>_URI`, `AGENT_<NAME>_RESPONSES_ENDPOINT`). Confirm each container app has an active, healthy revision (`az containerapp revision list`).
 4. For each agent, run:
    - `azd ai agent show <agent>` to get the endpoint and playground URL;
    - `azd ai agent invoke <agent> "<scenario>"`;
-   - `azd ai agent monitor <agent>` to read its logs.
+   - `azd ai agent monitor <agent> --session-id <id>`, with the ID from the invoke's `Session:` line, to read its logs.
 
    Retry 424 `session_not_ready` or 502 warm-up responses with backoff for up to 5 minutes.
-5. Rerun the E2E suite against the deployed frontend, in parallel up to the planned model capacity, plus every check `docs/verify.md` defers to Deploy.
+5. Rerun the E2E suite against the deployed frontend at the concurrency recorded in `docs/verify.md`, plus every check it defers to Deploy.
 
 ## 3. Common failures
 

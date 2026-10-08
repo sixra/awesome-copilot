@@ -32,14 +32,15 @@ Write the source of truth for an agentic solution. Apply the [agentic-loop](../a
    - Split the build into at most four workstreams with exclusive files.
    - Map every requirement to a verification check.
 3. **Deployment plan.** Write `.azure/deployment-plan.md` from [deployment-plan-template.md](templates/deployment-plan-template.md). It covers the target, placement evidence, RBAC verdict and grant block, resources, cost drivers and environment variables.
-4. **Repository.** Ensure `.gitignore` covers `.azure/*`, `!.azure/deployment-plan.md`, `.env` and build output. Commit only when asked.
+4. **Repository.** Ensure `.gitignore` covers `.azure/*`, `!.azure/deployment-plan.md`, `.env` and build output, and `.gitattributes` sets `* text=auto eol=lf`. Commit only when asked.
 5. **Review.** In the workflow, a fresh reviewer checks the artifacts. Interactively, run `validate` yourself.
 
 ## Validate checklist
 
 - No `[NEEDS CLARIFICATION]` markers remain. Each open item is an Assumption with a default and an owner.
 - Every functional requirement has EARS criteria and a verification row. Non-functional requirements are measurable.
-- The contract names every service, environment variable, endpoint, schema, protocol, auth method and version.
+- The contract names every service, environment variable, endpoint, schema, protocol, auth method, exact version and image tag.
+- Seed and decision rules (spec sections 9–10) make every scenario's outcome computable from frozen facts. Tables are well formed, and no credential or `Authorization` literal appears.
 - There are at most four workstreams, and they own disjoint files.
 - Placement shows the model is available with quota in the region. The RBAC verdict is `READY`, or `BLOCKED` with a ready-to-run grant block.
 - Companion skills appear only when a requirement needs them.

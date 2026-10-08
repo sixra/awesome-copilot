@@ -24,6 +24,7 @@ Build a working solution quickly in an **existing** Foundry project, driven from
 ## 3. Minimal slice
 
 - Build the quick-start Basic sample hosted agent, plus one toolbox skill and one safe MCP tool that prove the integration. Reuse named skills from the [run catalog](run-skills-catalog.md) or the user's source; ask if a skill is unresolved.
+- Run `azd ai agent init` from the workspace root, never inside a folder named for the agent: it creates `<agent>/` with `azure.yaml` and `src/<agent>/`. Then confirm there is no nested `<agent>/<agent>` and unstage init's files (`git restore --staged <agent>`).
 - Deploy only required custom FastMCP code, with `az containerapp up --source <mcp-dir>`. Reuse remote servers. Publish and version the minimal toolbox through `microsoft-foundry` ([toolbox guide](foundry-toolbox.md)).
 - For Copilot SDK agents, read [copilot-sdk-foundry.md](copilot-sdk-foundry.md) first. Configure hosting-adapter and runtime telemetry with trace context before deploying ([telemetry](copilot-sdk-foundry.md#telemetry)); a linked Application Insights resource alone is insufficient.
 - Do not build the full orchestration, UI or backend yet.
@@ -47,7 +48,7 @@ Code-deploy the expanded agents with `microsoft-foundry`. Recheck changed identi
 ## 7. Local acceptance
 
 - Run FastAPI with reload and the Vite dev server, and confirm both respond. Reconcile them against the contract.
-- Run E2E tests through UI → backend → deployed agents → MCP and tools. Verify a correlated trace reaches Application Insights without unapproved sensitive content. Fix failures before going further.
+- Run E2E tests through UI → backend → deployed agents → MCP and tools, in parallel at c = max(1, ⌊0.8 × TPM × minutes per case ÷ tokens per case⌋), measured from one case's Responses `usage` and duration (TPM = capacity × 1000); report c, and treat a 429 after retries as a failure. Verify a correlated trace reaches Application Insights without unapproved sensitive content. Fix failures before going further.
 - Upsert `.env`: recheck `FOUNDRY_PROJECT`, then set `RESOURCE_GROUP` and the verified `LOCAL_FRONTEND`. Next, reconcile `LOOP.md`; create it even when nothing failed, and say when no skill change is supported.
 - Keep the servers running and report their URLs. **Ask whether to deploy the backend and frontend to Azure, then wait.** Earlier approvals for agents or MCP servers do not cover this step.
 

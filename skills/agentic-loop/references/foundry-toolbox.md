@@ -2,11 +2,11 @@
 
 Reference for the `agentic-loop` skill: manage Foundry toolboxes with `azd ai toolbox` and consume a toolbox by default from a GitHub Copilot SDK agent for **skills, tools, and Foundry IQ grounding**. The full reference agent is [`copilot-sdk-with-toolbox.py`](copilot-sdk-with-toolbox.py).
 
-A **toolbox** is a versioned, curated bundle of **connections, skills, and tools** that agents consume through a single runtime **MCP endpoint**. A **skill** is a `SKILL.md` (YAML front matter + Markdown body) capturing reusable behavioral guidance, stored centrally in a Foundry project via the versioned **Skills API**; promoting a new default version rolls out with **no agent redeploy**. This reference covers **managing toolboxes** with the `azd ai toolbox` command and **consuming a toolbox by default** from a GitHub Copilot SDK agent — bridging the toolbox **MCP endpoint** to call MCP servers, Foundry IQ grounding, and connectionless tools while downloading skills into a writable temp directory at runtime.
+A **toolbox** is a versioned, curated bundle of **connections, skills, and tools** that agents consume through a single runtime **MCP endpoint**. A **skill** is a `SKILL.md` (YAML front matter + Markdown body) capturing reusable behavioral guidance, stored centrally in a Foundry project via the versioned **Skills API**; promoting a new default skill version rolls out with **no agent redeploy**, but a new toolbox version needs one ([lifecycle](#skills--tools-mcp-lifecycle-across-the-loop)). This reference covers **managing toolboxes** with the `azd ai toolbox` command and **consuming a toolbox by default** from a GitHub Copilot SDK agent — bridging the toolbox **MCP endpoint** to call MCP servers, Foundry IQ grounding, and connectionless tools while downloading skills into a writable temp directory at runtime.
 
 > Skills are **public preview** (no SLA, not for production). All Skills API calls require `allow_preview=True` on the client.
 
-> **The agent source tree contains no `skills/` folder at all.** Skills are versioned centrally in Foundry; at startup the agent **creates a writable skills directory under `tempfile.gettempdir()` if it doesn't exist** (override with `SKILLS_DIR`) and downloads each `SKILL.md` into it from Foundry. It defaults to the OS temp dir because **hosted-agent container filesystems are read-only except `/tmp`** — defaulting under the app directory crashes on first invocation. Because the directory is generated at runtime and never lives in the repo, there is nothing to commit, `COPY`, or exclude — the image and source ship without it. Promote a new default version and every agent picks it up with **no rebuild or redeploy**.
+> **The agent source tree contains no `skills/` folder at all.** Skills are versioned centrally in Foundry; at startup the agent **creates a writable skills directory under `tempfile.gettempdir()` if it doesn't exist** (override with `SKILLS_DIR`) and downloads each `SKILL.md` into it from Foundry. It defaults to the OS temp dir because **hosted-agent container filesystems are read-only except `/tmp`** — defaulting under the app directory crashes on first invocation. Because the directory is generated at runtime and never lives in the repo, there is nothing to commit, `COPY`, or exclude — the image and source ship without it. Promote a new default skill version and every agent picks it up with **no rebuild or redeploy**.
 
 ## Prerequisites
 
@@ -115,6 +115,7 @@ azd env set TOOLBOX_NAME "research"
 azd env set TOOLBOX_VERSION "1"
 # Run + test locally (skills download into the temp skills dir on first run), then deploy
 azd ai agent run                       # separate terminal: azd ai agent invoke --local '{"input": "Hi, I am Alex!"}'
+# Local runs prove readiness and skill load only; AgenticIdentityToken tool calls work only hosted.
 azd provision && azd deploy            # then: azd ai agent invoke '{"input": "Hi, I am Alex!"}'
 ```
 
@@ -189,14 +190,14 @@ When the spec includes agent skills, MCP-server tools, or grounding connections,
 8. **Wire the agent** - for the default **Copilot SDK** agent, initialize the `CopilotClient` session with `skill_directories` pointing to the runtime temp skills directory populated from Foundry Skills API, and point tool discovery at the **toolbox MCP endpoint** so tools and grounding resolve from the governed toolbox instead of raw server URLs or direct Search clients. Reference: [`copilot-sdk-with-toolbox.py`](copilot-sdk-with-toolbox.py).
 9. **Verify discovery** - confirm the toolbox endpoint exposes the expected tools (`tools/list`) and that the hosted agent logs show skills downloaded to temp, not bundled from the source tree (header `Foundry-Features: Toolboxes=V1Preview`).
 
-This keeps **skills, MCP tools, and Foundry IQ grounding** versioned, auditable, and updatable without rebuilding the agent image: re-version skills with `azd ai skill`, promote the skill/toolbox `default_version`, and the agent downloads skills to temp and resolves tools/grounding from the toolbox on its next session.
+This keeps **skills, MCP tools, and Foundry IQ grounding** versioned, auditable, and updatable without rebuilding the agent image: re-version skills with `azd ai skill`, promote the skill `default_version`, and the agent downloads skills to temp on its next session. A toolbox redeploy creates a new toolbox version, and the azd-emitted `TOOLBOX_<NAME>_MCP_ENDPOINT` pins `versions/<N>`, so then redeploy every agent that `uses` the toolbox; until then it keeps the old tools and skills.
 
 ## Workflow checklist
 
 1. Create/update skills with `azd ai skill create/update`, confirm with `azd ai skill list/show`, and use `--set-default-version` for rollback/roll-forward without uploading new content.
 2. Create the toolbox + initial version from a `--from-file` JSON/YAML (`azd ai toolbox create <name> --from-file ...`); confirm its connections already exist and capture the emitted `TOOLBOX_<NAME>_MCP_ENDPOINT`.
-3. Consume the toolbox **by default** — bridge its MCP endpoint to expose tools and grounding to the Copilot session and download its skills into the runtime temp directory (no source `skills/` folder in the agent image); re-version on Foundry and promote the new toolbox/skill default to roll out with no rebuild.
-4. Validate (`azd ai agent run` + `azd ai agent invoke --local`), then `azd provision && azd deploy`.
+3. Consume the toolbox **by default** — bridge its MCP endpoint to expose tools and grounding to the Copilot session and download its skills into the runtime temp directory (no source `skills/` folder in the agent image); re-version a skill on Foundry and promote its default to roll out with no rebuild; after a toolbox redeploy, redeploy every agent that `uses` it.
+4. Validate readiness and skill load locally (`azd ai agent run` + `azd ai agent invoke --local`; `AgenticIdentityToken` tool calls work only hosted), then `azd provision && azd deploy`.
 5. Export agent execution telemetry via OpenTelemetry — build the `CopilotClient` with a `TelemetryConfig` so the SDK/CLI emits its `invoke_agent` / `chat` / `execute_tool` spans over OTLP; route them through a Collector and confirm they appear in Application Insights Transaction search.
 
 ## Source

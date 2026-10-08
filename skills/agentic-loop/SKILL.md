@@ -45,7 +45,7 @@ Otherwise ask once with the choices "Rapid prototyping (existing Foundry project
 - **`.env` handoff.** Upsert the Git-ignored root `.env`, preserve other keys and read back: `FOUNDRY_PROJECT` (full ARM ID, as soon as validated or created), `RESOURCE_GROUP`, `LOCAL_FRONTEND` and `DEPLOYED_FRONTEND` (verified URLs only). The canvas reads these.
 - **Safety.** Reuse resources; confirm billable, security or compliance changes; delete without approval only a resource this build created whose provisioning failed; never sign in for the user; never report an unverified deployment as successful.
 - **Workspace boundary.** Builds stay inside the workspace: read only its root `LOOP.md`, scaffold from the Foundry samples and these references, and use code from other folders only when the user names them. Only improve mode reads past runs elsewhere.
-- **Companions and SDKs.** Verify installed SDK APIs against the latest stable release and lock versions before generating code; package sources beat stale guidance. Consult the [build catalog](references/build-skills-catalog.md) only for needed capabilities; respect pins, ask before installs and route third-party skill defects upstream.
+- **Companions and SDKs.** Verify installed SDK APIs against the latest stable release (or the newest stable one the build's package index serves, recording the gap) and lock versions before generating code; package sources beat stale guidance. Consult the [build catalog](references/build-skills-catalog.md) only for needed capabilities; respect pins, ask before installs and route third-party skill defects upstream.
 
 ## Lessons (`LOOP.md`)
 

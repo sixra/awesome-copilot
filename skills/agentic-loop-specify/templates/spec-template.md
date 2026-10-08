@@ -64,9 +64,13 @@ flowchart LR
 
 Entities, fields, ownership, retention and classification. Name the sample or synthetic data source and where it lives.
 
+**Seed rules.** For every seeded record a rule reads, freeze the values the rule needs (dates, counts, amounts, window anchors) and each tool's result for that ID, including empty results. Labels and names carry no decision facts.
+
 ## 10. Implementation contract (frozen)
 
 Service names, environment variables, endpoints, protocols, request, response and error schemas, streaming, auth and versions. Change this section before changing any code that depends on it.
+
+**Decision rules.** Each rule reads only frozen facts or tools in the consuming agent's list, and a decision tool has a frozen derivation. A window names its anchor date; trigger categories are closed lists. Guards, routing and sort keys cover every enum value plus null or invalid agent output. Recompute each scenario's expected outcome from these rules. Tables keep the header's cell count. Describe credentials and `Authorization` values in words, never as literals.
 
 ## 11. Workstreams
 
