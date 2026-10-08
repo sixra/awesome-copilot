@@ -262,7 +262,7 @@
       "expected_output": "Read-only analysis of flight records, LOOP.md, workflow runs and sessions, clustered by root cause, with minimal evidence-backed diffs and regression checks, applied only after approval.",
       "files": [],
       "expectations": [
-        "Gathers evidence from .agentic-loop/runs/*.json, LOOP.md, dynamic_workflows_manage runs and inspect-run, and time-bounded session_store_sql queries with LIMIT.",
+        "Builds candidate clusters from .agentic-loop/runs/*.json, LOOP.md and dynamic_workflows_manage runs and inspect-run, then uses time-bounded session_store_sql queries with LIMIT only to confirm or quantify them, never reading raw events.jsonl transcripts end to end.",
         "Clusters findings by root cause and ranks them by frequency and impact, keeping only clusters with evidence from two runs or one verified severe failure.",
         "Proposes minimal diffs with target file and section, expected benefit and a regression eval, preferring tightening or deleting text.",
         "Never proposes weakening approvals, RBAC, safety or evidence gates, or adding secrets or tenant-specific values.",

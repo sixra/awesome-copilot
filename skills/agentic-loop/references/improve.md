@@ -6,6 +6,8 @@ Recursive improvement: learn from past executions and refine the Agentic Loop sk
 
 **Scope.** In a solution repository, use its own evidence. In a clone of `github/awesome-copilot`, the evidence lives in solution folders: find recent sessions that loaded `agentic-loop` with `session_store_sql`, confirm the folders with the user, and read their records.
 
+**Budget.** Present proposals within about 20 minutes. Start from the distilled records below. Use session history only to confirm or quantify a candidate cluster, and never read raw transcripts (`events.jsonl`) end to end.
+
 - **Flight records:** `.agentic-loop/runs/*.json`, with phases, rounds, gate status, issues, lessons, durations and outcome.
 - **Lessons:** `LOOP.md` entries and their status.
 - **Workflow history:** `dynamic_workflows_manage` with `runs`, filtered to `agentic-loop-workflow`, then `inspect-run` for each failed, blocked or slow run.
@@ -23,6 +25,8 @@ Cluster findings by root cause, not symptom. Look for:
 
 Rank clusters by frequency × impact. Keep a cluster only when it has evidence from at least two runs, or from one verified severe failure.
 
+Find target sections with `grep` instead of reading whole files. With more than three clusters, draft them in parallel, one subagent per cluster, each returning the fields in §3.
+
 ## 3. Propose
 
 For each cluster, give:
@@ -32,7 +36,7 @@ For each cluster, give:
 - the expected benefit
 - a regression check: an existing eval or a new eval case
 
-Prefer tightening or deleting text over adding it. Keep `SKILL.md` lean and put details in references. Never weaken approvals, RBAC, safety or evidence gates, and never add secrets or tenant-specific values. Ask a fresh-context reviewer subagent to challenge each proposal against the evals, and drop those that fail.
+Prefer tightening or deleting text over adding it. Keep `SKILL.md` lean and put details in references. Never weaken approvals, RBAC, safety or evidence gates, and never add secrets or tenant-specific values. Ask a fresh-context reviewer subagent to challenge each proposal against the evals, and drop those that fail. Re-verify only the claims the reviewer disputes, in one batch.
 
 ## 4. Apply after approval
 
