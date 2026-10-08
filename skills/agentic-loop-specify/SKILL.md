@@ -39,7 +39,7 @@ Write the source of truth for an agentic solution. Apply the [agentic-loop](../a
 
 - No `[NEEDS CLARIFICATION]` markers remain. Each open item is an Assumption with a default and an owner.
 - Every functional requirement has EARS criteria and a verification row. Non-functional requirements are measurable.
-- The contract names every service, environment variable, endpoint, schema, protocol, auth method, exact version and image tag.
+- The contract names every service, environment variable, endpoint, schema, protocol and auth method. Its versions row requires exact pins and image tags, resolved at Implement to the latest stable release, with the `github-copilot-sdk` API verified before any code is generated.
 - Seed and decision rules (spec sections 9–10) make every scenario's outcome computable from frozen facts. Tables are well formed, and no credential or `Authorization` literal appears.
 - There are at most four workstreams, and they own disjoint files.
 - Placement shows the model is available with quota in the region. The RBAC verdict is `READY`, or `BLOCKED` with a ready-to-run grant block.
