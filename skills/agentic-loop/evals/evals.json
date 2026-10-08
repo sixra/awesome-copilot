@@ -267,6 +267,7 @@
         "Proposes minimal diffs with target file and section, expected benefit and a regression eval, preferring tightening or deleting text.",
         "Never proposes weakening approvals, RBAC, safety or evidence gates, or adding secrets or tenant-specific values.",
         "Does not edit any file before approval; in a solution repository, applies changes as project overrides under .github/skills instead of editing installed plugin files.",
+        "After applying, runs the affected evals in one batch and reruns only the failures, once. Any eval that still fails is compared once against the base commit, and if it fails there too it is reported as pre-existing instead of iterated on.",
         "Marks matching LOOP.md lessons adopted after applying, and validated only after a later run confirms the benefit."
       ]
     },
