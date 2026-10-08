@@ -1,0 +1,604 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { MAX_FIX_LOOPS, META, PHASES, WORKFLOW, firstLine, validateArgs } from "../lib/args.mjs";
+import { FOUNDATION_SCHEMA, REPORT_SCHEMA, TASKS, buildPrompt, label } from "../lib/prompts.mjs";
+import { clean, normalize, planWorkstreams, recordFile, reduce, scope } from "../lib/record.mjs";
+import { SKILLS, resolveSkills } from "../lib/skills.mjs";
+import { MAX_ROUNDS, checkpointLines, gateLine, noteLine, runLoop } from "../lib/loop.mjs";
+
+const extensionDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const BRIEF = "Claims triage assistant for insurance adjusters.\nUsers: adjusters. Agents: triage and fraud. Data: policy PDFs. UX: web chat.";
+
+// Canvas contract (agentic-loop-canvas/lib/live.mjs): the pin test below fails if either side drifts.
+const CANVAS = {
+    gate: /^(Specify|Implement|Verify|Deploy) gate: (passed|failed|blocked)(?: [—-] (.*))?$/,
+    blocked: /^blocked-(specify|implement|verify|deploy)-r([1-9]\d{0,2})$/,
+    brief: /^Brief: (.+)$/,
+    approvals: ["approve-spec-v1", "approve-deploy-v1"],
+};
+
+const FATAL = ["AbortError", "ResponseError", "ConnectionError"];
+const passed = (who, extra = {}) => ({ status: "passed", summary: `${who} done`, issues: [], lessons: [`${who} lesson`], artifacts: [], assumptions: [], ...extra });
+const failed = (who, issue = `${who} found a defect`) => ({ status: "failed", summary: `${who} failed`, issues: [issue], lessons: [] });
+const WORKSTREAMS = [
+    { name: "api", goal: "Build the API", files: ["src/api"], checks: ["pytest src/api"] },
+    { name: "web", goal: "Build the web app", files: ["src/web/**"] },
+];
+
+function defaultResponder(who) {
+    if (who === "Implement · foundation") return passed(who, { workstreams: WORKSTREAMS });
+    if (who.startsWith("Deploy · review")) return passed(who, { endpoints: [{ name: "web", url: "https://web.example.azurecontainerapps.io/" }, { name: "bad", url: "ftp://x" }] });
+    return passed(who);
+}
+
+async function workspace(t) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "al-workflow-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const cwd = path.join(root, "app");
+    const home = path.join(root, "home");
+    await mkdir(cwd, { recursive: true });
+    await mkdir(home, { recursive: true });
+    return { root, cwd, home };
+}
+
+// In-memory model of the workflow runtime: journaled steps and agents, one-shot pauses, replay on resume.
+function harness({ cwd, home, args, responder = defaultResponder, runId = "run-1", dir = extensionDir }) {
+    const journal = { steps: new Map(), agents: new Map(), pauses: new Set() };
+    const state = { calls: [], logs: [], phases: [], attempts: 0, responder };
+    let clock = 0;
+    const now = () => new Date(Date.UTC(2026, 0, 1) + 1000 * clock++).toISOString();
+    const json = value => JSON.parse(JSON.stringify(value));
+
+    async function attempt() {
+        state.attempts += 1;
+        state.phases = [];
+        const seenSteps = new Set();
+        const seenAgents = new Set();
+        let pausedAt = null;
+        const ctx = {
+            runId,
+            args,
+            session: { rpc: { metadata: { snapshot: async () => ({ workingDirectory: cwd }) } } },
+            async step(key, producer) {
+                assert.ok(!seenSteps.has(key), `step key reused within an attempt: ${key}`);
+                seenSteps.add(key);
+                if (!journal.steps.has(key)) {
+                    const value = await producer();
+                    assert.notEqual(value, undefined, `step ${key} returned undefined`);
+                    journal.steps.set(key, JSON.stringify(value));
+                }
+                return JSON.parse(journal.steps.get(key));
+            },
+            async agent(prompt, options) {
+                const memo = JSON.stringify([prompt, options]);
+                assert.ok(!seenAgents.has(memo), `agent prompt reused within an attempt: ${options.label}`);
+                seenAgents.add(memo);
+                if (!journal.agents.has(memo)) {
+                    state.calls.push({ label: options.label, prompt, schema: options.schema, attempt: state.attempts });
+                    const value = await state.responder(options.label, prompt);
+                    journal.agents.set(memo, JSON.stringify(value ?? null));
+                }
+                return JSON.parse(journal.agents.get(memo));
+            },
+            async pause(key) {
+                if (journal.pauses.has(key)) return;
+                journal.pauses.add(key);
+                pausedAt = key;
+                throw new DOMException("Workflow run was aborted", "AbortError");
+            },
+            async parallel(thunks) {
+                return Promise.all(thunks.map(async thunk => {
+                    try { return await thunk(); }
+                    catch (error) {
+                        if (FATAL.includes(error?.name)) throw error;
+                        return null;
+                    }
+                }));
+            },
+            phase(title) { state.phases.push(title); },
+            log(message) { state.logs.push(message); },
+        };
+        try {
+            return { status: "completed", result: json(await runLoop(ctx, { extensionDir: dir, home, now })) };
+        } catch (error) {
+            if (error?.name === "AbortError") return { status: "paused", key: pausedAt };
+            return { status: "error", error };
+        }
+    }
+
+    const record = async () => JSON.parse(await readFile(path.join(cwd, ...recordFile(runId).split("/")), "utf8"));
+    return { attempt, record, state, journal };
+}
+
+const labels = (state, prefix = "") => state.calls.filter(call => call.label.startsWith(prefix)).map(call => call.label);
+const logMatches = (state, regex) => state.logs.filter(line => regex.test(line));
+
+test("gated run: phases in order, approvals, replay without duplicate work, flight record", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({ cwd, home, args: { brief: BRIEF, scenarioId: "insurance-claims-triage" } });
+
+    let outcome = await run.attempt();
+    assert.deepEqual(outcome, { status: "paused", key: "approve-spec-v1" });
+    assert.deepEqual(run.state.phases, ["Specify"]);
+    assert.deepEqual(labels(run.state), ["Specify · lead", "Specify · review"]);
+    assert.match(run.state.logs[0], CANVAS.brief);
+    assert.equal(CANVAS.brief.exec(run.state.logs[0])[1], firstLine(BRIEF));
+    const specify = CANVAS.gate.exec(logMatches(run.state, CANVAS.gate)[0]);
+    assert.deepEqual([specify[1], specify[2], specify[3]], ["Specify", "passed", "Specify · review done"]);
+    let record = await run.record();
+    assert.equal(record.status, "awaiting-approval");
+    assert.equal(record.pending, "approve-spec-v1");
+    assert.equal(record.scenarioId, "insurance-claims-triage");
+    assert.ok(run.state.logs.includes("Specify · lead passed: Specify · lead done. Next: independent review."));
+    assert.ok(run.state.logs.includes("Specify · review passed: Specify · review done"), "the gate line follows a passing review");
+    assert.match(run.state.logs.at(-1), /^Needs you: approve the spec\. Review docs\/spec\.md and \.azure\/deployment-plan\.md, then choose "Approve spec and continue"/);
+
+    outcome = await run.attempt();
+    assert.deepEqual(outcome, { status: "paused", key: "approve-deploy-v1" });
+    assert.deepEqual(run.state.phases, PHASES);
+    assert.deepEqual(labels(run.state, "Specify"), ["Specify · lead", "Specify · review"], "Specify replays from the journal");
+    assert.deepEqual(labels(run.state, "Implement").sort(), ["Implement · api", "Implement · foundation", "Implement · integration", "Implement · review", "Implement · web"]);
+    assert.deepEqual(labels(run.state, "Verify"), ["Verify · lead", "Verify · review"]);
+    assert.deepEqual(labels(run.state, "Deploy"), []);
+    const foundation = run.state.calls.find(call => call.label === "Implement · foundation");
+    assert.equal(foundation.schema, FOUNDATION_SCHEMA);
+    const integration = run.state.calls.find(call => call.label === "Implement · integration");
+    assert.match(integration.prompt, /Workstream results:\n- api: passed\. Implement · api done\n- web: passed\./);
+    assert.ok(run.state.logs.includes("Implement plan: 2 parallel workstreams (api, web)"));
+    assert.ok(run.state.logs.includes("Spec approved. Continuing with Implement."));
+    assert.ok(run.state.logs.includes("Implement · foundation passed: Implement · foundation done. Next: workstream plan."));
+    assert.ok(run.state.logs.includes("Implement · api passed: Implement · api done"), "only the last worker names the next step");
+    assert.ok(run.state.logs.includes("Implement · web passed: Implement · web done. Next: integration."));
+    assert.ok(run.state.logs.includes("Implement · integration passed: Implement · integration done. Next: independent review."));
+    assert.match(run.state.logs.at(-1), /^Needs you: approve deployment\. Review docs\/verify\.md and \.azure\/deployment-plan\.md/);
+
+    outcome = await run.attempt();
+    assert.equal(outcome.status, "completed");
+    assert.deepEqual(outcome.result, {
+        status: "deployed",
+        runId: "run-1",
+        phases: { Specify: "passed", Implement: "passed", Verify: "passed", Deploy: "passed" },
+        rounds: { Specify: 1, Implement: 1, Verify: 1, Deploy: 1 },
+        endpoints: [{ name: "web", url: "https://web.example.azurecontainerapps.io/" }],
+        flightRecord: ".agentic-loop/runs/run-1.json",
+    });
+    assert.equal(logMatches(run.state, CANVAS.brief).length, 1, "the Brief line is logged once across attempts");
+    assert.equal(logMatches(run.state, /^Specify · lead passed: /).length, 1, "replayed notes are not logged again");
+    for (const line of [/^Needs you: approve the spec\./, /^Spec approved\./, /^Needs you: approve deployment\./, /^Deployment approved\. Running Deploy\.$/]) {
+        assert.equal(logMatches(run.state, line).length, 1, `checkpoint line logged once across replays: ${line}`);
+    }
+    assert.deepEqual(logMatches(run.state, CANVAS.gate).map(line => CANVAS.gate.exec(line).slice(1, 3).join(":")),
+        ["Specify:passed", "Implement:passed", "Verify:passed", "Deploy:passed"]);
+    assert.ok(run.state.logs.at(-1).startsWith("Agentic Loop deployed. Endpoints: web https://web.example.azurecontainerapps.io/."));
+
+    record = await run.record();
+    assert.equal(record.workflow, WORKFLOW);
+    assert.equal(record.status, "deployed");
+    assert.equal(record.pending, null);
+    assert.equal(record.brief, BRIEF);
+    assert.deepEqual(record.checkpoints.map(row => row.key), ["approve-spec-v1", "approve-deploy-v1"]);
+    assert.deepEqual(record.phases.map(row => `${row.phase}:${row.round}:${row.status}`), ["Specify:1:passed", "Implement:1:passed", "Verify:1:passed", "Deploy:1:passed"]);
+    assert.ok(record.phases[1].lessons.includes("Implement · api lesson"));
+    assert.equal(record.skills["agentic-loop-specify"], "repository");
+    assert.ok(record.completedAt);
+});
+
+test("auto autonomy skips the spec approval but always pauses before Deploy", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({ cwd, home, args: { brief: BRIEF, autonomy: "auto" } });
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "approve-deploy-v1" });
+    assert.deepEqual(run.state.phases, PHASES);
+    assert.ok(!run.journal.pauses.has("approve-spec-v1"));
+    assert.equal((await run.attempt()).result.status, "deployed");
+});
+
+test("failed gate: bounded fix loop, blocked checkpoint, next round on resume", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({
+        cwd, home, args: { brief: BRIEF, autonomy: "auto", maxFixLoops: 1 },
+        responder: who => (who.startsWith("Verify · review") ? failed(who, "E2E test test_claim_upload fails with HTTP 500") : defaultResponder(who)),
+    });
+
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "blocked-verify-r1" });
+    assert.match("blocked-verify-r1", CANVAS.blocked);
+    assert.deepEqual(labels(run.state, "Verify"), ["Verify · lead", "Verify · review", "Verify · fix 1", "Verify · review 2"]);
+    const fix = run.state.calls.find(call => call.label === "Verify · fix 1");
+    assert.match(fix.prompt, /Gate issues to resolve \(fix 1 of 1\):\n- E2E test test_claim_upload fails with HTTP 500/);
+    assert.match(fix.prompt, /without deploying the frontend or backend/, "Verify fixes never deploy the app before the deploy gate");
+    const gate = CANVAS.gate.exec(logMatches(run.state, CANVAS.gate).at(-1));
+    assert.deepEqual(gate.slice(1), ["Verify", "failed", "1 issue: E2E test test_claim_upload fails with HTTP 500 · Verify · review 2 failed"], "failed gates lead with their issues");
+    assert.doesNotMatch(run.state.calls.find(call => call.label === "Verify · review").prompt, /Re-review/, "the first review of round 1 checks from scratch");
+    const recheck = run.state.calls.find(call => call.label === "Verify · review 2").prompt;
+    assert.match(recheck, /Re-review after fix 1\. First confirm, with evidence, that each of these issues is resolved and that the changes broke nothing nearby; report any that persist as issues:\n- E2E test test_claim_upload fails with HTTP 500\nThen finish the remaining checks\./);
+    assert.doesNotMatch(recheck, /Verify · fix 1 done/, "re-reviews never see the fixer's own report");
+    assert.deepEqual(logMatches(run.state, /^Verify · /), [
+        "Verify · lead passed: Verify · lead done. Next: independent review.",
+        "Verify · review found 1 issue: E2E test test_claim_upload fails with HTTP 500. Next: automatic fix 1 of 1.",
+        "Verify · fix 1 passed: Verify · fix 1 done. Next: review 2.",
+        "Verify · review 2 found 1 issue: E2E test test_claim_upload fails with HTTP 500",
+    ], "the last review names no automatic fix once fixes are exhausted");
+    assert.equal(run.state.logs.at(-1), 'Needs you: Verify still fails its gate after 1 automatic fix (E2E test test_claim_upload fails with HTTP 500). Ask Copilot to fix it, or use "Fix in Chat" on the Workflow tab of the Agentic Loop canvas, then resume to retry Verify.');
+    let record = await run.record();
+    assert.equal(record.status, "blocked");
+    assert.equal(record.pending, "blocked-verify-r1");
+
+    run.state.responder = defaultResponder;
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "approve-deploy-v1" });
+    assert.equal(logMatches(run.state, /^Needs you: Verify still fails/).length, 1);
+    assert.ok(run.state.logs.includes("Resumed: retrying Verify as round 2."));
+    const lead = run.state.calls.find(call => call.label === "Verify · lead · r2");
+    assert.ok(lead, "resume retries Verify as round 2");
+    assert.match(lead.prompt, /Round 1 stopped at the Verify gate \(failed\): Verify · review 2 failed/);
+    assert.match(lead.prompt, /a human may have resolved it/);
+    assert.match(run.state.calls.find(call => call.label === "Verify · review · r2").prompt, /Re-review after the round 1 gate\.[^\n]*\n- E2E test test_claim_upload fails with HTTP 500\n/);
+    record = await run.record();
+    assert.deepEqual(record.phases.filter(row => row.phase === "Verify").map(row => `${row.round}:${row.status}`), ["1:failed", "2:passed"]);
+    assert.deepEqual(record.checkpoints.map(row => row.key), ["blocked-verify-r1"]);
+    assert.equal(record.status, "awaiting-approval");
+});
+
+test("blocked makers skip review and fixes; zero fix loops stop at the first failed review", async t => {
+    const { cwd, home } = await workspace(t);
+    const blocked = harness({
+        cwd, home, args: { brief: BRIEF, autonomy: "auto" },
+        responder: who => (who === "Specify · lead" ? { status: "blocked", summary: "Owner role needed", issues: ["Grant Foundry User on the Foundry account"], lessons: [] } : defaultResponder(who)),
+    });
+    assert.deepEqual(await blocked.attempt(), { status: "paused", key: "blocked-specify-r1" });
+    assert.deepEqual(labels(blocked.state), ["Specify · lead"]);
+    assert.equal(logMatches(blocked.state, CANVAS.gate).at(-1), "Specify gate: blocked — 1 issue: Grant Foundry User on the Foundry account · Owner role needed");
+    assert.ok(blocked.state.logs.includes("Specify · lead blocked: Owner role needed"), "a blocked report names no next step");
+    assert.match(blocked.state.logs.at(-1), /^Needs you: Specify is blocked \(Grant Foundry User on the Foundry account\)\. Ask Copilot to fix it, /);
+
+    const strict = await workspace(t);
+    const noFix = harness({
+        ...strict, args: { brief: BRIEF, autonomy: "auto", maxFixLoops: 0 },
+        responder: who => (who === "Specify · review" ? failed(who) : defaultResponder(who)),
+    });
+    assert.deepEqual(await noFix.attempt(), { status: "paused", key: "blocked-specify-r1" });
+    assert.deepEqual(labels(noFix.state), ["Specify · lead", "Specify · review"]);
+
+    const third = await workspace(t);
+    const fixer = harness({
+        ...third, args: { brief: BRIEF, autonomy: "auto" },
+        responder: who => {
+            if (who === "Specify · review") return failed(who);
+            if (who === "Specify · fix 1") return { status: "blocked", summary: "Quota needed", issues: ["Request 50K TPM of gpt-5-mini in eastus2"], lessons: [] };
+            return defaultResponder(who);
+        },
+    });
+    assert.deepEqual(await fixer.attempt(), { status: "paused", key: "blocked-specify-r1" });
+    assert.deepEqual(labels(fixer.state), ["Specify · lead", "Specify · review", "Specify · fix 1"]);
+    assert.match(logMatches(fixer.state, CANVAS.gate).at(-1), /^Specify gate: blocked — 1 issue: Request 50K TPM/);
+});
+
+test("fix loops re-review every passing fix and stop at maxFixLoops", async t => {
+    const { cwd, home } = await workspace(t);
+    let reviews = 0;
+    const run = harness({
+        cwd, home, args: { brief: BRIEF, autonomy: "auto", maxFixLoops: 3 },
+        responder: who => {
+            if (who.startsWith("Specify · review")) return ++reviews < 3 ? failed(who) : passed(who);
+            if (who.startsWith("Verify · review")) return failed(who);
+            return defaultResponder(who);
+        },
+    });
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "blocked-verify-r1" });
+    assert.deepEqual(labels(run.state, "Specify"), ["Specify · lead", "Specify · review", "Specify · fix 1", "Specify · review 2", "Specify · fix 2", "Specify · review 3"]);
+    assert.deepEqual(labels(run.state, "Verify"), ["Verify · lead", "Verify · review", "Verify · fix 1", "Verify · review 2", "Verify · fix 2", "Verify · review 3", "Verify · fix 3", "Verify · review 4"]);
+    const [specify, , verify] = (await run.record()).phases;
+    assert.equal(specify.status, "passed");
+    assert.equal(specify.attempts.length, 6);
+    assert.equal(verify.status, "failed");
+    assert.deepEqual(verify.attempts.at(-1), { role: "review", label: "Verify · review 4", status: "failed", summary: "Verify · review 4 failed", issues: ["Verify · review 4 found a defect"] });
+});
+
+test("skipDeploy ends after Verify without a deploy approval", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({ cwd, home, args: { brief: BRIEF, autonomy: "auto", skipDeploy: true } });
+    const outcome = await run.attempt();
+    assert.equal(outcome.status, "completed");
+    assert.equal(outcome.result.status, "verified");
+    assert.equal(outcome.result.phases.Deploy, "skipped");
+    assert.deepEqual(run.state.phases, ["Specify", "Implement", "Verify"]);
+    assert.ok(!run.journal.pauses.size);
+    assert.ok(run.state.logs.includes("Deploy skipped: skipDeploy is set, so the run ends after Verify."));
+    const record = await run.record();
+    assert.equal(record.status, "verified");
+    assert.equal(record.phases.at(-1).status, "skipped");
+});
+
+test("missing or malformed reports fail closed", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({
+        cwd, home, args: { brief: BRIEF, autonomy: "auto", maxFixLoops: 0 },
+        responder: who => (who === "Specify · lead" ? null : defaultResponder(who)),
+    });
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "blocked-specify-r1" });
+    const record = await run.record();
+    assert.equal(record.phases[0].status, "failed");
+    assert.match(record.phases[0].issues[0], /Specify · lead returned no usable report/);
+});
+
+test("Implement falls back to one sequential build when workstreams overlap", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({
+        cwd, home, args: { brief: BRIEF, autonomy: "auto" },
+        responder: who => (who === "Implement · foundation"
+            ? passed(who, { workstreams: [{ name: "api", goal: "API", files: ["src"] }, { name: "web", goal: "Web", files: ["src/web"] }] })
+            : defaultResponder(who)),
+    });
+    await run.attempt();
+    assert.deepEqual(labels(run.state, "Implement"), ["Implement · foundation", "Implement · build", "Implement · review"]);
+    assert.ok(run.state.logs.includes('Implement plan: sequential build (workstreams "api" and "web" both claim src/web)'));
+});
+
+test("a failed worker is handed to integration instead of stopping the round", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({
+        cwd, home, args: { brief: BRIEF, autonomy: "auto" },
+        responder: who => {
+            if (who === "Implement · web") throw new Error("subagent crashed");
+            return defaultResponder(who);
+        },
+    });
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "approve-deploy-v1" });
+    const integration = run.state.calls.find(call => call.label === "Implement · integration");
+    assert.match(integration.prompt, /- web: failed\. Implement · web returned no report\./);
+});
+
+test("Implement round 2 resumes with one lead instead of re-planning", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({
+        cwd, home, args: { brief: BRIEF, autonomy: "auto", maxFixLoops: 0 },
+        responder: who => (who === "Implement · review" ? failed(who, "Hosted checkpoint returns 403") : defaultResponder(who)),
+    });
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "blocked-implement-r1" });
+    run.state.responder = defaultResponder;
+    await run.attempt();
+    const round2 = labels(run.state, "Implement").filter(name => name.endsWith("· r2"));
+    assert.deepEqual(round2, ["Implement · lead · r2", "Implement · review · r2"]);
+    const lead = run.state.calls.find(call => call.label === "Implement · lead · r2");
+    assert.ok(lead.prompt.includes(TASKS.Implement.lead));
+    assert.match(lead.prompt, /- Hosted checkpoint returns 403/);
+});
+
+test("genuine failures are recorded and rethrown; invalid input stops before any work", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({
+        cwd, home, args: { brief: BRIEF, autonomy: "auto" },
+        responder: who => {
+            if (who === "Specify · review") throw Object.assign(new Error("connection reset by peer"), { name: "ConnectionError" });
+            return defaultResponder(who);
+        },
+    });
+    const outcome = await run.attempt();
+    assert.equal(outcome.status, "error");
+    assert.equal(outcome.error.name, "ConnectionError");
+    const record = await run.record();
+    assert.equal(record.status, "error");
+    assert.equal(record.error, "connection reset by peer");
+
+    const noCwd = harness({ cwd: "", home, args: { brief: BRIEF }, runId: "run-nocwd" });
+    const missing = await noCwd.attempt();
+    assert.equal(missing.status, "error");
+    assert.match(missing.error.message, /no working directory/);
+    assert.equal(noCwd.state.calls.length, 0);
+
+    const invalid = harness({ cwd, home, args: { brief: "too short" }, runId: "run-invalid" });
+    const rejected = await invalid.attempt();
+    assert.equal(rejected.status, "error");
+    assert.match(rejected.error.message, /args\.brief is required/);
+    assert.equal(invalid.journal.steps.size, 0);
+});
+
+test("skills missing on disk are logged and loaded through the skill tool", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({ cwd, home, args: { brief: BRIEF, autonomy: "auto", skipDeploy: true }, dir: path.join(cwd, "x", "y", "z") });
+    assert.equal((await run.attempt()).status, "completed");
+    assert.equal(run.state.logs[1], "Skills not found on disk, so subagents load them with the skill tool: agentic-loop, agentic-loop-specify, agentic-loop-implement, agentic-loop-verify, agentic-loop-deploy, microsoft-foundry");
+    assert.ok(run.state.calls.every(call => call.prompt.includes("(load it with the skill tool)")));
+    assert.equal((await run.record()).skills["agentic-loop-deploy"], "skill-tool");
+});
+
+test("validateArgs enforces the documented contract", () => {
+    assert.deepEqual({ ...validateArgs({ brief: `  ${BRIEF}  ` }) }, {
+        brief: BRIEF, subscriptionId: null, location: null, environmentName: null, scenarioId: null, autonomy: "gated", maxFixLoops: 2, skipDeploy: false,
+    });
+    const full = validateArgs({ brief: BRIEF, subscriptionId: "0000AAAA-BBBB-4CCC-8DDD-EEEEFFFF0000", location: "eastus2", environmentName: "claims-dev", scenarioId: "insurance-claims-triage", autonomy: "auto", maxFixLoops: 5, skipDeploy: true });
+    assert.equal(full.location, "eastus2");
+    assert.equal(full.maxFixLoops, MAX_FIX_LOOPS);
+    assert.ok(Object.isFrozen(full));
+    assert.equal(validateArgs({ brief: BRIEF, location: "auto" }).location, null);
+    for (const [bad, message] of [
+        [null, /args must be an object/],
+        [[], /args must be an object/],
+        [{ brief: BRIEF, model: "gpt" }, /Unknown args: model\. Allowed:/],
+        [{ brief: "short" }, /at least 20 characters/],
+        [{ brief: "x".repeat(20_001) }, /at most 20,000/],
+        [{ brief: BRIEF, location: "East US" }, /Azure region name/],
+        [{ brief: BRIEF, subscriptionId: "not-a-guid" }, /subscription GUID/],
+        [{ brief: BRIEF, environmentName: "1env" }, /2-20 letters/],
+        [{ brief: BRIEF, environmentName: "a".repeat(21) }, /2-20 letters/],
+        [{ brief: BRIEF, scenarioId: "../etc" }, /canvas scenario ID/],
+        [{ brief: BRIEF, autonomy: "yolo" }, /gated or auto/],
+        [{ brief: BRIEF, maxFixLoops: 6 }, /0 to 5/],
+        [{ brief: BRIEF, maxFixLoops: 1.5 }, /0 to 5/],
+        [{ brief: BRIEF, skipDeploy: "yes" }, /boolean/],
+    ]) assert.throws(() => validateArgs(bad), message);
+});
+
+test("META and schemas stay inside the runtime's schema subset and match the canvas phases", () => {
+    const allowed = new Set(["type", "required", "enum", "const", "properties", "items", "anyOf", "oneOf", "allOf"]);
+    const walk = (schema, where) => {
+        for (const [key, value] of Object.entries(schema)) {
+            assert.ok(allowed.has(key), `${where}.${key} is outside the schema subset`);
+            if (key === "properties") for (const [name, child] of Object.entries(value)) walk(child, `${where}.${name}`);
+            if (key === "items") walk(value, `${where}[]`);
+            if (["anyOf", "oneOf", "allOf"].includes(key)) value.forEach((child, index) => walk(child, `${where}.${key}[${index}]`));
+        }
+    };
+    walk(META.argsSchema, "argsSchema");
+    walk(REPORT_SCHEMA, "report");
+    walk(FOUNDATION_SCHEMA, "foundation");
+    assert.equal(META.name, WORKFLOW);
+    assert.deepEqual(META.phases.map(phase => phase.title), [...PHASES]);
+    assert.deepEqual(Object.keys(META.argsSchema.properties).sort(), ["autonomy", "brief", "environmentName", "location", "maxFixLoops", "scenarioId", "skipDeploy", "subscriptionId"]);
+    for (const phase of PHASES) for (const role of ["review", "fix"]) assert.ok(TASKS[phase][role], `${phase} ${role} task`);
+});
+
+test("planWorkstreams accepts disjoint ownership and rejects unsafe plans", () => {
+    const ok = planWorkstreams([
+        { name: "api", goal: "API", files: ["./src/api/", "src\\api\\models.py"], checks: ["pytest"] },
+        { name: "review", goal: "Review UI", files: ["src/web/**/*.tsx"] },
+        { name: "agents", goal: "", files: ["src/agents"] },
+    ]);
+    assert.equal(ok.mode, "parallel");
+    assert.deepEqual(ok.items.map(item => item.name), ["api", "ws review", "agents"]);
+    assert.equal(ok.items[2].goal, "Build agents.");
+    const reasons = [
+        [[], /no workstreams/],
+        [[{ name: "a", goal: "g", files: ["src/a"] }], /one workstream/],
+        [Array.from({ length: 5 }, (_, index) => ({ name: `w${index}`, goal: "g", files: [`src/w${index}`] })), /exceed the limit of four/],
+        [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "b", goal: "g", files: ["infra/app.bicep"] }], /shared path infra/],
+        [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "b", goal: "g", files: ["docs"] }], /shared path docs/],
+        [[{ name: "a", goal: "g", files: ["src/a/**"] }, { name: "b", goal: "g", files: ["src/a/b.py"] }], /both claim src\/a\/b\.py/],
+        [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "b", goal: "g", files: ["**/*.py"] }], /whole workspace/],
+        [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "b", goal: "g", files: ["../outside"] }], /outside it/],
+        [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "A", goal: "g", files: ["src/b"] }], /duplicate workstream/],
+        [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "b", goal: "g", files: [] }], /owns no files/],
+        [[{ name: "a", goal: "g", files: ["src/a"] }, { name: " ", goal: "g", files: ["src/b"] }], /has no name/],
+    ];
+    for (const [list, reason] of reasons) {
+        const plan = planWorkstreams(list);
+        assert.equal(plan.mode, "single");
+        assert.match(plan.reason, reason);
+    }
+    assert.equal(scope("src/api/**/x.py"), "src/api");
+    assert.equal(scope("./a/./b/"), "a/b");
+});
+
+test("normalize bounds untrusted reports", () => {
+    const report = normalize({
+        status: "passed",
+        summary: "line one\nline\u0007two",
+        issues: ["a", "a", " ", 7],
+        lessons: Array.from({ length: 30 }, (_, index) => `lesson ${index}`),
+        endpoints: [
+            { name: "web", url: "https://app.example.com" },
+            { name: "dup", url: "https://app.example.com/" },
+            { name: "creds", url: "https://user:secret@example.com" },
+            { name: "js", url: "javascript:alert(1)" },
+            { url: "http://localhost:8000/health" },
+        ],
+    }, "Deploy · review");
+    assert.equal(report.summary, "line one line two");
+    assert.deepEqual(report.issues, ["a", "7"]);
+    assert.equal(report.lessons.length, 20);
+    assert.deepEqual(report.endpoints, [{ name: "web", url: "https://app.example.com/" }, { name: "localhost:8000", url: "http://localhost:8000/health" }]);
+    assert.equal(normalize({ status: "done", summary: "" }, "X").status, "failed");
+    assert.deepEqual(normalize({ status: "failed", summary: "bad" }, "X").issues, ["X reported failed without listing issues; re-check the gate and record the evidence."]);
+    assert.equal(normalize([], "X").status, "failed");
+    assert.equal(clean("x".repeat(400), 300).length, 300);
+});
+
+test("gate lines are single-line, bounded and parse as canvas gates", () => {
+    const line = gateLine({ phase: "Deploy", status: "failed", summary: "Health check failed", issues: ["x".repeat(500), "second"] });
+    assert.ok(line.length <= 300);
+    assert.match(line, CANVAS.gate);
+    assert.equal(gateLine({ phase: "Verify", status: "passed", summary: "All checks passed", issues: ["note"] }), "Verify gate: passed — All checks passed");
+    assert.equal(gateLine({ phase: "Specify", status: "failed", summary: "Placement passes", issues: ["a", "b"] }), "Specify gate: failed — 2 issues: a · Placement passes");
+    assert.equal(MAX_ROUNDS, 20);
+    assert.match(`blocked-deploy-r${MAX_ROUNDS}`, CANVAS.blocked);
+});
+
+test("note and checkpoint lines stay bounded, keep their next step and never parse as gates", () => {
+    const long = { role: "lead", who: "Deploy · lead", report: { status: "passed", summary: "y".repeat(500), issues: [] } };
+    const note = noteLine(long, "Next: independent review.");
+    assert.ok(note.length <= 300);
+    assert.match(note, /y… Next: independent review\.$/);
+    assert.equal(noteLine({ role: "fix", who: "Verify · fix 1", report: { status: "failed", summary: "Still 500", issues: ["a"] } }), "Verify · fix 1 failed: Still 500");
+    assert.equal(noteLine({ role: "review", who: "Specify · review", report: { status: "failed", summary: "4 defects", issues: ["a", "b", "c", "d"] } }, "Next: automatic fix 1 of 2."), "Specify · review found 4 issues: a. Next: automatic fix 1 of 2.");
+    const blocked = checkpointLines("blocked-implement-r2", { phase: "Implement", round: 2, status: "failed", issues: ["z".repeat(500), "second"], fixes: 2 });
+    assert.ok(blocked.wait.length <= 400);
+    assert.match(blocked.wait, /^Needs you: Implement still fails its gate after 2 automatic fixes \(2 issues; first: z+…\)\. Ask Copilot to fix them, /);
+    assert.equal(checkpointLines("blocked-verify-r1", { phase: "Verify", round: 1, status: "failed", issues: ["a"] }).wait.split(". ")[0], "Needs you: Verify still fails its gate (a)", "zero fix loops name no automatic fixes");
+    assert.equal(blocked.resume, "Resumed: retrying Implement as round 3.");
+    for (const key of CANVAS.approvals) assert.match(checkpointLines(key).wait, /^Needs you: approve /);
+    for (const line of [note, blocked.wait, blocked.resume, ...CANVAS.approvals.flatMap(key => Object.values(checkpointLines(key)))]) {
+        assert.doesNotMatch(line, CANVAS.gate);
+        assert.doesNotMatch(line, CANVAS.brief);
+    }
+});
+
+test("prompts are deterministic, scoped and fall back to the skill tool", async t => {
+    const { cwd, home } = await workspace(t);
+    const skills = await resolveSkills({ cwd, extensionDir, home });
+    const args = validateArgs({ brief: BRIEF, subscriptionId: "0000aaaa-bbbb-4ccc-8ddd-eeeeffff0000", location: "eastus2", scenarioId: "insurance-claims-triage" });
+    const base = { runId: "run-1", cwd, skills, args };
+    const specify = buildPrompt({ base, phase: "Specify", round: 1, role: "lead", who: label("Specify", "lead", 1), task: TASKS.Specify.lead });
+    assert.equal(specify, buildPrompt({ base, phase: "Specify", round: 1, role: "lead", who: label("Specify", "lead", 1), task: TASKS.Specify.lead }));
+    assert.ok(specify.includes(`<brief>\n${BRIEF}\n</brief>`));
+    assert.ok(specify.includes("Canvas scenario: insurance-claims-triage."));
+    assert.ok(specify.includes("pass --subscription to az commands"));
+    assert.ok(specify.includes(path.join(skills.Specify.dir, "SKILL.md")));
+    assert.ok(specify.includes(path.join(skills.router.dir, "references", "sdd.md")));
+    assert.ok(specify.includes("For Foundry platform operations use SKILL.md of the microsoft-foundry skill (load it with the skill tool)."));
+    assert.match(specify, /never search other projects on this machine/);
+    assert.match(specify, /Delete only Azure resources this run created whose provisioning failed/);
+    assert.match(specify, /never fixed sleeps/);
+    assert.doesNotMatch(specify, /quick-start-hosted/, "only Implement creates hosted agents");
+    const verify = buildPrompt({ base, phase: "Verify", round: 2, role: "review", who: label("Verify", "review", 2), task: TASKS.Verify.review });
+    assert.ok(!verify.includes(BRIEF), "only Specify sees the brief; later phases read the spec");
+    assert.match(verify, /independent reviewer \(Verify · review · r2\)/);
+    assert.match(verify, /earlier reports are claims, not evidence/);
+    assert.match(verify, /Finish every check before you report/);
+    assert.doesNotMatch(verify, /Re-review/, "a review without recheck issues starts from scratch");
+    const worker = buildPrompt({ base, phase: "Implement", round: 1, role: "worker", who: "Implement · api", task: TASKS.Implement.worker, workstream: { name: "api", goal: "API", files: ["src/api"], checks: [] } });
+    assert.match(worker, /You own: src\/api/);
+    assert.match(worker, /Edit only the files you own/);
+    assert.ok(worker.includes("Hosted agents start from foundry-agent/create/quick-start-hosted.md of the microsoft-foundry skill (load it with the skill tool)."));
+    const foundry = { ...skills, foundry: { name: "microsoft-foundry", dir: path.join(home, ".agents", "skills", "microsoft-foundry"), source: "personal" } };
+    assert.ok(buildPrompt({ base: { ...base, skills: foundry }, phase: "Implement", round: 1, role: "lead", task: TASKS.Implement.foundation }).includes(`Hosted agents start from ${path.join(home, ".agents", "skills", "microsoft-foundry", "foundry-agent", "create", "quick-start-hosted.md")}.`));
+    const fallback = { ...skills, Verify: { name: "agentic-loop-verify", dir: null, source: "skill-tool" } };
+    assert.match(buildPrompt({ base: { ...base, skills: fallback }, phase: "Verify", round: 1, role: "lead", task: TASKS.Verify.lead }), /SKILL\.md of the agentic-loop-verify skill \(load it with the skill tool\)/);
+});
+
+test("skill resolution prefers project overrides, then the shipping plugin or repository", async t => {
+    const { cwd, home } = await workspace(t);
+    const override = path.join(cwd, ".github", "skills", SKILLS.Verify);
+    await mkdir(override, { recursive: true });
+    await writeFile(path.join(override, "SKILL.md"), "---\nname: agentic-loop-verify\n---\n");
+    const skills = await resolveSkills({ cwd, extensionDir, home });
+    assert.deepEqual(skills.Verify, { name: "agentic-loop-verify", dir: override, source: "project" });
+    assert.equal(skills.router.source, "repository");
+    const nowhere = await resolveSkills({ cwd, extensionDir: path.join(cwd, "a", "b", "c"), home });
+    assert.equal(nowhere.Specify.source, "skill-tool");
+    assert.equal(nowhere.Verify.source, "project");
+});
+
+test("the flight record reducer folds events and rejects unknown ones", () => {
+    const base = { phases: [], checkpoints: [], endpoints: [], status: "running", pending: null };
+    const paused = reduce(base, { type: "pending", key: "approve-spec-v1", kind: "approve", at: "t1" });
+    assert.equal(paused.status, "awaiting-approval");
+    const resumed = reduce(paused, { type: "resumed", key: "approve-spec-v1", kind: "approve", pausedAt: "t1", at: "t2" });
+    assert.deepEqual(resumed.checkpoints, [{ key: "approve-spec-v1", kind: "approve", pausedAt: "t1", resumedAt: "t2" }]);
+    assert.equal(resumed.status, "running");
+    assert.equal(paused.status, "awaiting-approval", "reduce is pure");
+    assert.deepEqual(paused.checkpoints, []);
+    assert.throws(() => reduce(base, { type: "nope", at: "t" }), /Unknown flight record event/);
+    assert.equal(recordFile("run/../x y"), ".agentic-loop/runs/run_.._x_y.json");
+});
+
+test("canvas contract pin: agentic-loop-canvas parses what the workflow emits", async t => {
+    let source;
+    try { source = await readFile(new URL("../../agentic-loop-canvas/lib/live.mjs", import.meta.url), "utf8"); }
+    catch { t.skip("agentic-loop-canvas is not installed next to this extension"); return; }
+    for (const regex of [CANVAS.gate, CANVAS.blocked, CANVAS.brief]) assert.ok(source.includes(`/${regex.source}/`), `canvas regex changed: ${regex}`);
+    for (const key of CANVAS.approvals) assert.ok(source.includes(`"${key}"`), `canvas approval ${key} missing`);
+    assert.ok(source.includes(`WORKFLOW = "${WORKFLOW}"`));
+    assert.ok(source.includes(`PHASES = Object.freeze(${JSON.stringify(PHASES).replace(/,/g, ", ")})`));
+});

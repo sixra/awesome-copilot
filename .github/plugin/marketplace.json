@@ -49,6 +49,12 @@
       }
     },
     {
+      "name": "agentic-loop",
+      "source": "plugins/agentic-loop",
+      "description": "Build agentic solutions on Microsoft Foundry, GitHub and Azure. Prototype in an existing Foundry project, or run spec-driven delivery: a dynamic workflow that specifies, implements, verifies and deploys with azd behind evidence gates. Includes a canvas with 61 industry scenarios, a live workflow view and Foundry enablement, plus an improve mode that learns from past runs.",
+      "version": "1.0.0"
+    },
+    {
       "name": "ai-ready",
       "description": "Analyze any repository and generate AI-ready configuration — AGENTS.md, copilot-instructions.md, CI workflows, issue templates, and more. Mines your PR review patterns and creates files customized to your stack.",
       "version": "1.3.0",
