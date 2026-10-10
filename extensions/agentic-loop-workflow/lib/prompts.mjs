@@ -45,26 +45,31 @@ const ROLES = {
         rules: [
             "You have fresh context. Do not edit source, infrastructure, docs or LOOP.md. Rerun the checks yourself: earlier reports are claims, not evidence.",
             "Finish every check before you report, so this review finds every blocking issue at once.",
-            "An issue is a verified defect that fails a gate or checklist item, or that would make a later phase build the wrong thing, fail a test or deployment, or break a security or RBAC rule. Give its evidence and the fix. Leave out style preferences and optional improvements.",
+            "An issue is a verified defect: a failed gate or checklist item, a brief requirement that is missing or contradicted, or a fault that would fail a later test or deployment or break a security or RBAC rule. Give its evidence and the fix. Leave out style preferences, optional improvements and details the contract deliberately leaves to the implementer.",
         ],
     },
     fix: { title: "fixer", rules: ["Fix each root cause in the smallest scope and correct other instances of it in the same artifacts. Rerun each failing check and then the affected suite, and upsert the lessons you verify in LOOP.md."] },
 };
 
+// Every role in the phase follows these, because an unneeded deployment costs minutes and can hide what changed.
+const PHASE_RULES = {
+    Implement: ["Deploy only the checkpoint services (MCP servers, skills, connections, toolbox and agents); the frontend, backend and workers run locally until Deploy. Redeploy a service only when its source or configuration changed since its last verified deployment, and reproduce agent defects locally before redeploying the agent."],
+};
+
 export const TASKS = Object.freeze({
     Specify: {
         lead: "Run Steps 1-4 without asking questions, updating existing artifacts instead of starting over. Then self-check the Validate checklist.",
-        review: "Run the Validate checklist against docs/spec.md and .azure/deployment-plan.md, and check that they cover every requirement and decision in the brief. Rerun read-only placement or RBAC checks when their evidence is missing or stale.",
-        fix: "Resolve the issues in docs/spec.md and .azure/deployment-plan.md. Rerun read-only preflight checks where evidence is missing.",
+        review: "Run the Validate checklist against docs/spec.md and .azure/deployment-plan.md, and check that they cover every requirement and decision in the brief. Judge the contract, not completeness: interfaces, schemas, auth, errors and decisions must be frozen, while internal algorithms, storage layouts and retry or recovery mechanics stay open unless the brief requires them. Rerun read-only placement or RBAC checks when their evidence is missing or stale.",
+        fix: "Resolve the issues in docs/spec.md and .azure/deployment-plan.md by tightening existing text; add a mechanism only when an issue requires one. Rerun read-only preflight checks where evidence is missing.",
     },
     Implement: {
-        lead: "Resume Implement against the existing workspace and Azure resources: re-check sections 1-3, complete or repair every unfinished step without redoing passing work, then run section 4 (Record). Self-check the Gate.",
+        lead: "Resume Implement against the existing workspace and Azure resources. Start with read-only state checks (azd env get-values, hosted agent versions, container app revisions), then re-check sections 1-3 and complete or repair every unfinished step without redoing passing work. Then run section 4 (Record) and self-check the Gate.",
         foundation: "Run sections 1 (Scaffold) and 2 (Infra and services, including azd provision), then section 3 steps 1-2: contract first and the hosted integration checkpoint. Then plan the rest of the build from the spec workstreams: up to four workstreams, each with a name, goal, exclusive files or folders, and acceptance checks. Shared files stay with the lead: azure.yaml, infra/, docs/, .env, LOOP.md and lockfiles. Return no workstreams when the remaining work is small or cannot be split into disjoint files.",
         worker: "Build your workstream against the frozen contract in docs/spec.md and run its acceptance checks.",
         build: "Build the remaining work in sequence (section 3 step 3), then run section 3 step 4 (Integration) and section 4 (Record). Self-check the Gate.",
         integration: "Run section 3 step 4 (Integration) and section 4 (Record): merge the workstreams, finish any that failed, resolve their issues, run builds, linters and unit tests, lock Python dependencies and write docs/implementation.md. Self-check the Gate.",
         review: "Check the Gate: confirm the provisioned resources in Azure and that their regions and resource groups match .azure/deployment-plan.md, rerun the hosted checkpoint invocation, rerun builds and unit tests, confirm the backend calls each agent through its dedicated endpoint with scope https://ai.azure.com/.default, and check the code against the contract and the spec scope.",
-        fix: "Fix the issues, complete any unfinished Implement steps, rerun the affected checks and update docs/implementation.md.",
+        fix: "Fix the issues, then complete every unfinished Implement step through section 4, including the build and integration if they have not run. Rerun the affected checks and update docs/implementation.md.",
     },
     Verify: {
         lead: "Run sections 1-5, except the Test table's Review row: an independent reviewer runs it next.",
@@ -131,6 +136,11 @@ export function buildPrompt({ base, phase, round, role, who, task, previous, fix
     if (recheck?.issues?.length) {
         sections.push(`Re-review after ${recheck.from}. First confirm, with evidence, that each of these issues is resolved and that the changes broke nothing nearby; report any that persist as issues:\n${bullets(recheck.issues)}\nThen finish the remaining checks.`);
     }
-    sections.push(`Rules:\n${bullets([...COMMON, ...ROLES[kind].rules])}`, REPORT);
+    sections.push(`Rules:\n${bullets([...COMMON, ...(PHASE_RULES[phase] ?? []), ...ROLES[kind].rules])}`, REPORT);
     return sections.join("\n\n");
+}
+
+// The failed attempt may have changed the workspace or Azure before it ended, so the retry continues instead of starting over.
+export function retryPrompt(prompt, who) {
+    return `${prompt}\n\nRetry: the previous attempt (${who}) ended without a report, often after a provider error, and may have changed the workspace or Azure first. Check the current state of both, keep the work that verifies, then finish the task and report. Do not start over.`;
 }

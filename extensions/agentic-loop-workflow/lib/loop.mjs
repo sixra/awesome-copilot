@@ -1,8 +1,8 @@
 import os from "node:os";
 import path from "node:path";
 import { PHASES, firstLine, validateArgs } from "./args.mjs";
-import { FOUNDATION_SCHEMA, REPORT_SCHEMA, TASKS, buildPrompt, label } from "./prompts.mjs";
-import { clean, createRecord, endpoints, normalize, planWorkstreams, recordFile, reduce, union, writeRecord } from "./record.mjs";
+import { FOUNDATION_SCHEMA, REPORT_SCHEMA, TASKS, buildPrompt, label, retryPrompt } from "./prompts.mjs";
+import { clean, createRecord, endpoints, missing, normalize, planWorkstreams, recordFile, reduce, union, writeRecord } from "./record.mjs";
 import { missingSkills, resolveSkills } from "./skills.mjs";
 
 export const MAX_ROUNDS = 20;
@@ -101,10 +101,20 @@ class Run {
         });
     }
 
+    // Each report is journaled under its unique label, so a resume replays it, even a missing one, instead of rerunning the subagent.
+    // A subagent that ends without a report, usually after a provider error, gets one retry that continues its work; a second miss blocks.
     async call({ phase, round, role, name = role, schema = REPORT_SCHEMA, ...context }) {
         const who = label(phase, name, round);
         const prompt = buildPrompt({ base: this.base, phase, round, role, who, ...context });
-        return { role, who, report: normalize(await this.ctx.agent(prompt, { label: who, schema }), who) };
+        const ask = (key, text, retry) => this.ctx.step(`report-${key}-v1`, async () => {
+            if (retry) this.ctx.log(`${who} ended without a report, often after a provider error. Retrying it once.`);
+            const result = await this.ctx.agent(text, { label: key, schema });
+            if (result != null) return normalize(result, who);
+            return retry ? missing(who) : null;
+        });
+        const report = await ask(who, prompt, false);
+        if (report) return { role, who, report };
+        return { role, who, report: await ask(`${who} · retry`, retryPrompt(prompt, who), true), retried: true };
     }
 
     async phase(phase) {
@@ -180,7 +190,7 @@ class Run {
                 status: verdict.status,
                 summary: verdict.summary,
                 at,
-                attempts: attempts.map(({ role, who, report }) => ({ role, label: who, status: report.status, summary: report.summary, issues: report.issues })),
+                attempts: attempts.map(({ role, who, report, retried }) => ({ role, label: who, status: report.status, summary: report.summary, issues: report.issues, ...(retried && { retried }) })),
                 issues: verdict.issues,
                 lessons: union(reports.map(report => report.lessons)),
                 assumptions: union(reports.map(report => report.assumptions)),
@@ -232,8 +242,8 @@ export async function runLoop(ctx, { extensionDir, home = os.homedir(), now = ()
         const skills = await resolveSkills({ cwd, extensionDir, home });
         const startedAt = now();
         ctx.log(`Brief: ${firstLine(args.brief)}`);
-        const missing = missingSkills(skills);
-        if (missing.length) ctx.log(`Skills not found on disk, so subagents load them with the skill tool: ${missing.join(", ")}`);
+        const absent = missingSkills(skills);
+        if (absent.length) ctx.log(`Skills not found on disk, so subagents load them with the skill tool: ${absent.join(", ")}`);
         await save(ctx, cwd, createRecord({ runId: ctx.runId, args, setup: { skills, startedAt } }));
         return { cwd, skills, startedAt };
     });

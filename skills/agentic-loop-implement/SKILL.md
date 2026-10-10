@@ -44,6 +44,8 @@ Validate with `az bicep build --file infra/app/main.bicep`. Then run `azd provis
 3. **Workstreams.** Build the spec workstreams in parallel when subagents are available. Each worker owns its exclusive files and runs its acceptance checks. Shared files stay with the lead: `azure.yaml`, `infra/`, the contract, `.env` and lockfiles.
 4. **Integration.** Integrate centrally. Run builds, linters and unit tests, and lock Python dependencies (`uv.lock` or pinned versions).
 
+**Deployments.** Implement deploys only the checkpoint services (MCP servers, skills, connections, toolbox and agents); the frontend, backend and workers run locally until Deploy. Reproduce agent defects locally first (`azd ai agent run` with `invoke --local`), and redeploy a hosted agent only for hosted-only behavior, once per verified fix. Redeploy only services whose source or configuration changed since their last verified deployment. After a transient `postdeploy` failure, rerun only the hook with `azd hooks run postdeploy`.
+
 Agent code follows these references:
 
 - [foundry-hosted-agent.md](../agentic-loop/references/foundry-hosted-agent.md)

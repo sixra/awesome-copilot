@@ -36,6 +36,7 @@ Invoke the deployed endpoint with an authorized caller, but ensure downstream mo
 ## Probes and pass criteria
 
 - Run a minimal direct model Responses request and toolbox skill/tool probe **inside the hosted identity/context path**, then run the equivalent SDK-mediated agent request. Record the actual skill version loaded and MCP tool name/call result using SDK/tool events or safe correlated telemetry, not the model's claim that it used them. A local run proves readiness and skill load only: `AgenticIdentityToken` tool calls fail outside the host ("requires AgentInstanceClientId and AgentBlueprintClientId").
+- Toolbox MCP calls can appear as `<server>___<tool>` in Responses output: parse the server prefix and require the exact tool name. Check the toolbox version the agent uses: `TOOLBOX_VERSION` must match the version in the toolbox MCP endpoint, and read back that version, not the server default.
 - Exercise JSON and SSE using the actual returned content type. For SSE, consume through `response.completed`; EOF, `[DONE]`, text deltas, `session.idle` or a stopped spinner alone are insufficient. For nonstreaming JSON, require a final response object with `status: "completed"`; queued/in-progress responses require bounded polling. Also prove the streaming terminal event when streaming is supported.
 - Treat `response.failed`, `response.incomplete`, cancellation, timeout, protocol errors and embedded error payloads as failures, even with HTTP 200 or CLI exit code zero. A CLI wrapper must parse the response and return failure for unsuccessful terminal status.
 - Require nonempty, schema-valid application output with expected probe values and evidence of every required skill/tool/model operation. Reject absent upstream fields explicitly; do not turn missing results into empty success.
@@ -54,6 +55,7 @@ Invoke the deployed endpoint with an authorized caller, but ensure downstream mo
 | HTTP success but failed/missing output | Inspect response ID, final status, structured error and matching service request IDs. Parse JSON/SSE correctly; never reinterpret transport success as agent success. |
 | Intermittent failures under load | Check request-local context, response-ID matching, session isolation, token refresh, cancellation and atomic tool-budget reservation before async work. |
 | Missing or host-only telemetry | Check host and runtime producer configuration separately, active trace context, receiver/export route, destination/schema, actual exporter identity permissions, sampling and lifecycle flush. Allow bounded ingestion delay; do not pass the gate or repeatedly redeploy unchanged code. |
+| Transient `postdeploy` failure after a successful deploy | Rerun only the idempotent hook (`azd hooks run postdeploy`) and its read-back checks; do not redeploy unchanged code. |
 
 Log safe structured diagnostics: application correlation ID, response ID, hosted and SDK session IDs, agent name/version, available service request IDs, SDK/runtime versions, status/error code and sanitized error summary. Capture response headers such as `x-agent-session-id` on failures too. Exclude Authorization, cookies, tokens, opaque caller-context values, `.env` dumps and sensitive bodies.
 
@@ -64,7 +66,8 @@ Retry only transient failures within a declared attempt/deadline budget; do not 
 Add targeted tests before expanding each boundary, then run the applicable full-app cases at local acceptance:
 
 - Missing/null upstream IDs, output, tool results or schema fields produce explicit errors.
-- JSON and SSE success, embedded errors, incomplete status, truncated streams and timeouts produce correct terminal state and error rendering.
+- Responses text comes from the final `message` output item: the top-level `output_text` can be null when tool items precede it. Omit `previous_response_id` on a first turn; null returns HTTP 400.
+- JSON and SSE success, embedded errors, incomplete status, truncated streams and timeouts produce correct terminal state and error rendering. When the API emits only a terminal SSE event, call the agent without upstream streaming, which can take a different model path, and test that JSON and SSE return the same validated result.
 - Concurrent/interleaved requests map events and results to their own response/request/session IDs; a late result cannot resolve another request or overwrite its persisted state.
 - Reserve tool-call limits atomically **before** dispatch/await; simultaneous calls cannot exceed the cap. Test the boundary and rejected calls, including failure/cancellation accounting.
 - Token expiry/refresh and per-request context reach both model and toolbox without cross-user/session leakage.

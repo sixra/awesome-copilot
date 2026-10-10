@@ -28,11 +28,13 @@ The primary toolbox path is brokered:
 
 Generated plans should make the brokered toolbox/tool identity path the default. Runtime instance managed identity Search Reader is not part of the baseline; add it only when direct retrieval is explicitly selected for troubleshooting or unsupported-tool scenarios.
 
+The connection's auth mode decides who calls Search: a `ProjectManagedIdentity` connection calls as the project's managed identity (one validated build needed Search Index Data Reader plus Search Service Contributor on it). When proving least privilege by removing a role, wait past the connection's token cache before trusting continued access.
+
 ## Citations and refusal
 
-Return source document, section, and anchor/chunk id for every grounded claim, sourced from retrieved evidence. Treat "answer with zero citations" as a refusal in the API contract.
+Return source document, section, and anchor/chunk id for every grounded claim. Rebuild each citation (title, section, anchor, non-routable source URI) from a retrieved document that survived filtering; never pass through provider Search URLs or citation fields the model wrote. Treat "answer with zero citations" as a refusal in the API contract.
 
-Refusal must be deterministic. Prefer a structural signal from the grounding tool - no citations survived retrieval / reranking - rather than string-matching model prose. If the toolbox exposes a reranker or relevance threshold, keep it environment-configurable per corpus and apply it before synthesis so weak matches become empty evidence.
+Refusal must be deterministic. Prefer a structural signal from the grounding tool - no citations survived retrieval / reranking - rather than string-matching model prose or trusting a model-reported refusal flag. Probe raw retrieval with one supported and one unsupported query first: a toolbox Search tool can return low-scoring documents instead of an empty list. If the toolbox exposes a reranker or relevance threshold, keep it environment-configurable per corpus and apply it before synthesis so weak matches become empty evidence. Otherwise filter the tool's structured documents by an environment-configured minimum score in the agent, reject malformed scores, and refuse when none survive.
 
 ## Runtime validation
 

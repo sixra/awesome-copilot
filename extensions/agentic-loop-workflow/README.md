@@ -16,7 +16,8 @@ Each phase follows its skill (`agentic-loop-specify`, `-implement`, `-verify` or
 - **Lead**: does the phase work and records lessons in `LOOP.md`.
 - **Review**: an independent reviewer reruns every check and reports all blocking issues at once, with evidence. Earlier reports count as claims, not evidence.
 - **Fix**: a fixer resolves the issues, then a new review first confirms each one is resolved before finishing its checks. This repeats up to `maxFixLoops` times.
-- **Implement**: the foundation step plans up to four workstreams. If they own disjoint files, they run in parallel before integration; otherwise the build runs in sequence.
+- **Implement**: the foundation step plans up to four workstreams. If they own disjoint files, they run in parallel before integration; otherwise the build runs in sequence. Implement deploys only the hosted checkpoint services, and only when they changed; the app services deploy in Deploy.
+- **Retry**: a subagent that ends without a report, usually after a provider error, is retried once and told to continue from the current workspace and Azure state. A second miss blocks the gate instead of spending fix loops.
 
 The gate passes only on the reviewer's verdict.
 
@@ -26,9 +27,11 @@ The gate passes only on the reviewer's verdict.
 | --- | --- | --- |
 | `approve-spec-v1` | After Specify, when `autonomy` is `gated` | The spec and deployment plan are approved for provisioning |
 | `approve-deploy-v1` | Before Deploy, always | Deployment to the planned target is approved |
-| `blocked-<phase>-r<n>` | A gate failed after its fix loops, or needs a human decision | The issue is resolved; round n+1 re-checks it first |
+| `blocked-<phase>-r<n>` | A gate failed after its fix loops, a subagent ended twice without a report, or a human decision is needed | The issue is resolved; round n+1 continues from the current state and re-checks it first |
 
-Each pause posts a `Needs you:` line in Chat that names the decision. The flight record lists every gate issue, and the canvas shows them. Resume with `run_dynamic_workflow` and `resumeFromRunId`, or from the canvas. Completed steps replay from the journal, so resuming never repeats finished work.
+Each pause posts a `Needs you:` line in Chat that names the decision. The flight record lists every gate issue, and the canvas shows them. Resume with `run_dynamic_workflow` and `resumeFromRunId`, or from the canvas. Completed steps, including every subagent report, replay from the journal, so resuming never repeats finished work.
+
+Workflow subagents don't appear in `list_agents` or `read_agent`, and the flight record changes only when a step ends, so a quiet hour inside one Implement step is normal. The canvas Workflow tab shows live subagent activity.
 
 ## Arguments
 

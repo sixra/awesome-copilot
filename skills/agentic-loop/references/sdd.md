@@ -39,9 +39,12 @@ A pause posts a `Needs you:` line. Answer it in one message: what paused and why
 | --- | --- | --- |
 | `approve-spec-v1` | Spec ready for review | Summarize scope, assumptions, region and cost drivers; apply requested edits to the artifacts |
 | `approve-deploy-v1` | Verified and ready to deploy (always pauses) | Summarize resources, cost, security and region impact; apply requested edits without deploying |
-| `blocked-<phase>-r<n>` | A gate failed after its fix rounds, or a decision is needed (permissions, quota, cost, security) | List every issue from that phase and round in the flight record's `phases`, not just the first from the log. Fix and verify each root cause in the artifacts, record the evidence and `LOOP.md` lessons. Resuming reruns the phase, and its review first confirms these issues are resolved. |
+| `blocked-<phase>-r<n>` | A gate failed after its fix rounds, a subagent ended twice without a report (usually a provider error), or a decision is needed (permissions, quota, cost, security) | List every issue from that phase and round in the flight record's `phases`, not just the first from the log. Fix and verify each root cause in the artifacts, record the evidence and `LOOP.md` lessons. Resuming starts round n+1, which continues from the current state; its review first confirms these issues are resolved. |
 
 - Resume with `run_dynamic_workflow` and `resumeFromRunId` only when the user asks. When a canvas prompt says "Do not resume the run", don't: the canvas resumes it.
+- **Liveness.** Workflow subagents don't appear in `list_agents` or `read_agent`, and the flight record and credit totals change only when a step ends; one Implement step can run for over an hour. The canvas Workflow tab shows live subagent activity. Never cancel, pause or restart a run to unstick it; only the user decides that.
+- **Provider errors.** A subagent that ends without a report is retried once with instructions to continue from the current state; a second miss blocks the phase. Check the session log, then resume.
+- **Effort.** Subagents inherit the session's model and reasoning effort. Prefer medium or high: maximum effort multiplies step time.
 - A run that ends in `error` with `workflow_limit_reached` resumes with only that limit raised, after approval. For other errors, read the run with `dynamic_workflows_manage` (`inspect-run`), fix the cause and start a new run.
 - Never weaken a gate, skip a phase or report unverified checks as passed.
 - Without the workflow, or for a single named phase, run the phase skills yourself in order, checking each gate and pausing at the same approvals.

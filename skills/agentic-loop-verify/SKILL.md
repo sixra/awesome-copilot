@@ -48,6 +48,8 @@ Run every azd command from the workspace root, with `AZURE_DEV_USER_AGENT=micros
 
 Contract or scope changes go to `docs/spec.md` first. Never weaken a test or a threshold to get a pass.
 
+For a failed evaluation row, read its per-row result. A judge can fail a correct refusal: when the row's stored tool calls and output match the contract, record it as an evaluator false negative with that evidence and keep the agent's behavior. Never change the agent just to raise a score.
+
 ## 5. Record
 
 Write `docs/verify.md` with:

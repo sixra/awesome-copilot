@@ -424,6 +424,98 @@
         "Checks that the run's `Agent: <name> v<N>` line names the intended agent and version before accepting the results.",
         "Discards the mismatched adjudicator results and reruns that agent's evaluation."
       ]
+    },
+    {
+      "id": 30,
+      "prompt": "Our SDD workflow run paused at `blocked-implement-r1` with the issue \"Implement · lead ended twice without a report, likely a provider error\". Since then the agent is deployed and the backend tests pass. What should we do before resuming, and what will the resumed round do?",
+      "expected_output": "Treats the pause as a provider failure, checks the session log and the current state read-only, records the evidence, resumes the same run and explains that round 2 continues from the current state without repeating finished work.",
+      "files": [],
+      "expectations": [
+        "Identifies the pause as a provider or reporting failure, not an application defect, and checks the session log for the error.",
+        "Checks the current state read-only (`azd env get-values`, hosted agent versions, Container App revisions) instead of starting over.",
+        "Records the existing evidence in `docs/implementation.md` and the lesson in `LOOP.md` before resuming.",
+        "Resumes the same run with `run_dynamic_workflow` and `resumeFromRunId` when the user asks, rather than starting a new run.",
+        "Explains that Implement round 2 continues from the current state, its review first re-checks the issue, and finished steps replay from the journal.",
+        "Does not rebuild, reprovision or redeploy unchanged services."
+      ]
+    },
+    {
+      "id": 31,
+      "prompt": "Our SDD workflow run has shown `running` in Implement for 95 minutes. `list_agents` shows no background agents, the flight record hasn't changed and the credit total is the same as an hour ago. It looks stalled. Should we cancel and restart it?",
+      "expected_output": "Explains why these signals don't show a stall, checks live activity in the canvas Workflow tab and the workspace, and leaves cancellation to the user without cancelling, pausing or restarting.",
+      "files": [],
+      "expectations": [
+        "Does not cancel, pause, restart or resume the run, or start a new one.",
+        "Explains that workflow subagents don't appear in `list_agents` or `read_agent`.",
+        "Explains that the flight record and credit totals change only when a step ends, and that one Implement step can run for over an hour.",
+        "Checks live activity in the canvas Workflow tab and recent workspace or Azure changes.",
+        "Reports the evidence and leaves any cancellation to the user."
+      ]
+    },
+    {
+      "id": 32,
+      "prompt": "The third Specify review of our customer-service SDD run flagged three issues: the idempotency store's eviction algorithm isn't specified, the retry backoff for Search calls isn't frozen and the spec doesn't define the SQLite layout for conversation history. The brief mentions none of these, and the spec is already 1,500 lines. How should the fixer respond?",
+      "expected_output": "Classifies the findings as implementation details left to Implement, adds no mechanisms for them, confirms the cross-component contract is frozen and tightens the oversized spec.",
+      "files": [],
+      "expectations": [
+        "Classifies the eviction algorithm, retry backoff and storage layout as internal details owned by Implement, because the brief doesn't require them.",
+        "Does not add sections or mechanisms to the spec to satisfy these findings.",
+        "Confirms the spec freezes the cross-component interfaces, schemas, auth, errors and decisions.",
+        "Notes that a 1,500-line spec is disproportionate (most fit in about 600 lines) and tightens existing text instead of expanding it.",
+        "Records why the findings aren't blocking, so the next review can confirm it."
+      ]
+    },
+    {
+      "id": 33,
+      "prompt": "During SDD Implement, our hosted triage agent returns the wrong citation. The fixer changed `src/agents/triage/main.py`. The backend and frontend Container Apps are scaffolded but not yet deployed. Which services should be deployed now, and how should the fix be verified?",
+      "expected_output": "Reproduces and verifies the fix locally first, redeploys only the triage agent once, keeps the app services local until Deploy and verifies the hosted fix with a hosted invocation.",
+      "files": [],
+      "expectations": [
+        "Reproduces the defect locally first with `azd ai agent run` and `invoke --local`.",
+        "Redeploys only the triage agent, once, after the local fix is verified (for example `azd deploy <service>`), not `azd up`.",
+        "Keeps the backend and frontend running locally; they deploy in the Deploy phase.",
+        "Does not redeploy services whose source and configuration are unchanged.",
+        "Verifies the hosted fix with a hosted invocation, checks the citation against the retrieved evidence and records the lesson in `LOOP.md`."
+      ]
+    },
+    {
+      "id": 34,
+      "prompt": "Rapid prototyping: the HR assistant agent and its MCP server are deployed in Foundry, the frontend and backend run locally and every test passes. The user approved deploying the agent earlier. What's the next step?",
+      "expected_output": "Reports the local URLs and results, asks with ask_user whether to deploy the backend and frontend to Azure and waits, without treating earlier approvals as consent.",
+      "files": [],
+      "expectations": [
+        "Reports the running local URLs and the test results.",
+        "Asks with `ask_user`, offering choices, whether to deploy the backend and frontend to Azure, and waits for the answer.",
+        "Does not treat passing tests or the earlier agent approval as approval to deploy the app.",
+        "Does not report the build as complete before the user answers.",
+        "If the user approves, deploys with `az containerapp up --source <dir>`, then moves image pulls to a managed identity with `AcrPull` and removes the registry admin secret."
+      ]
+    },
+    {
+      "id": 35,
+      "prompt": "Our grounded claims agent should refuse when the Foundry IQ knowledge base has no evidence. \"Does my policy cover alien abduction?\" returns an answer with two citations whose Search scores are 0.62 and 0.58. The toolbox's `azure_ai_search` tool has no relevance threshold option. How do we make refusal deterministic, and how should citations be built?",
+      "expected_output": "Calibrates with raw retrieval probes, filters the tool's documents by an environment-configured minimum score in the agent, refuses deterministically when none survive and rebuilds citations from surviving documents.",
+      "files": [],
+      "expectations": [
+        "Probes raw retrieval with a supported and an unsupported query to see the score distribution.",
+        "Filters the tool's structured documents by an environment-configured minimum score in the agent, rejecting malformed or missing scores.",
+        "Returns the deterministic insufficient-evidence response when no document survives, instead of relying on the model's prose or a model-reported refusal flag.",
+        "Rebuilds each citation from a surviving document (title, section, anchor, non-routable URI) and never passes through Search URLs or model-written citation fields.",
+        "Adds tests for both the supported and the unsupported query."
+      ]
+    },
+    {
+      "id": 36,
+      "prompt": "Our FastAPI backend calls a hosted Foundry agent through the Responses API. JSON requests sometimes fail because `output_text` is null when the agent called tools. The SSE endpoint calls the agent with `stream=True` and then emits one terminal event, but its citations have invalid claim IDs. First turns send `previous_response_id: null`. Fix the client and its tests.",
+      "expected_output": "Reads the final message item, omits previous_response_id on first turns, calls the agent without upstream streaming for terminal-only SSE and adds JSON/SSE parity and multi-item regression tests.",
+      "files": [],
+      "expectations": [
+        "Reads the answer from the last `message` output item when the top-level `output_text` is null.",
+        "Omits `previous_response_id` on a first turn instead of sending null.",
+        "Calls the agent without upstream streaming, because the API emits only a terminal SSE event and upstream streaming can take a different model path.",
+        "Adds a test that JSON and SSE return the same validated result, plus a regression test for multi-item output.",
+        "Changes only the backend, without redeploying the agent or unrelated services."
+      ]
     }
   ]
 }

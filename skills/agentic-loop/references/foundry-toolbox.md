@@ -93,7 +93,7 @@ tools:
 | `connections` | Existing project connections to attach by `name`. `index` required only for **CognitiveSearch** (Azure AI Search); `instance_name` required only for **GroundingWithCustomSearch**. Categories: **RemoteTool (MCP)**, **CognitiveSearch**, **RemoteA2A**, **GroundingWithCustomSearch**. |
 | `skills` | Optional. Existing project skills attached by reference — each needs `name`; `version` is optional (omit to follow the skill's default version). |
 | `tools` | Raw Foundry tool entries (OpenAI.Tool shape), forwarded verbatim. Use for connectionless tools (`web_search`, `file_search`, `code_interpreter`, `capture_structured_outputs`) or any type not exposed by `connections`. Each needs `type`; an optional `name` must match `^[A-Za-z0-9_-]+$`. |
-| `policies` | Optional per-version governance. `policies.rai_config.rai_policy_name` selects the Responsible AI content-filter policy applied to this version (the alias `name` is also accepted). |
+| `policies` | Optional per-version governance. Set `policies.rai_config.rai_policy_name` to the full ARM ID of the account's Responsible AI policy (`…/accounts/<account>/raiPolicies/<name>`). Creation also accepts a bare name such as `Microsoft.Default`, but the MCP endpoint then rejects `tools/list`; probe `tools/list` after creating a version. |
 
 - **At least one** of `connections`, `skills`, or `tools` must be non-empty.
 - Connections must **already exist** on the project — `create` does not create them. List them with `azd ai agent connection list`.

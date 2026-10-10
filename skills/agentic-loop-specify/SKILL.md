@@ -31,6 +31,7 @@ Write the source of truth for an agentic solution. Apply the [agentic-loop](../a
    - Freeze the [implementation contract](../agentic-loop/references/implementation-contract.md).
    - Split the build into at most four workstreams with exclusive files.
    - Map every requirement to a verification check.
+   - Keep it proportional: freeze interfaces, schemas, auth, errors and decisions, and leave internal algorithms, storage layouts and retry mechanics to Implement unless the brief requires them. Most specs fit in about 600 lines.
 3. **Deployment plan.** Write `.azure/deployment-plan.md` from [deployment-plan-template.md](templates/deployment-plan-template.md). It covers the target, placement evidence, RBAC verdict and grant block, resources, cost drivers and environment variables.
 4. **Repository.** Ensure `.gitignore` covers `.azure/*`, `!.azure/deployment-plan.md`, `.env` and build output, and `.gitattributes` sets `* text=auto eol=lf`. Commit only when asked.
 5. **Review.** In the workflow, a fresh reviewer checks the artifacts. Interactively, run `validate` yourself.
@@ -42,6 +43,7 @@ Write the source of truth for an agentic solution. Apply the [agentic-loop](../a
 - The contract names every service, environment variable, endpoint, schema, protocol and auth method. Its versions row requires exact pins and image tags, resolved at Implement to the latest stable release, with the `github-copilot-sdk` API verified before any code is generated.
 - Seed and decision rules (spec sections 9–10) make every scenario's outcome computable from frozen facts. Tables are well formed, and no credential or `Authorization` literal appears.
 - There are at most four workstreams, and they own disjoint files.
+- The spec is proportional: it freezes no internal algorithm, storage layout or retry mechanic that the brief does not require.
 - Placement shows the model is available with quota in the region. The RBAC verdict is `READY`, or `BLOCKED` with a ready-to-run grant block.
 - Companion skills appear only when a requirement needs them.
 

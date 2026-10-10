@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { MAX_FIX_LOOPS, META, PHASES, WORKFLOW, firstLine, validateArgs } from "../lib/args.mjs";
-import { FOUNDATION_SCHEMA, REPORT_SCHEMA, TASKS, buildPrompt, label } from "../lib/prompts.mjs";
+import { FOUNDATION_SCHEMA, REPORT_SCHEMA, TASKS, buildPrompt, label, retryPrompt } from "../lib/prompts.mjs";
 import { clean, normalize, planWorkstreams, recordFile, reduce, scope } from "../lib/record.mjs";
 import { SKILLS, resolveSkills } from "../lib/skills.mjs";
 import { MAX_ROUNDS, checkpointLines, gateLine, noteLine, runLoop } from "../lib/loop.mjs";
@@ -77,11 +77,12 @@ function harness({ cwd, home, args, responder = defaultResponder, runId = "run-1
                 const memo = JSON.stringify([prompt, options]);
                 assert.ok(!seenAgents.has(memo), `agent prompt reused within an attempt: ${options.label}`);
                 seenAgents.add(memo);
-                if (!journal.agents.has(memo)) {
-                    state.calls.push({ label: options.label, prompt, schema: options.schema, attempt: state.attempts });
-                    const value = await state.responder(options.label, prompt);
-                    journal.agents.set(memo, JSON.stringify(value ?? null));
-                }
+                if (journal.agents.has(memo)) return JSON.parse(journal.agents.get(memo));
+                state.calls.push({ label: options.label, prompt, schema: options.schema, attempt: state.attempts });
+                const value = (await state.responder(options.label, prompt)) ?? null;
+                // Like the runtime, only results are memoized: a subagent that ended without one runs again on resume.
+                if (value === null) return null;
+                journal.agents.set(memo, JSON.stringify(value));
                 return JSON.parse(journal.agents.get(memo));
             },
             async pause(key) {
@@ -316,13 +317,71 @@ test("skipDeploy ends after Verify without a deploy approval", async t => {
 test("missing or malformed reports fail closed", async t => {
     const { cwd, home } = await workspace(t);
     const run = harness({
-        cwd, home, args: { brief: BRIEF, autonomy: "auto", maxFixLoops: 0 },
-        responder: who => (who === "Specify · lead" ? null : defaultResponder(who)),
+        cwd, home, args: { brief: BRIEF, autonomy: "auto" },
+        responder: who => (who.startsWith("Specify · lead") ? null : defaultResponder(who)),
     });
     assert.deepEqual(await run.attempt(), { status: "paused", key: "blocked-specify-r1" });
-    const record = await run.record();
-    assert.equal(record.phases[0].status, "failed");
-    assert.match(record.phases[0].issues[0], /Specify · lead returned no usable report/);
+    assert.deepEqual(labels(run.state), ["Specify · lead", "Specify · lead · retry"]);
+    const [specify] = (await run.record()).phases;
+    assert.equal(specify.status, "blocked");
+    assert.deepEqual(specify.issues, ["Specify · lead ended twice without a report, likely a provider error: check the session log, then resume."]);
+    assert.equal(specify.attempts[0].retried, true);
+    assert.ok(checkpointLines("blocked-specify-r1", specify).wait.length < 400);
+
+    const malformed = harness({
+        cwd, home, args: { brief: BRIEF, autonomy: "auto", maxFixLoops: 0 }, runId: "run-malformed",
+        responder: who => (who === "Specify · lead" ? [] : defaultResponder(who)),
+    });
+    assert.deepEqual(await malformed.attempt(), { status: "paused", key: "blocked-specify-r1" });
+    assert.deepEqual(labels(malformed.state), ["Specify · lead"]);
+    const [failedSpec] = (await malformed.record()).phases;
+    assert.equal(failedSpec.status, "failed");
+    assert.match(failedSpec.issues[0], /Specify · lead returned no usable report/);
+});
+
+test("a subagent that ends without a report is retried once and continues from the current state", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({ cwd, home, args: { brief: BRIEF }, responder: who => (who === "Specify · lead" ? null : defaultResponder(who)) });
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "approve-spec-v1" });
+    assert.deepEqual(labels(run.state), ["Specify · lead", "Specify · lead · retry", "Specify · review"]);
+    const [first, retry] = run.state.calls;
+    assert.equal(retry.prompt, retryPrompt(first.prompt, "Specify · lead"));
+    assert.match(retry.prompt, /Retry: the previous attempt \(Specify · lead\) ended without a report.*Do not start over\.$/s);
+    assert.equal(retry.schema, REPORT_SCHEMA);
+    const notices = logMatches(run.state, /^Specify · lead ended without a report/);
+    assert.deepEqual(notices, ["Specify · lead ended without a report, often after a provider error. Retrying it once."]);
+    assert.ok(!CANVAS.gate.test(notices[0]) && !CANVAS.brief.test(notices[0]));
+    const [specify] = (await run.record()).phases;
+    assert.equal(specify.status, "passed");
+    assert.deepEqual(specify.attempts[0], { role: "lead", label: "Specify · lead", status: "passed", summary: "Specify · lead · retry done", issues: [], retried: true });
+    assert.equal(specify.attempts[1].retried, undefined);
+
+    run.state.responder = defaultResponder;
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "approve-deploy-v1" });
+    assert.equal(labels(run.state, "Specify").length, 3);
+    assert.equal(logMatches(run.state, /ended without a report/).length, 1);
+});
+
+test("a resume after provider errors replays every report and starts the next round", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({
+        cwd, home, args: { brief: BRIEF, autonomy: "auto" },
+        responder: who => (who.startsWith("Implement") ? null : defaultResponder(who)),
+    });
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "blocked-implement-r1" });
+    assert.deepEqual(labels(run.state, "Implement"), ["Implement · foundation", "Implement · foundation · retry"]);
+    const [, implement] = (await run.record()).phases;
+    assert.equal(implement.status, "blocked");
+    assert.deepEqual(implement.attempts.map(row => [row.label, row.status, row.retried]), [["Implement · foundation", "blocked", true]]);
+    assert.ok(run.state.logs.includes("Implement · foundation blocked: No report after one retry, likely a provider error."));
+
+    run.state.responder = defaultResponder;
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "approve-deploy-v1" });
+    assert.deepEqual(run.state.calls.filter(call => call.attempt === 2).map(call => call.label), ["Implement · lead · r2", "Implement · review · r2", "Verify · lead", "Verify · review"]);
+    assert.equal(logMatches(run.state, /^Resumed: retrying Implement as round 2\.$/).length, 1);
+    const lead = run.state.calls.find(call => call.label === "Implement · lead · r2");
+    assert.match(lead.prompt, /Round 1 stopped at the Implement gate \(blocked\)/);
+    assert.equal((await run.record()).phases[2].status, "passed");
 });
 
 test("Implement falls back to one sequential build when workstreams overlap", async t => {
