@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
 import { BoardStore, RECOMMENDATIONS } from "./lib/state.mjs";
 import * as gh from "./lib/github.mjs";
+import { applyDecisionOnGitHub } from "./lib/decisions.mjs";
 import { buildReviewPrompt, buildRereviewPrompt, REVIEW_FIELDS_SCHEMA } from "./lib/review-prompt.mjs";
 import { startBoardServer, expectedError } from "./lib/server.mjs";
 
@@ -22,8 +23,6 @@ const PUBLIC_DIR = path.join(EXT_DIR, "public");
 const GUIDANCE_PATH = path.join(EXT_DIR, "review-guidance.md");
 const DETAIL_TTL_MS = 2 * 60 * 1000;
 const MAX_GUIDANCE_LENGTH = 4000;
-const MAX_COMMENT_LENGTH = 60000;
-const DECISION_KINDS = ["approve", "request-changes", "comment", "close"];
 
 const stores = new Map();
 const servers = new Map();
@@ -174,50 +173,6 @@ async function startRereview({ store, number, guidance, instanceId, send }) {
     return { queued: [item.number], message: `Asked the agent to re-review #${item.number}.` };
 }
 
-async function applyDecisionOnGitHub({ store, number, kind, comment }) {
-    if (!DECISION_KINDS.includes(kind)) throw new Error(`Unknown decision "${kind}".`);
-    const item = requireItem(store, number);
-    if (item.decision) throw new Error(`#${number} was already actioned (${item.decision.kind}).`);
-
-    const body = String(comment ?? "")
-        .trim()
-        .slice(0, MAX_COMMENT_LENGTH);
-    if ((kind === "request-changes" || kind === "comment") && !body) {
-        throw new Error(`A ${kind} decision needs a non-empty comment.`);
-    }
-
-    let result;
-    if (kind === "approve") {
-        result = await gh.approveAndEnableAutoMerge(store.repo, number, { body });
-    } else if (kind === "close") {
-        result = await gh.closePullRequest(store.repo, number, { body });
-    } else {
-        result = await gh.submitPullRequestReview(store.repo, number, { kind, body });
-    }
-
-    const warnings = result.warning ? [result.warning] : [];
-    try {
-        await store.recordDecision(number, { kind, comment: body, status: result.status });
-    } catch (error) {
-        warnings.push(`GitHub was updated, but the board could not record the action: ${error.message}`);
-    }
-    try {
-        await refresh(store);
-    } catch (error) {
-        warnings.push(`GitHub was updated, but the board could not refresh: ${error.message}`);
-    }
-
-    return {
-        number,
-        kind,
-        comment: body,
-        posted: true,
-        status: result.status,
-        warning: warnings.length ? warnings.join(" ") : null,
-        url: item.url,
-    };
-}
-
 function boardSummary(store) {
     const snapshot = store.snapshot();
     return {
@@ -259,7 +214,7 @@ function routesFor(instanceId, store) {
         "GET /api/pr/:number": ({ number }) => getPullRequest(store, number),
         "POST /api/pr/:number": ({ number }) => getPullRequest(store, number, { force: true }),
         "POST /api/decision": ({ body }) =>
-            applyDecisionOnGitHub({ store, number: Number(body.number), kind: body.kind, comment: body.comment }),
+            applyDecisionOnGitHub({ store, number: Number(body.number), kind: body.kind, comment: body.comment, refresh }),
     };
     // Board errors are user-facing messages (gh failures, "already actioned", ...); surface only the
     // message text, never the stack, and log the full error for debugging.

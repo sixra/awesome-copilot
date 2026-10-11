@@ -42,6 +42,7 @@ const SYNCED_FIELDS = [
     "isDraft",
     "baseRefName",
     "headRefName",
+    "headRefOid",
     "additions",
     "deletions",
     "changedFiles",
@@ -85,7 +86,7 @@ export class BoardStore {
 
     /** Serialised atomic write so concurrent mutations cannot interleave or truncate the file. */
     persist() {
-        this.writeChain = this.writeChain.then(async () => {
+        this.writeChain = this.writeChain.catch(() => {}).then(async () => {
             await mkdir(path.dirname(this.file), { recursive: true });
             const tmp = `${this.file}.${randomBytes(6).toString("hex")}.tmp`;
             await writeFile(tmp, JSON.stringify(this.state, null, 2), "utf8");
@@ -152,6 +153,22 @@ export class BoardStore {
                 manualColumn: null,
                 decision: null,
             };
+            const decision = existing.decision;
+            if ((decision?.kind === "comment" || decision?.kind === "request-changes") && !decision.headRefOid) {
+                decision.headRefOid = existing.headRefOid ?? pr.headRefOid ?? null;
+            }
+            if (
+                (decision?.kind === "comment" || decision?.kind === "request-changes") &&
+                decision.headRefOid &&
+                pr.headRefOid &&
+                decision.headRefOid !== pr.headRefOid
+            ) {
+                existing.decision = null;
+                existing.review = null;
+                existing.reviewStatus = "none";
+                existing.queueId = null;
+                existing.manualColumn = null;
+            }
             for (const field of SYNCED_FIELDS) existing[field] = pr[field];
             this.state.items[key] = existing;
         }
@@ -194,7 +211,7 @@ export class BoardStore {
     recordReviewInternal(payload) {
         const item = this.getItem(payload.number);
         if (!item) return { number: payload.number, status: "skipped", reason: "not on the board" };
-        if (item.queueId && payload.queueId && payload.queueId !== item.queueId) {
+        if (!item.queueId || !payload.queueId || payload.queueId !== item.queueId) {
             return { number: payload.number, status: "skipped", reason: "stale review result" };
         }
         if (!RECOMMENDATIONS.includes(payload.recommendation)) {
@@ -248,6 +265,7 @@ export class BoardStore {
             comment: decision.comment ?? "",
             at: new Date().toISOString(),
             status: decision.status ?? null,
+            headRefOid: item.headRefOid ?? null,
         };
         this.state.history.unshift({
             number: item.number,

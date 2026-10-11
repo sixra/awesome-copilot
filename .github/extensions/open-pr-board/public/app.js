@@ -39,6 +39,9 @@ let detailError = null;
 let activeTab = "review";
 let filterText = "";
 let pendingConfirm = null;
+let detailGeneration = 0;
+let drawerOriginNumber = null;
+const decisionsInFlight = new Set();
 
 const el = {
     title: document.getElementById("board-title"),
@@ -48,6 +51,7 @@ const el = {
     reset: document.getElementById("reset-button"),
     review: document.getElementById("review-button"),
     board: document.getElementById("board"),
+    toolbar: document.querySelector(".toolbar"),
     drawer: document.getElementById("drawer"),
     kicker: document.getElementById("drawer-kicker"),
     drawerTitle: document.getElementById("drawer-title"),
@@ -483,8 +487,11 @@ function renderDrawerBody() {
     if (!item) return;
 
     for (const tab of el.drawer.querySelectorAll(".tab")) {
-        tab.setAttribute("aria-selected", String(tab.dataset.tab === activeTab));
+        const selected = tab.dataset.tab === activeTab;
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
     }
+    el.drawerBody.setAttribute("aria-labelledby", `tab-${activeTab}`);
 
     if (activeTab === "review") {
         el.drawerBody.replaceChildren(reviewTab(item));
@@ -534,20 +541,26 @@ function renderDrawerHeader() {
     el.rereviewToggle.disabled = Boolean(item.decision) || item.reviewStatus === "queued";
 
     for (const button of el.drawer.querySelectorAll("[data-decision]")) {
-        button.disabled = Boolean(item.decision);
+        button.disabled = Boolean(item.decision) || decisionsInFlight.has(item.number);
         button.classList.remove("confirming");
         button.textContent = DECISION_BUTTONS[button.dataset.decision];
     }
+    clearTimeout(pendingConfirm?.timer);
     pendingConfirm = null;
 }
 
 async function loadDetail(number, { force = false } = {}) {
+    if (selectedNumber !== number) return;
+    const generation = ++detailGeneration;
     detail = null;
     detailError = null;
     renderDrawerBody();
     try {
-        detail = await api(`/api/pr/${number}`, force ? { method: "POST" } : {});
+        const response = await api(`/api/pr/${number}`, force ? { method: "POST" } : {});
+        if (generation !== detailGeneration || selectedNumber !== number) return;
+        detail = response;
     } catch (error) {
+        if (generation !== detailGeneration || selectedNumber !== number) return;
         detailError = error.message;
     }
     if (selectedNumber === number) renderDrawerBody();
@@ -559,6 +572,10 @@ function openDrawer(number) {
     const item = currentItem();
     if (!item) return;
 
+    if (!el.drawer.classList.contains("open")) drawerOriginNumber = number;
+    el.drawer.inert = false;
+    el.board.inert = true;
+    el.toolbar.inert = true;
     el.drawer.classList.add("open");
     el.drawer.setAttribute("aria-hidden", "false");
     el.rereviewPanel.hidden = true;
@@ -570,17 +587,26 @@ function openDrawer(number) {
     renderDrawerHeader();
     renderDrawerBody();
     renderBoard();
+    el.drawerClose.focus();
     if (changed) loadDetail(number);
 }
 
 function closeDrawer() {
+    ++detailGeneration;
     selectedNumber = null;
     detail = null;
     detailError = null;
+    clearTimeout(pendingConfirm?.timer);
     pendingConfirm = null;
     el.drawer.classList.remove("open");
     el.drawer.setAttribute("aria-hidden", "true");
+    el.drawer.inert = true;
+    el.board.inert = false;
+    el.toolbar.inert = false;
     renderBoard();
+    const origin = el.board.querySelector(`[data-number="${drawerOriginNumber}"]`);
+    (origin ?? el.filter).focus();
+    drawerOriginNumber = null;
 }
 
 /* --------------------------------------------------------------- decisions */
@@ -608,15 +634,20 @@ function armConfirm(button, kind) {
 
 async function submitDecision(button, kind) {
     const item = currentItem();
-    if (!item) return;
+    if (!item || decisionsInFlight.has(item.number)) return;
     if (!armConfirm(button, kind)) return;
     clearTimeout(pendingConfirm.timer);
     pendingConfirm = null;
     button.classList.remove("confirming");
 
+    const comment = el.comment.value;
+    decisionsInFlight.add(item.number);
+    renderDrawerHeader();
     const result = await run(button, () =>
-        api("/api/decision", { method: "POST", body: { number: item.number, kind, comment: el.comment.value } }),
+        api("/api/decision", { method: "POST", body: { number: item.number, kind, comment } }),
     );
+    decisionsInFlight.delete(item.number);
+    renderDrawerHeader();
     button.textContent = DECISION_BUTTONS[kind];
     if (result) {
         if (result.warning) toast(result.warning, { error: true, url: result.url });
@@ -667,7 +698,24 @@ el.review.addEventListener("click", (event) =>
 el.drawerClose.addEventListener("click", closeDrawer);
 
 document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && el.drawer.classList.contains("open")) closeDrawer();
+    if (!el.drawer.classList.contains("open")) return;
+    if (event.key === "Escape") {
+        event.preventDefault();
+        closeDrawer();
+    } else if (event.key === "Tab") {
+        const controls = [...el.drawer.querySelectorAll(
+            'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
+        )].filter((node) => node.getClientRects().length);
+        const first = controls[0] ?? el.drawer;
+        const last = controls.at(-1) ?? el.drawer;
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === el.drawer)) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
 });
 
 el.drawerColumn.addEventListener("change", async (event) => {
@@ -683,11 +731,25 @@ el.drawerColumn.addEventListener("change", async (event) => {
     }
 });
 
-for (const tab of el.drawer.querySelectorAll(".tab")) {
+const tabs = [...el.drawer.querySelectorAll(".tab")];
+for (const tab of tabs) {
     tab.addEventListener("click", () => {
         activeTab = tab.dataset.tab;
         renderDrawerBody();
         if (!detail && !detailError && selectedNumber !== null) loadDetail(selectedNumber);
+    });
+    tab.addEventListener("keydown", (event) => {
+        const index = tabs.indexOf(tab);
+        const next = {
+            ArrowRight: (index + 1) % tabs.length,
+            ArrowLeft: (index - 1 + tabs.length) % tabs.length,
+            Home: 0,
+            End: tabs.length - 1,
+        }[event.key];
+        if (next === undefined) return;
+        event.preventDefault();
+        tabs[next].focus();
+        tabs[next].click();
     });
 }
 

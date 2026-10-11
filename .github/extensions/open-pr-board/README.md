@@ -18,13 +18,18 @@ authenticated `gh` CLI.
 - **State tracking** — each PR remembers whether it has been reviewed, when, what the
   agent concluded, any manual move, and any decision you recorded. A PR updated after
   its review is flagged `PR changed` and is picked up by the next review pass.
+  PRs with submitted feedback or requested changes return to Unreviewed after new
+  commits; the previous action remains in history.
 - **Re-review** — ask for a fresh pass on one PR with optional focus guidance.
 - **Labels** — GitHub labels render on every card in their own colours, blended toward
   the app theme so they stay readable in both light and dark mode.
 - **Detail drawer** — AI review, description, conversation, changed files, and checks.
+  Keyboard focus stays inside the modal drawer and returns to its card on close.
+  Use Left/Right arrows or Home/End to switch detail tabs.
 - **GitHub actions** — submit feedback, request changes, close a PR, or approve it and
   enable auto-merge with a merge commit. Each action needs two clicks to confirm and
   is also recorded in local board history.
+  Only one GitHub action can run per PR at a time.
 - **Reset board** — after a second click to confirm, clear every local AI review,
   queued review, manual move, recorded action, and history entry, then reload open PRs.
   Reset never undoes or changes anything on GitHub.
@@ -63,3 +68,11 @@ procedure on top of `.github/skills/code-review/SKILL.md` and
 `.github/copilot-instructions.md`. AI evidence gathering is read-only: the agent never
 edits files or runs write commands against the PR. Only an explicitly confirmed drawer
 action writes to GitHub.
+
+Review results require the exact queue token from the current review request.
+Results arriving after a manual move, reset, or replacement review are rejected.
+
+## Regression tests
+
+Run `node --test eng/open-pr-board.test.mjs` from the repository root. GitHub writes
+are tested with injected in-process fakes, never the authenticated CLI.

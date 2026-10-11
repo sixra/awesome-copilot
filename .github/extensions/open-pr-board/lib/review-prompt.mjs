@@ -8,19 +8,20 @@ export const RECOMMENDATION_GUIDE = [
 /** Shared schema for a single recorded review. Reused directly as the `record_review` input schema. */
 export const REVIEW_FIELDS_SCHEMA = {
     type: "object",
-    required: ["number", "recommendation", "rationale"],
+    required: ["number", "queueId", "recommendation", "rationale"],
     properties: {
         number: { type: "integer", description: "Pull request number." },
         queueId: {
             type: "string",
-            description: "The queueId handed out when the review was requested. Omitting it skips the staleness check.",
+            minLength: 1,
+            description: "The current queueId handed out when the review was requested; must match exactly.",
         },
         recommendation: {
             type: "string",
             enum: ["close", "request-changes", "needs-insight", "approve"],
             description: "Which bucket the pull request belongs in.",
         },
-        rationale: { type: "string", description: "Two or three sentences explaining the recommendation." },
+        rationale: { type: "string", description: "One sentence explaining the deciding factor, shown on the card." },
         summary: { type: "string", description: "What the pull request actually changes." },
         repoFit: { type: "string", description: "Repository fit and meaningful value for Copilot users." },
         compliance: { type: "string", description: "Deterministic checks: frontmatter, naming, README regeneration, manifests." },
