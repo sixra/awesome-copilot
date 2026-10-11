@@ -25,6 +25,9 @@ authenticated `gh` CLI.
 - **GitHub actions** — submit feedback, request changes, close a PR, or approve it and
   enable auto-merge with a merge commit. Each action needs two clicks to confirm and
   is also recorded in local board history.
+- **Reset board** — after a second click to confirm, clear every local AI review,
+  queued review, manual move, recorded action, and history entry, then reload open PRs.
+  Reset never undoes or changes anything on GitHub.
 
 ## Requirements
 
@@ -37,8 +40,8 @@ branch-protection rules still apply.
 ## State
 
 Board state lives in `.github/extensions/open-pr-board/state/<owner>__<repo>.json`, one
-file per repository, and is git-ignored. Deleting it resets reviews and history but
-touches nothing on GitHub.
+file per repository, and is git-ignored. Use **Reset board** (or the `reset_board`
+action) to clear reviews and history without touching GitHub.
 
 ## Agent actions
 
@@ -50,6 +53,7 @@ touches nothing on GitHub.
 | `start_rereview` | Queue a re-review of one PR with optional guidance.                     |
 | `record_review`  | Record structured review results (used by the agent, not by hand).      |
 | `move_item`      | Move a PR to a different bucket.                                        |
+| `reset_board`    | Clear local reviews, actions, and history, then reload open PRs.        |
 | `get_pr`         | Full detail for one PR: body, comments, reviews, files.                 |
 
 ## Review rules

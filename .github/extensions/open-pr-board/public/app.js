@@ -45,6 +45,7 @@ const el = {
     summary: document.getElementById("board-summary"),
     filter: document.getElementById("filter"),
     refresh: document.getElementById("refresh-button"),
+    reset: document.getElementById("reset-button"),
     review: document.getElementById("review-button"),
     board: document.getElementById("board"),
     drawer: document.getElementById("drawer"),
@@ -634,6 +635,30 @@ el.filter.addEventListener("input", (event) => {
 el.refresh.addEventListener("click", (event) =>
     run(event.currentTarget, () => api("/api/refresh", { method: "POST" }), "Board refreshed."),
 );
+
+let resetConfirmTimer = null;
+
+function disarmReset() {
+    clearTimeout(resetConfirmTimer);
+    resetConfirmTimer = null;
+    el.reset.classList.remove("confirming");
+    el.reset.textContent = "Reset board";
+}
+
+el.reset.addEventListener("click", async (event) => {
+    if (!resetConfirmTimer) {
+        el.reset.classList.add("confirming");
+        el.reset.textContent = "Confirm reset";
+        resetConfirmTimer = setTimeout(disarmReset, CONFIRM_MS);
+        return;
+    }
+    disarmReset();
+    const result = await run(event.currentTarget, () => api("/api/reset", { method: "POST" }));
+    if (!result) return;
+    closeDrawer();
+    if (result.warning) toast(result.warning, { error: true });
+    else toast("Board reset. Local reviews and history cleared; GitHub was not changed.");
+});
 
 el.review.addEventListener("click", (event) =>
     run(event.currentTarget, () => api("/api/review", { method: "POST", body: {} }), (result) => result.message ?? "Review requested."),

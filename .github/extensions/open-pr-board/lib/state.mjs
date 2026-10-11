@@ -268,4 +268,10 @@ export class BoardStore {
         item.decision = null;
         return this.commit();
     }
+
+    /** Clear all local triage state; the next refresh repopulates open pull requests. */
+    async reset() {
+        this.state = { repo: this.repo, updatedAt: null, items: {}, history: [] };
+        return this.commit();
+    }
 }

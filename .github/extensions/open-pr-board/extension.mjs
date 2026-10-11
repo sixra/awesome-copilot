@@ -78,6 +78,22 @@ async function refresh(store) {
     return inFlight;
 }
 
+async function resetBoard(store) {
+    await refreshInFlight.get(store.repo)?.catch(() => {});
+    for (const key of [...detailCache.keys()]) {
+        if (key.startsWith(`${store.repo}#`)) detailCache.delete(key);
+    }
+    await store.reset();
+    try {
+        return { board: await refresh(store), warning: null };
+    } catch (error) {
+        return {
+            board: store.snapshot(),
+            warning: `Board reset, but open pull requests could not be reloaded: ${error.message}`,
+        };
+    }
+}
+
 async function getPullRequest(store, number, { force = false } = {}) {
     const key = cacheKey(store.repo, number);
     const cached = detailCache.get(key);
@@ -235,6 +251,7 @@ function routesFor(instanceId, store) {
     const routes = {
         "GET /api/board": () => store.snapshot(),
         "POST /api/refresh": () => refresh(store),
+        "POST /api/reset": () => resetBoard(store),
         "POST /api/review": ({ body }) => startReview({ store, numbers: body.numbers, instanceId, send: true }),
         "POST /api/rereview": ({ body }) =>
             startRereview({ store, number: body.number, guidance: body.guidance, instanceId, send: true }),
@@ -375,6 +392,13 @@ session = await joinSession({
                     handler: wrap(async (ctx) =>
                         (await storeForContext(ctx)).moveItem(ctx.input.number, ctx.input.column),
                     ),
+                },
+                {
+                    name: "reset_board",
+                    description:
+                        "Clear all local AI reviews, queued reviews, manual moves, recorded actions, and history, then reload open pull requests. Does not change anything on GitHub.",
+                    inputSchema: { type: "object", additionalProperties: false, properties: { repo: repoProperty } },
+                    handler: wrap(async (ctx) => resetBoard(await storeForContext(ctx))),
                 },
                 {
                     name: "get_pr",
