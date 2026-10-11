@@ -11,7 +11,7 @@ Update the active branch by replaying its commits on top of the latest default b
 
 ## Workflow
 
-1. **Inspect before changing anything.** Run `git status --porcelain=v1 --branch --untracked-files=all` and `git branch --show-current`. Prefer porcelain output so scripting and status parsing are reliable and the state is easy to inspect. Confirm the current branch is not the default branch and note any local changes. If the working tree has changes, stop and ask the user whether to commit, stash, or otherwise handle them. Do not stash automatically.
+1. **Inspect before changing anything.** Run `git status --porcelain=v1 --branch --untracked-files=all` and `git branch --show-current`. Confirm the current branch is not the default branch and note any local changes. If the working tree has changes, stop and ask the user whether to commit, stash, or otherwise handle them. Do not stash automatically.
 2. **Identify the upstream and default branch.** Check `git remote -v` and `git remote show <remote>` (or the remote's symbolic `HEAD`) to determine the branch this repository treats as its default. Prefer the configured upstream for the current branch when available; otherwise use `origin`. Do not assume that `main` exists or that a branch named `master` is current. If the default branch cannot be identified unambiguously, ask the user.
 3. **Fetch the latest default branch.** Fetch only the identified remote and default branch, for example:
 
@@ -27,8 +27,8 @@ Update the active branch by replaying its commits on top of the latest default b
    ```
 
 5. **Handle conflicts without discarding work.** If the rebase stops, explain which files conflict and that the rebase is paused. Resolve only when the intended changes are clear; otherwise ask the user. After resolution, stage the resolved files and run `git rebase --continue`. If the user wants to abandon the operation, run `git rebase --abort`. Never use `git reset --hard`, discard user changes, or skip commits to force completion.
-6. **Offer the user a hook-driven follow-up.** After the rebase succeeds, tell the user they may want to run project hooks (for example, linting or validation scripts) before preparing the next commit. This helps keep the workflow efficient by catching issues early and reducing churn when the branch is ready for review or commit.
-7. **Verify the result.** When the rebase completes, run `git status --porcelain=v1 --branch --untracked-files=all` and summarize the outcome, including the base branch used and any remaining changes. Do not push, force-push, or amend commits unless the user separately asks.
+6. **Offer validation hooks.** After the rebase succeeds, inspect the repository's documented validation steps and configured hooks (for example, pre-commit hooks or lint and test scripts). Ask the user whether they want those checks run before proceeding. If they agree, run the applicable checks and report their results; do not bypass or disable hooks.
+7. **Verify the result.** When the rebase completes, run `git status --porcelain=v1 --branch --untracked-files=all` and summarize the outcome, including the base branch used, validation results if run, and any remaining changes. Do not push, force-push, or amend commits unless the user separately asks.
 
 ## Quick Path
 
