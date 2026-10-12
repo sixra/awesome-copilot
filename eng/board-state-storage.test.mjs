@@ -39,13 +39,29 @@ async function fingerprint(dir) {
   return files;
 }
 
-async function loadCanvas({ id, extensionDir, workspacePath }) {
+async function loadCanvas({ id, extensionDir, workspacePath, triggerDuringJoin = false }) {
   let canvas;
+  let startupResults;
   const context = vm.createContext({ setTimeout });
   const sdk = {
     createCanvas: (definition) => definition,
     joinSession: async (options) => {
       [canvas] = options.canvases;
+      if (triggerDuringJoin) {
+        const ctx = { instanceId: "startup-test", input: {} };
+        const requests = [
+          canvas.actions.find((entry) => entry.name === "get_board").handler(ctx),
+          canvas.open(ctx),
+        ];
+        startupResults = Promise.all(requests.map(async (request) => {
+          try {
+            await request;
+            return { ok: true };
+          } catch (error) {
+            return { ok: false, code: error.code, message: error.message };
+          }
+        }));
+      }
       return { workspacePath, log() {}, send: async () => {} };
     },
     CanvasError: class CanvasError extends Error {
@@ -76,11 +92,13 @@ async function loadCanvas({ id, extensionDir, workspacePath }) {
     }, { context });
   });
   await module.evaluate();
-  return (name, input = {}) => {
+  const act = (name, input = {}) => {
     const action = canvas.actions.find((entry) => entry.name === name);
     assert.ok(action, `Missing canvas action ${name}`);
     return action.handler({ instanceId: "test-board", input });
   };
+  act.startupResults = startupResults;
+  return act;
 }
 
 async function writeJSON(file, value) {
@@ -147,6 +165,19 @@ for (const id of ["open-pr-board", "external-plugin-review-board"]) {
     }, /JSON|Unexpected token/);
   });
 }
+
+test("external-plugin-review-board returns retryable not_ready errors during startup", async (t) => {
+  const f = await fixture(t, "external-plugin-review-board");
+  const act = await loadCanvas({ ...f, triggerDuringJoin: true });
+  const results = await act.startupResults;
+  assert.equal(results.length, 2);
+  for (const result of results) {
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "not_ready");
+    assert.match(result.message, /still starting/i);
+  }
+  assert.equal((await act("get_board")).items.length, 0);
+});
 
 test("both canvases keep independent boards in the same session workspace", async (t) => {
   const pr = await fixture(t, "open-pr-board");

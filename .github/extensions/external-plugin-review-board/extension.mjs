@@ -213,6 +213,7 @@ function routesFor(instanceId) {
 function wrap(fn) {
     return async (ctx) => {
         try {
+            if (!store) throw new CanvasError("not_ready", "The extension is still starting. Retry the action.");
             return await fn(ctx);
         } catch (error) {
             if (error instanceof CanvasError) throw error;
@@ -316,6 +317,7 @@ session = await joinSession({
                 },
             ],
             open: async (ctx) => {
+                if (!store) throw new CanvasError("not_ready", "The extension is still starting. Retry opening it.");
                 let entry = servers.get(ctx.instanceId);
                 if (!entry) {
                     entry = await startBoardServer({
