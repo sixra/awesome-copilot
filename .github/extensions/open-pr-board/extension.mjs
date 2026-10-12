@@ -2,8 +2,8 @@
 // Review board for open pull requests: AI review with persistent state tracking,
 // approve / request-changes / needs-insight / close recommendations, visible labels,
 // and GitHub actions. Decisions are applied through the authenticated gh CLI and
-// recorded on the board. Board state is persisted to
-// ./state/<owner>__<repo>.json (gitignored) so it survives reloads and new sessions.
+// recorded on the board. Board state is persisted under session.workspacePath
+// so writes do not change the extension fingerprint.
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,8 +41,10 @@ async function getStore(repo) {
     let store = stores.get(repo);
     if (!store) {
         // The repo is validated against REPO_PATTERN above, so it cannot escape the state directory.
-        const file = path.join(EXT_DIR, "state", `${repo.replace("/", "__")}.json`);
-        store = await new BoardStore({ file, repo }).load();
+        const filename = `${repo.replace("/", "__")}.json`;
+        const file = path.join(session.workspacePath, "extensions", CANVAS_ID, "state", filename);
+        const legacyFile = path.join(EXT_DIR, "state", filename);
+        store = await new BoardStore({ file, repo }).load({ legacyFile });
         stores.set(repo, store);
     }
     return store;
@@ -399,6 +401,7 @@ session = await joinSession({
                             },
                         },
                     });
+
                     entry = { repo, ...server };
                     servers.set(ctx.instanceId, entry);
                 }
@@ -421,3 +424,7 @@ session = await joinSession({
         }),
     ],
 });
+
+if (!session.workspacePath) {
+    throw new Error("Open PR Board requires a session workspace for persistent state. Enable infinite sessions.");
+}
