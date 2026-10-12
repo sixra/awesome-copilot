@@ -6,6 +6,7 @@ import vm from "node:vm";
 import { test } from "node:test";
 import { BoardStore } from "../.github/extensions/open-pr-board/lib/state.mjs";
 import { applyDecisionOnGitHub } from "../.github/extensions/open-pr-board/lib/decisions.mjs";
+import { approveAndEnableAutoMerge } from "../.github/extensions/open-pr-board/lib/github.mjs";
 import { REVIEW_FIELDS_SCHEMA } from "../.github/extensions/open-pr-board/lib/review-prompt.mjs";
 
 const pr = (headRefOid = "first") => ({
@@ -26,6 +27,65 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
+
+test("approval passes the board's commit SHA to the GitHub helper", async (t) => {
+  const store = await createStore(t);
+  let options;
+  await applyDecisionOnGitHub({
+    store, number: 1, kind: "approve", comment: "Reviewed.", refresh: async () => {},
+    github: {
+      approveAndEnableAutoMerge: async (repo, number, input) => {
+        options = input;
+        return { status: "auto-merge-enabled" };
+      },
+    },
+  });
+  assert.deepEqual(options, { body: "Reviewed.", headRefOid: "first" });
+});
+
+test("approval and auto-merge are pinned to the reviewed commit", async () => {
+  const headRefOid = "a".repeat(40);
+  const calls = [];
+  const result = await approveAndEnableAutoMerge("example/repo", 1, { body: "Reviewed.", headRefOid },
+    async (args, options) => {
+      calls.push({ args, options });
+      if (calls.length === 1) return JSON.stringify({ state: "open", head: { sha: headRefOid } });
+      if (args[1] === "view") return JSON.stringify({ state: "OPEN", autoMergeRequest: {} });
+      return "";
+    });
+  assert.equal(result.status, "auto-merge-enabled");
+  assert.deepEqual(calls[1].args, ["api", "repos/example/repo/pulls/1/reviews", "--method", "POST", "--input", "-"]);
+  assert.deepEqual(JSON.parse(calls[1].options.input), { event: "APPROVE", commit_id: headRefOid, body: "Reviewed." });
+  assert.deepEqual(calls[2].args, ["pr", "merge", "1", "-R", "example/repo", "--auto", "--merge", "--match-head-commit", headRefOid]);
+});
+
+test("approval refuses a missing SHA, changed head, or closed pull request without writing", async () => {
+  let calls = 0;
+  const runner = async () => { calls++; throw new Error("must not run"); };
+  await assert.rejects(approveAndEnableAutoMerge("example/repo", 1, {}, runner), /no commit SHA/);
+  assert.equal(calls, 0);
+  for (const current of [{ state: "open", head: { sha: "second" } }, { state: "closed", head: { sha: "first" } }]) {
+    calls = 0;
+    await assert.rejects(approveAndEnableAutoMerge("example/repo", 1, { headRefOid: "first" }, async () => {
+      calls++;
+      return JSON.stringify(current);
+    }), /Refresh and review/);
+    assert.equal(calls, 1);
+  }
+});
+
+test("a head change after approval reports partial success instead of retrying the merge", async () => {
+  let calls = 0;
+  const result = await approveAndEnableAutoMerge("example/repo", 1, { headRefOid: "first" }, async () => {
+    calls++;
+    if (calls === 1) return JSON.stringify({ state: "open", head: { sha: "first" } });
+    if (calls === 3) throw new Error("Head commit changed");
+    return "";
+  });
+  assert.equal(calls, 3);
+  assert.equal(result.status, "approval-submitted");
+  assert.match(result.warning, /Head commit changed/);
+});
 
 test("review schema requires a nonempty queue token and a one-sentence rationale", () => {
   assert.ok(REVIEW_FIELDS_SCHEMA.required.includes("queueId"));

@@ -66,11 +66,18 @@ export async function closePullRequest(repo, number, { body } = {}, runner = run
     }
 }
 
-export async function approveAndEnableAutoMerge(repo, number, { body } = {}, runner = runGh) {
-    await submitPullRequestReview(repo, number, { kind: "approve", body }, runner);
+export async function approveAndEnableAutoMerge(repo, number, { body, headRefOid } = {}, runner = runGh) {
+    if (!headRefOid) throw new Error("The board has no commit SHA for this pull request. Refresh before approving.");
+    const current = JSON.parse(await runner(["api", `repos/${repo}/pulls/${number}`]));
+    if (current.state !== "open" || current.head?.sha !== headRefOid) {
+        throw new Error("The pull request changed or is no longer open. Refresh and review it again before approving.");
+    }
+    await runner(["api", `repos/${repo}/pulls/${number}/reviews`, "--method", "POST", "--input", "-"], {
+        input: JSON.stringify({ event: "APPROVE", commit_id: headRefOid, body: String(body ?? "").trim() }),
+    });
 
     try {
-        await runner(["pr", "merge", String(number), "-R", repo, "--auto", "--merge"]);
+        await runner(["pr", "merge", String(number), "-R", repo, "--auto", "--merge", "--match-head-commit", headRefOid]);
     } catch (error) {
         return {
             status: "approval-submitted",

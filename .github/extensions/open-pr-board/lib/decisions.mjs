@@ -21,7 +21,7 @@ export async function applyDecisionOnGitHub({ store, number, kind, comment, refr
 
         let result;
         if (kind === "approve") {
-            result = await github.approveAndEnableAutoMerge(store.repo, number, { body });
+            result = await github.approveAndEnableAutoMerge(store.repo, number, { body, headRefOid: item.headRefOid });
         } else if (kind === "close") {
             result = await github.closePullRequest(store.repo, number, { body });
         } else {
