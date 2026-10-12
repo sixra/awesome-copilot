@@ -519,12 +519,13 @@
     },
     {
       "id": 37,
-      "prompt": "Specify an SDD solution: a customer-service web chat where an agent answers from our knowledge base and looks up case history. Use sample data. Nothing was said about sign-in.",
+      "prompt": "Specify an SDD solution: a customer-service app where an agent answers customers from our knowledge base and helps remote support reps with case history. Use sample data. Nothing was said about sign-in.",
       "expected_output": "Applies the app-access default: no end-user sign-in and no compensating anonymous-session or verification schemes, with managed identities between services, recorded as an assumption.",
       "files": [],
       "expectations": [
-        "Specifies no end-user sign-in and records the default under Assumptions.",
-        "Adds no anonymous-session secrets, identity-verification steps or extra app registrations to compensate for the missing sign-in.",
+        "Specifies no end-user sign-in for customers or reps and records the default under Assumptions.",
+        "Treats the rep persona as a user group, not as a request for Entra sign-in.",
+        "Adds no anonymous-session secrets, identity-verification steps or app registrations to compensate for the missing sign-in.",
         "Keeps managed identities and keyless RBAC between the app, agents, MCP servers and Azure services.",
         "Keeps every verification check runnable without a user token."
       ]
