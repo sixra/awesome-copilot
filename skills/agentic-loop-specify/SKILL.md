@@ -11,7 +11,7 @@ Write the source of truth for an agentic solution. Apply the [agentic-loop](../a
 
 - Read the brief, any canvas scenario, existing `docs/spec.md`, `.azure/deployment-plan.md`, `README.md` and the `LOOP.md` lessons. Update existing artifacts instead of starting over.
 - **Interactive:** ask once, with choices, only questions whose answers change scope: users, data, tools, UX or compliance.
-- **In the workflow:** never ask. Take the safest reasonable default, record it under Assumptions and continue. Return `blocked` only for decisions on permissions, quota, cost or security.
+- **In the workflow:** never ask. Take the documented default, or the safest reasonable one when none applies, record it under Assumptions and continue. Return `blocked` only for decisions on permissions, quota, cost or security.
 
 ## Sub-commands
 
@@ -31,6 +31,7 @@ Write the source of truth for an agentic solution. Apply the [agentic-loop](../a
    - Freeze the [implementation contract](../agentic-loop/references/implementation-contract.md).
    - Split the build into at most four workstreams with exclusive files.
    - Map every requirement to a verification check.
+   - Apply the app-access default: end-user sign-in only when the brief asks for it.
    - Keep it proportional: freeze interfaces, schemas, auth, errors and decisions, and leave internal algorithms, storage layouts and retry mechanics to Implement unless the brief requires them. Most specs fit in about 600 lines.
 3. **Deployment plan.** Write `.azure/deployment-plan.md` from [deployment-plan-template.md](templates/deployment-plan-template.md). It covers the target, placement evidence, RBAC verdict and grant block, resources, cost drivers and environment variables.
 4. **Repository.** Ensure `.gitignore` covers `.azure/*`, `!.azure/deployment-plan.md`, `.env` and build output, and `.gitattributes` sets `* text=auto eol=lf`. Commit only when asked.
@@ -44,6 +45,7 @@ Write the source of truth for an agentic solution. Apply the [agentic-loop](../a
 - Seed and decision rules (spec sections 9–10) make every scenario's outcome computable from frozen facts. Tables are well formed, and no credential or `Authorization` literal appears.
 - There are at most four workstreams, and they own disjoint files.
 - The spec is proportional: it freezes no internal algorithm, storage layout or retry mechanic that the brief does not require.
+- End-user sign-in appears only when the brief asks for it. Then the spec names the SPA pre-authorization and how automated browser tests get a user token.
 - Placement shows the model is available with quota in the region. The RBAC verdict is `READY`, or `BLOCKED` with a ready-to-run grant block.
 - Companion skills appear only when a requirement needs them.
 

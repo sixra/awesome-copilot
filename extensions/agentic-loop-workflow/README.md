@@ -17,7 +17,7 @@ Each phase follows its skill (`agentic-loop-specify`, `-implement`, `-verify` or
 - **Review**: an independent reviewer reruns every check and reports all blocking issues at once, with evidence. Earlier reports count as claims, not evidence.
 - **Fix**: a fixer resolves the issues, then a new review first confirms each one is resolved before finishing its checks. This repeats up to `maxFixLoops` times.
 - **Implement**: the foundation step plans up to four workstreams. If they own disjoint files, they run in parallel before integration; otherwise the build runs in sequence. Implement deploys only the hosted checkpoint services, and only when they changed; the app services deploy in Deploy.
-- **Retry**: a subagent that ends without a report, usually after a provider error, is retried once and told to continue from the current workspace and Azure state. A second miss blocks the gate instead of spending fix loops.
+- **Retry**: a subagent that ends without a report, usually after a provider error, is retried once and told to continue from the current workspace and Azure state. A second miss blocks the gate instead of spending fix loops; for a workstream worker, integration receives it as a failed workstream and finishes it.
 
 The gate passes only on the reviewer's verdict.
 

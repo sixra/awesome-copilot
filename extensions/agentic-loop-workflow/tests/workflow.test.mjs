@@ -411,6 +411,23 @@ test("a failed worker is handed to integration instead of stopping the round", a
     assert.match(integration.prompt, /- web: failed\. Implement · web returned no report\./);
 });
 
+test("a worker with no report after its retry is handed to integration as failed", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({
+        cwd, home, args: { brief: BRIEF, autonomy: "auto" },
+        responder: who => (who.startsWith("Implement · web") ? null : defaultResponder(who)),
+    });
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "approve-deploy-v1" });
+    assert.deepEqual(labels(run.state, "Implement · web"), ["Implement · web", "Implement · web · retry"]);
+    const integration = run.state.calls.find(call => call.label === "Implement · integration");
+    assert.match(integration.prompt, /- web: failed\. No report after one retry, likely a provider error\./);
+    assert.match(integration.prompt, /Implement · web ended twice without a report, likely a provider error: finish this workstream from the current workspace\./);
+    const [, implement] = (await run.record()).phases;
+    assert.equal(implement.status, "passed");
+    const web = implement.attempts.find(row => row.label === "Implement · web");
+    assert.deepEqual([web.status, web.retried], ["failed", true]);
+});
+
 test("Implement round 2 resumes with one lead instead of re-planning", async t => {
     const { cwd, home } = await workspace(t);
     const run = harness({

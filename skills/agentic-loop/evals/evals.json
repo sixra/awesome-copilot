@@ -427,7 +427,7 @@
     },
     {
       "id": 30,
-      "prompt": "Our SDD workflow run paused at `blocked-implement-r1` with the issue \"Implement · lead ended twice without a report, likely a provider error\". Since then the agent is deployed and the backend tests pass. What should we do before resuming, and what will the resumed round do?",
+      "prompt": "Our SDD workflow run paused at `blocked-implement-r1` with the issue \"Implement · integration ended twice without a report, likely a provider error\". Since then the agent is deployed and the backend tests pass. What should we do before resuming, and what will the resumed round do?",
       "expected_output": "Treats the pause as a provider failure, checks the session log and the current state read-only, records the evidence, resumes the same run and explains that round 2 continues from the current state without repeating finished work.",
       "files": [],
       "expectations": [
@@ -515,6 +515,31 @@
         "Calls the agent without upstream streaming, because the API emits only a terminal SSE event and upstream streaming can take a different model path.",
         "Adds a test that JSON and SSE return the same validated result, plus a regression test for multi-item output.",
         "Changes only the backend, without redeploying the agent or unrelated services."
+      ]
+    },
+    {
+      "id": 37,
+      "prompt": "Specify an SDD solution: a customer-service web chat where an agent answers from our knowledge base and looks up case history. Use sample data. Nothing was said about sign-in.",
+      "expected_output": "Applies the app-access default: no end-user sign-in and no compensating anonymous-session or verification schemes, with managed identities between services, recorded as an assumption.",
+      "files": [],
+      "expectations": [
+        "Specifies no end-user sign-in and records the default under Assumptions.",
+        "Adds no anonymous-session secrets, identity-verification steps or extra app registrations to compensate for the missing sign-in.",
+        "Keeps managed identities and keyless RBAC between the app, agents, MCP servers and Azure services.",
+        "Keeps every verification check runnable without a user token."
+      ]
+    },
+    {
+      "id": 38,
+      "prompt": "Specify an SDD solution where support reps must sign in with Entra ID before they can view case history. The Playwright end-to-end tests have to run in the workflow.",
+      "expected_output": "Specifies Entra sign-in with an API that pre-authorizes the SPA, states how automated browser tests get a user token and has Implement prove that token path as soon as the app registrations exist.",
+      "files": [],
+      "expectations": [
+        "Names the app registrations, the delegated scope and any app role in the contract.",
+        "Has the API app pre-authorize the SPA client so users and tests need no separate consent.",
+        "States how the Playwright tests get a user token, without persisting tokens or putting them in chat.",
+        "Has Implement prove the token path right after creating the app registrations, before Verify depends on it.",
+        "Does not add sign-in to services or flows the brief did not ask to protect."
       ]
     }
   ]

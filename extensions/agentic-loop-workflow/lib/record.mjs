@@ -49,14 +49,12 @@ export function normalize(result, who) {
     };
 }
 
-// A step that ended twice without a report most likely hit a provider error: block, so a human checks before fix loops spend more.
-export function missing(who) {
-    return {
-        ...normalize(null, who),
-        status: "blocked",
-        summary: "No report after one retry, likely a provider error.",
-        issues: [`${who} ended twice without a report, likely a provider error: check the session log, then resume.`],
-    };
+// A step that ended twice without a report most likely hit a provider error. A workstream worker fails, so integration finishes
+// its work; any other step blocks, so a human checks the session log before fix loops spend more.
+export function missing(who, role) {
+    const report = { ...normalize(null, who), summary: "No report after one retry, likely a provider error." };
+    if (role === "worker") return { ...report, issues: [`${who} ended twice without a report, likely a provider error: finish this workstream from the current workspace.`] };
+    return { ...report, status: "blocked", issues: [`${who} ended twice without a report, likely a provider error: check the session log, then resume.`] };
 }
 
 // Static path prefix of a file or glob, relative to the workspace; null when it escapes the workspace.

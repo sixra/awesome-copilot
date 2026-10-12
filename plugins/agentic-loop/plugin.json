@@ -4,8 +4,8 @@
   "description": "Build agentic solutions on Microsoft Foundry, GitHub and Azure. Prototype in an existing Foundry project, or run spec-driven delivery: a dynamic workflow that specifies, implements, verifies and deploys with azd behind evidence gates. Includes a canvas with 61 industry scenarios, a live workflow view and Foundry enablement, plus an improve mode that learns from past runs.",
   "version": "1.0.0",
   "author": {
-    "name": "Microsoft",
-    "url": "https://github.com/microsoft"
+    "name": "Microsoft AI Apps GBB",
+    "url": "https://github.com/aiappsgbb"
   },
   "repository": "https://github.com/github/awesome-copilot",
   "license": "MIT",

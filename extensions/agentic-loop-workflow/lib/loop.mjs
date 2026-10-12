@@ -102,7 +102,8 @@ class Run {
     }
 
     // Each report is journaled under its unique label, so a resume replays it, even a missing one, instead of rerunning the subagent.
-    // A subagent that ends without a report, usually after a provider error, gets one retry that continues its work; a second miss blocks.
+    // A subagent that ends without a report, usually after a provider error, gets one retry that continues its work. A second miss
+    // blocks, except for a workstream worker: integration receives it as a failed workstream and finishes it.
     async call({ phase, round, role, name = role, schema = REPORT_SCHEMA, ...context }) {
         const who = label(phase, name, round);
         const prompt = buildPrompt({ base: this.base, phase, round, role, who, ...context });
@@ -110,7 +111,7 @@ class Run {
             if (retry) this.ctx.log(`${who} ended without a report, often after a provider error. Retrying it once.`);
             const result = await this.ctx.agent(text, { label: key, schema });
             if (result != null) return normalize(result, who);
-            return retry ? missing(who) : null;
+            return retry ? missing(who, role) : null;
         });
         const report = await ask(who, prompt, false);
         if (report) return { role, who, report };

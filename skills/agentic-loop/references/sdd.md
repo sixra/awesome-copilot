@@ -43,7 +43,7 @@ A pause posts a `Needs you:` line. Answer it in one message: what paused and why
 
 - Resume with `run_dynamic_workflow` and `resumeFromRunId` only when the user asks. When a canvas prompt says "Do not resume the run", don't: the canvas resumes it.
 - **Liveness.** Workflow subagents don't appear in `list_agents` or `read_agent`, and the flight record and credit totals change only when a step ends; one Implement step can run for over an hour. The canvas Workflow tab shows live subagent activity. Never cancel, pause or restart a run to unstick it; only the user decides that.
-- **Provider errors.** A subagent that ends without a report is retried once with instructions to continue from the current state; a second miss blocks the phase. Check the session log, then resume.
+- **Provider errors.** A subagent that ends without a report is retried once with instructions to continue from the current state; a second miss blocks the phase, except for a workstream worker, which integration finishes. Check the session log, then resume.
 - **Effort.** Subagents inherit the session's model and reasoning effort. Prefer medium or high: maximum effort multiplies step time.
 - A run that ends in `error` with `workflow_limit_reached` resumes with only that limit raised, after approval. For other errors, read the run with `dynamic_workflows_manage` (`inspect-run`), fix the cause and start a new run.
 - Never weaken a gate, skip a phase or report unverified checks as passed.
