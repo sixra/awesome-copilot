@@ -41,25 +41,14 @@ export class BoardStore {
         this.writeChain = Promise.resolve();
     }
 
-    async load({ legacyFile } = {}) {
-        let raw;
-        let imported = false;
+    async load() {
         try {
-            raw = await readFile(this.filePath, "utf8");
+            const raw = await readFile(this.filePath, "utf8");
+            const parsed = JSON.parse(raw);
+            this.state = { ...emptyState(this.repo), ...parsed, repo: parsed.repo ?? this.repo };
         } catch (error) {
             if (error.code !== "ENOENT") throw error;
-            if (!legacyFile) return this;
-            try {
-                raw = await readFile(legacyFile, "utf8");
-                imported = true;
-            } catch (error) {
-                if (error.code !== "ENOENT") throw error;
-                return this;
-            }
         }
-        const parsed = JSON.parse(raw);
-        this.state = { ...emptyState(this.repo), ...parsed, repo: parsed.repo ?? this.repo };
-        if (imported) await this.commit();
         return this;
     }
 

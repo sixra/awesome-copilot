@@ -30,10 +30,8 @@ This is Copilot's session-state workspace, not the repository checkout. It store
 metadata, AI reviews, manual bucket overrides, and a history of decisions made from the board.
 State survives extension reloads and resuming the same session; a new session has its own board.
 Infinite sessions must be enabled to provide the workspace. Keeping writes outside the extension
-folder avoids invalidating its safety fingerprint.
-
-If no session state exists, the board imports the legacy `state/board.json` next to this file when
-present, without modifying it. Existing session state always takes precedence.
+folder avoids invalidating its safety fingerprint. State previously stored in the extension folder is
+not imported; boards start fresh.
 
 ## Requirements
 
@@ -47,4 +45,4 @@ present, without modifying it. Existing session state always takes precedence.
 ## Regression tests
 
 Run `node --experimental-vm-modules --test eng/board-state-storage.test.mjs` from the repository root
-to check both canvases' session-scoped persistence and legacy imports without accessing GitHub.
+to check both canvases' session-scoped persistence without accessing GitHub.

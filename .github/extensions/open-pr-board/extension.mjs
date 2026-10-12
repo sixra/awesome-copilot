@@ -43,8 +43,7 @@ async function getStore(repo) {
         // The repo is validated against REPO_PATTERN above, so it cannot escape the state directory.
         const filename = `${repo.replace("/", "__")}.json`;
         const file = path.join(session.workspacePath, "extensions", CANVAS_ID, "state", filename);
-        const legacyFile = path.join(EXT_DIR, "state", filename);
-        store = await new BoardStore({ file, repo }).load({ legacyFile });
+        store = await new BoardStore({ file, repo }).load();
         stores.set(repo, store);
     }
     return store;

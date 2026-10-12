@@ -52,10 +52,7 @@ file per repository. This is Copilot's session-state workspace, not the reposito
 checkout. State survives extension reloads and resuming the same session; a new
 session has its own board. Infinite sessions must be enabled to provide the workspace.
 Keeping writes outside the extension folder avoids invalidating its safety fingerprint.
-
-If no session state exists, the board imports the legacy
-`.github/extensions/open-pr-board/state/<owner>__<repo>.json` file when present,
-without modifying it. Existing session state always takes precedence.
+State previously stored in the extension folder is not imported; boards start fresh.
 Use **Reset board** (or the `reset_board` action) to clear reviews and history without
 touching GitHub.
 
@@ -88,4 +85,4 @@ Results arriving after a manual move, reset, or replacement review are rejected.
 Run `node --test eng/open-pr-board.test.mjs` from the repository root. GitHub writes
 are tested with injected in-process fakes, never the authenticated CLI.
 Run `node --experimental-vm-modules --test eng/board-state-storage.test.mjs` to check
-both canvases' session-scoped persistence and legacy imports without accessing GitHub.
+both canvases' session-scoped persistence without accessing GitHub.

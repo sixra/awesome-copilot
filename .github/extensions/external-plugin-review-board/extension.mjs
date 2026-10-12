@@ -358,4 +358,4 @@ if (!session.workspacePath) {
 store = await new BoardStore(
     path.join(session.workspacePath, "extensions", CANVAS_ID, "state", "board.json"),
     REPO,
-).load({ legacyFile: path.join(EXT_DIR, "state", "board.json") });
+).load();

@@ -68,30 +68,19 @@ export class BoardStore {
         return () => this.listeners.delete(listener);
     }
 
-    async load({ legacyFile } = {}) {
-        let raw;
-        let imported = false;
+    async load() {
         try {
-            raw = await readFile(this.file, "utf8");
+            const raw = await readFile(this.file, "utf8");
+            const parsed = JSON.parse(raw);
+            this.state = {
+                repo: this.repo,
+                updatedAt: parsed.updatedAt ?? null,
+                items: parsed.items && typeof parsed.items === "object" ? parsed.items : {},
+                history: Array.isArray(parsed.history) ? parsed.history : [],
+            };
         } catch (error) {
             if (error.code !== "ENOENT") throw error;
-            if (!legacyFile) return this;
-            try {
-                raw = await readFile(legacyFile, "utf8");
-                imported = true;
-            } catch (error) {
-                if (error.code !== "ENOENT") throw error;
-                return this;
-            }
         }
-        const parsed = JSON.parse(raw);
-        this.state = {
-            repo: this.repo,
-            updatedAt: parsed.updatedAt ?? null,
-            items: parsed.items && typeof parsed.items === "object" ? parsed.items : {},
-            history: Array.isArray(parsed.history) ? parsed.history : [],
-        };
-        if (imported) await this.persist();
         return this;
     }
 

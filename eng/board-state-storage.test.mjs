@@ -116,22 +116,17 @@ for (const id of ["open-pr-board", "external-plugin-review-board"]) {
     assert.deepEqual(await fingerprint(f.extensionDir), before);
   });
 
-  test(`${id} imports legacy state without changing it and prefers session state thereafter`, async (t) => {
+  test(`${id} starts fresh and ignores state stored in the extension folder`, async (t) => {
     const f = await fixture(t, id);
-    const legacy = {
+    await writeJSON(f.legacyFile, {
       version: 1, repo, items: { "1": { ...item, manualColumn: column, reviewStatus: "reviewed" } },
-      history: [{ number: 1, comment: "Preserved history" }],
-    };
-    await writeJSON(f.legacyFile, legacy);
+      history: [{ number: 1, comment: "Old history" }],
+    });
     const before = await fingerprint(f.extensionDir);
     const act = await loadCanvas(f);
-    assert.equal((await act("get_board")).items[0].manualOverride, column);
-    const imported = JSON.parse(await readFile(f.stateFile, "utf8"));
-    assert.deepEqual(imported.items, legacy.items);
-    assert.deepEqual(imported.history, legacy.history);
-    await act("move_item", { number: 1, column: "unreviewed" });
-    const reloaded = await loadCanvas(f);
-    assert.equal((await reloaded("get_board")).items[0].manualOverride, null);
+    assert.equal((await act("get_board")).items.length, 0);
+    await act("refresh");
+    assert.equal((await act("get_board")).items[0].manualOverride, null);
     assert.deepEqual(await fingerprint(f.extensionDir), before);
   });
 
@@ -142,32 +137,14 @@ for (const id of ["open-pr-board", "external-plugin-review-board"]) {
     assert.deepEqual(await fingerprint(f.extensionDir), before);
   });
 
-  test(`${id} surfaces corrupt session state instead of falling back to legacy data`, async (t) => {
+  test(`${id} surfaces corrupt session state`, async (t) => {
     const f = await fixture(t, id);
-    await writeJSON(f.legacyFile, { repo, items: {}, history: [] });
     await mkdir(path.dirname(f.stateFile), { recursive: true });
     await writeFile(f.stateFile, "not json", "utf8");
     await assert.rejects(async () => {
       const act = await loadCanvas(f);
       await act("get_board");
     }, /JSON|Unexpected token/);
-  });
-
-  test(`${id} surfaces legacy parse and migration write failures`, async (t) => {
-    const f = await fixture(t, id);
-    await mkdir(path.dirname(f.legacyFile), { recursive: true });
-    await writeFile(f.legacyFile, "not json", "utf8");
-    await assert.rejects(async () => {
-      const act = await loadCanvas(f);
-      await act("get_board");
-    }, /JSON|Unexpected token/);
-
-    await writeJSON(f.legacyFile, { repo, items: {}, history: [] });
-    await writeFile(f.workspacePath, "not a directory", "utf8");
-    await assert.rejects(async () => {
-      const act = await loadCanvas(f);
-      await act("get_board");
-    }, /ENOTDIR|ENOENT|EEXIST/);
   });
 }
 
