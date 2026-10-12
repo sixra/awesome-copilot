@@ -115,7 +115,14 @@ function signalPills(item) {
             pills.push(h("span", { class: `pill pill-${level.toLowerCase()}`, title: "AGT contributor risk" }, `AGT ${level}`));
         } else if (label === "external-plugin-canvas") {
             pills.push(h("span", { class: "pill" }, "canvas"));
+        } else if (label === "first party") {
+            pills.push(h("span", { class: "pill pill-first-party", title: "Repository owned by a Microsoft/GitHub organization" }, "First party"));
+        } else if (label === "third party") {
+            pills.push(h("span", { class: "pill pill-third-party", title: "Repository owned by a third-party organization" }, "Third party"));
         }
+    }
+    if (item.review?.fastTracked && !item.decision) {
+        pills.push(h("span", { class: "pill pill-approve", title: "First-party submission fast-tracked to approval" }, "Fast-tracked"));
     }
     if (item.decision) {
         pills.push(h("span", { class: `pill pill-${item.decision.kind}` }, item.decision.kind === "approve" ? "Approved" : "Rejected"));
@@ -391,7 +398,7 @@ function renderReview(item) {
         return wrapper;
     }
     const rows = [
-        ["Recommendation", RECOMMENDATION_LABELS[review.recommendation] + (item.manualColumn ? ` (you moved it to ${RECOMMENDATION_LABELS[item.manualColumn]})` : "")],
+        ["Recommendation", RECOMMENDATION_LABELS[review.recommendation] + (review.fastTracked ? " (first-party fast-track, no AI review)" : "") + (item.manualColumn ? ` (you moved it to ${RECOMMENDATION_LABELS[item.manualColumn]})` : "")],
         ["Plugin", review.pluginName],
         ["Repository", review.repository ? h("a", { href: `https://github.com/${review.repository}`, target: "_blank", rel: "noopener noreferrer" }, review.repository) : null],
         ["Repo facts", review.repoFacts],
@@ -546,6 +553,7 @@ ui.refresh.addEventListener("click", () =>
             const parts = [`${result.total} open`];
             if (result.added.length) parts.push(`${result.added.length} new`);
             if (result.removed.length) parts.push(`${result.removed.length} removed`);
+            if (result.fastTracked?.length) parts.push(`${result.fastTracked.length} first-party fast-tracked`);
             toast(`Refreshed: ${parts.join(", ")}`);
             if (selected != null && activeTab !== "review") loadDetail(selected, { force: true });
         } catch (error) {

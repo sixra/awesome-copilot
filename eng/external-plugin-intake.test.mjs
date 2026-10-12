@@ -631,6 +631,17 @@ for (const [type, login, expectedLabel] of [
     assert.equal(result.reviewSignals.repository.ownershipLabel, expectedLabel);
     const mergedResult = applyQualityGateResult(result, { overall_status: "pass" });
     assert.equal(mergedResult.reviewSignals.repository.ownershipLabel, expectedLabel);
+    const expectedNote = {
+      "first party": "| Repository owner | Organization-owned (first party: Microsoft/GitHub organization) |",
+      "third party": "| Repository owner | Organization-owned (third party) |",
+    }[expectedLabel];
+    for (const body of [result.commentBody, mergedResult.commentBody]) {
+      if (expectedNote) {
+        assert.ok(body.includes(expectedNote), `expected ownership note in:\n${body}`);
+      } else {
+        assert.doesNotMatch(body, /Repository owner/);
+      }
+    }
   });
 }
 
@@ -658,6 +669,7 @@ test("evaluateExternalPluginIssue classifies ownership even when the submission 
 
   assert.equal(result.valid, false);
   assert.equal(result.reviewSignals.repository.ownershipLabel, "first party");
+  assert.match(result.commentBody, /\| Repository owner \| Organization-owned \(first party/);
 });
 
 test("evaluateExternalPluginIssue fails when ref and sha resolve to different commits", async () => {

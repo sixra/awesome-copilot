@@ -1221,6 +1221,13 @@ function buildReviewSignalsCommentSection(reviewSignals) {
     "|---|---|",
   ];
   if (repository?.status === "pass") {
+    const ownershipNote = {
+      "first party": "Organization-owned (first party: Microsoft/GitHub organization)",
+      "third party": "Organization-owned (third party)",
+    }[repository.ownershipLabel];
+    if (ownershipNote) {
+      rows.push(`| Repository owner | ${ownershipNote} |`);
+    }
     rows.push(
       `| Repository age | ${repository.age_days === undefined ? "unknown" : `${repository.age_days} day(s)`} |`,
       `| Repository activity | ${repository.signals?.length ? repository.signals.join("; ") : "no configured signal"} |`,
