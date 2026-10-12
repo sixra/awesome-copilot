@@ -1,10 +1,5 @@
 # Excel MCP Plugin
 
-This documentation is a reviewed copy of the
-[Excel MCP plugin README for version 2.3.11](https://github.com/sbroenne/mcp-server-excel-plugins/blob/0057e645ff3620206e440bd313b8b26f0be943c0/plugins/excel-mcp/README.md).
-The plugin is maintained outside Awesome Copilot; this copy does not change
-its installation source.
-
 [![npm version](https://img.shields.io/npm/v/%40sbroenne%2Fmcp-server-excel)](https://www.npmjs.com/package/@sbroenne/mcp-server-excel)
 [![GitHub stars](https://img.shields.io/github/stars/sbroenne/mcp-server-excel?style=flat&label=GitHub%20stars)](https://github.com/sbroenne/mcp-server-excel)
 
@@ -57,9 +52,6 @@ package through `npx`:
 npx -y @sbroenne/mcp-server-excel@latest
 ```
 
-The reviewed repository revision fixes the plugin configuration and documentation,
-not the npm package downloaded at runtime: this launch command uses `@latest`.
-
 You do not need to add a separate MCP server entry to
 `~/.copilot/mcp-config.json`. For another MCP-compatible client, follow the
 [MCP Server installation guide](https://excelmcpserver.dev/installation-mcp-server/).
@@ -69,18 +61,17 @@ You do not need to add a separate MCP server entry to
 The MCP Server and the
 [CLI plugin](https://github.com/sbroenne/mcp-server-excel/tree/main/.github/plugins/excel-cli)
 give your assistant the same Excel features. You can install either or both;
-the difference is mainly how the agent connects:
+the difference is only technical:
 
 | Interface | Works with | Context |
-| --- | --- | --- |
+|---|---|---|
 | MCP Server | Any MCP-compatible client | 60 tool schemas loaded into context |
 | CLI (`excelcli`) | Agents that can run terminal commands | Built-in help, read only when needed |
 
 Coding agents can use either one. The CLI usually uses fewer AI tokens because
-the agent does not load every tool definition up front. In one comparison using
-the same task and AI model, the CLI used about 59,000 AI tokens and MCP used
-163,000 (about 64% fewer with CLI). This is one measured result, not a promise;
-results vary by task, model, and AI client. See the
+the agent does not load every tool definition up front. In one comparison using the same task and AI model, the CLI used about 59,000 AI
+tokens and MCP used 163,000 (about 64% fewer with CLI). This is one measured
+result, not a promise; results vary by task, model, and AI client. See the
 [benchmark context](https://github.com/sbroenne/mcp-server-excel/blob/f10926db28c8fc295e15374f4177e3b11ab4bd49/docs/ARCHITECTURE.md).
 
 ## More features

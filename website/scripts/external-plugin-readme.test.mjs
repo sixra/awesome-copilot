@@ -61,8 +61,14 @@ test("built Excel MCP page displays the included README and keeps external prove
   assert.match(html, /This is one measured result, not a promise/);
   assert.match(html, /External plugin/);
   assert.match(html, /Review the source before installing/);
-  assert.match(html, /0057e645ff3620206e440bd313b8b26f0be943c0/);
   assert.ok(!html.includes(fallback));
+});
+
+test("the original Excel MCP README renders without added explanatory text", () => {
+  const { markdownHtml } = readResourceMarkdown("docs/external-plugins/excel-mcp/README.md");
+  assert.match(markdownHtml, /What you can ask your assistant to do/);
+  assert.match(markdownHtml, /This is one measured\s+result, not a promise/);
+  assert.doesNotMatch(markdownHtml, /reviewed copy|reviewed repository revision/);
 });
 
 test("external listings without a README retain their documentation fallback", () => {

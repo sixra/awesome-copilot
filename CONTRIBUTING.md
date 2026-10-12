@@ -284,8 +284,9 @@ PR, where `<plugin-name>` exactly matches its name in `plugins/external.json`.
 For an already listed plugin, this can be part of its update PR. New listings
 must still go through the external plugin issue review workflow above.
 
-This is a reviewed documentation copy, not an installable local plugin. Link to
-the upstream README at an immutable commit and identify the version documented.
+This is a reviewed documentation copy, not an installable local plugin. In the PR
+description, link to the upstream README at an immutable commit and identify the
+version documented. The README itself can be copied unchanged.
 Use absolute HTTPS links for upstream documentation and images. Keep the copy
 current through reviewed PRs; the website does not fetch remote README content.
 The build rejects symlinked, unreadable, empty, or invalid-frontmatter README files.
