@@ -52,6 +52,14 @@ jobs:
                 color: '1D76DB',
                 description: 'External plugin submission includes a canvas extension'
               },
+              'first party': {
+                color: '1D76DB',
+                description: 'External plugin repository is owned by a Microsoft or GitHub first-party organization'
+              },
+              'third party': {
+                color: '5319E7',
+                description: 'External plugin repository is owned by another organization'
+              },
               'hooks': {
                 color: 'C2E0C6',
                 description: 'PR touches hooks'
