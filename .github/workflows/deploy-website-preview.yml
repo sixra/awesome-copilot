@@ -11,6 +11,7 @@ on:
       - "agents/**"
       - "skills/**"
       - "plugins/**"
+      - "docs/external-plugins/**"
       - "instructions/**"
       - "hooks/**"
       - "workflows/**"

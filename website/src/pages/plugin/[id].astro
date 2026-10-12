@@ -55,11 +55,15 @@ const { item, previous, next } = Astro.props as {
   next?: PluginItem;
 };
 
-// External plugins are referenced, not vendored: no README exists in this
-// repository for them, so the markdown body is simply empty.
+// External plugins can opt into a reviewed local README without vendoring
+// their installation source. Listings without one retain the empty body.
 const { markdownHtml } = item.readmeFile
   ? readResourceMarkdown(item.readmeFile)
   : { markdownHtml: "" };
+
+if (item.external && item.readmeFile && !markdownHtml.trim()) {
+  throw new Error(`External plugin README did not render any content: ${item.readmeFile}`);
+}
 
 const { html } = buildDetailToc(markdownHtml);
 

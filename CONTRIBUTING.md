@@ -276,6 +276,29 @@ When a pull request updates `plugins/external.json` (for example, version update
    - `requires-submitter-fixes` when quality checks fail due to plugin issues
    - `awaiting-review` when checks cannot complete because of infrastructure/transient errors
 
+##### Optional website README
+
+An external plugin can display a README on its Awesome Copilot detail page.
+Include `docs/external-plugins/<plugin-name>/README.md` in the plugin's contribution
+PR, where `<plugin-name>` exactly matches its name in `plugins/external.json`.
+For an already listed plugin, this can be part of its update PR. New listings
+must still go through the external plugin issue review workflow above.
+
+This is a reviewed documentation copy, not an installable local plugin. Link to
+the upstream README at an immutable commit and identify the version documented.
+Use absolute HTTPS links for upstream documentation and images. Keep the copy
+current through reviewed PRs; the website does not fetch remote README content.
+The build rejects symlinked, unreadable, empty, or invalid-frontmatter README files.
+Rendered Markdown uses the website's existing HTML sanitizer.
+
+No listing field or local `plugin.json` is needed. External plugins without this
+file retain the generic documentation notice and link to their source repository.
+
+Run `node --test eng/lib/external-plugin-readme.test.mjs` to check file association.
+After `npm run website:build`, run
+`node --test website/scripts/external-plugin-readme.test.mjs` to check the rendered
+Excel MCP page, other plugins' fallback, and Markdown sanitization.
+
 ##### Maintainer review responsibilities
 
 Maintainers are responsible for confirming that the submission:
