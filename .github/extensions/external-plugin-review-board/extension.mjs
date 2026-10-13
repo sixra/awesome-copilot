@@ -70,7 +70,7 @@ async function getIssue(number, { force = false } = {}) {
 
 async function startReview({ numbers, instanceId, send }) {
     const items = store.pendingReview(numbers);
-    if (!items.length) return { queued: [], message: "Nothing to review — all items already have an AI review." };
+    if (!items.length) return { queued: [], message: "Nothing to review — no eligible unreviewed items remain." };
     const queued = items.map((item) => item.number);
     const snapshots = await store.markQueued(queued);
     const prompt = buildReviewPrompt({

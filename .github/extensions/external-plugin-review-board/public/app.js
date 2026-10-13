@@ -561,6 +561,11 @@ function resetConfirm() {
     ui.approve.disabled = false;
     ui.reject.disabled = false;
     updatePreview();
+    const item = findItem(selected);
+    if (bulkBusy || item?.pendingDecision) {
+        ui.approve.disabled = true;
+        ui.reject.disabled = true;
+    }
 }
 
 async function decide(kind) {
