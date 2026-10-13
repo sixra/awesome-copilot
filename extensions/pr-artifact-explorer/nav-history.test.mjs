@@ -146,9 +146,45 @@ test("breadcrumb Back/Forward keeps independent in-canvas route history", async 
   assert.equal(s.stack.length, 2);
 
   // Invalid routes are not recorded.
-  await page.evaluate(() => (location.hash = "#nonsense"));
-  await page.waitForTimeout(300);
+  for (const bad of ["#nonsense", "#/nonsense", "#/pull/not-a-repo/3", "#/artifact/o%2Fr/x/1", "#/pulls/%E0%A4%A"]) {
+    await page.evaluate((hash) => (location.hash = hash), bad);
+    await page.waitForTimeout(200);
+  }
   s = await state();
-  assert.ok(!s.stack.includes("#nonsense"));
+  assert.deepEqual(s.stack.filter((h) => /nonsense|not-a-repo|%2Fr\/x|%E0/.test(h)), []);
+
+  // Docs, cache and accounts are meaningful steps.
+  const before = s.stack.length;
+  for (const hash of ["#/docs", "#/cache", "#/accounts"]) {
+    await page.evaluate((h) => (location.hash = h), hash);
+    await page.waitForFunction((h) => location.hash === h, hash);
+  }
+  s = await state();
+  assert.equal(s.stack.length, before + 3);
+  assert.deepEqual(s.stack.slice(-3), ["#/docs", "#/cache", "#/accounts"]);
+
+  // The browser view is one step; its URL/zoom noise replaces the entry.
+  const artifactRoute = "#/artifact/o%2Fr/1/4004?file=a.txt";
+  await page.evaluate((h) => (location.hash = h), artifactRoute);
+  await page.waitForFunction((h) => location.hash === h, artifactRoute);
+  await page.evaluate(() => (location.hash = "#/browser"));
+  await page.waitForFunction(() => location.hash.startsWith("#/browser"));
+  await page.evaluate(() => history.replaceState(null, "", "#/browser?v=e30"));
+  await page.evaluate(() => window.dispatchEvent(new HashChangeEvent("hashchange")));
+  s = await state();
+  const browserEntries = s.stack.filter((h) => h.startsWith("#/browser"));
+  assert.equal(browserEntries.length, 1, "browser entry recorded once");
+  const top = s.stack.length;
+  // Breadcrumb chrome (and these controls) is deliberately hidden in browser view.
+  assert.equal(await page.locator("#route-back").isVisible(), false);
+  await page.evaluate(() => navHistory.step(-1));
+  await page.waitForFunction((h) => location.hash === h, artifactRoute);
+  s = await state();
+  assert.equal(s.stack.length, top, "Back from browser does not append");
+  assert.equal(await page.locator("#route-forward").isDisabled(), false, "Forward available to browser");
+  await page.click("#route-forward");
+  await page.waitForFunction(() => location.hash.startsWith("#/browser"));
+  s = await state();
+  assert.equal(s.stack.length, top);
   assert.deepEqual(errors, []);
 });

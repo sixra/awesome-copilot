@@ -533,6 +533,8 @@ const DOCS_SECTIONS = [
   ["shortcuts", "Keyboard shortcuts", `
     <p class="docs-lead">Keep common actions close at hand. These shortcuts work when focus is in the Explorer, outside a text field—not inside the previewed website.</p>
     ${SHORTCUT_REFERENCE}
+    <h2>Explorer history</h2>
+    <p>The right-aligned <strong>Back</strong> and <strong>Forward</strong> buttons in the breadcrumb row move through Explorer's own views only, never the app or a previewed site. Opening a Browser view is one step; changing its URL, zoom, or size replaces that step. Browser view has no breadcrumb row, so use its own address-bar Back/Forward for site history.</p>
     <h2>Navigate without a mouse</h2>
     <p>Use Tab to move through the header, address bar, and preview controls. Open <strong>Options</strong> or <strong>More</strong> with Enter, then Tab through their actions. Escape closes the menu and returns focus to its trigger.</p>
     <p>The <strong>g</strong> shortcuts are a sequence: press g, then the second key. Browser navigation, zoom, and capture shortcuts apply while Browser is open.</p>
@@ -781,6 +783,7 @@ function renderBrowser(route) {
     if (location.hash.startsWith("#/browser")) {
       const next = browserHash({ url: state.url || undefined, preset: state.preset, width: state.preset === "custom" ? state.width : undefined, height: state.preset === "custom" ? state.height : undefined, zoom: state.fit ? undefined : state.zoom });
       history.replaceState(null, "", next);
+      if (typeof navHistory !== "undefined") navHistory.replaceBrowser(next);
     }
   }
 

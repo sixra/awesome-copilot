@@ -10,10 +10,36 @@ const NAV_HISTORY_LIMIT = 100;
 const navHistory = (() => {
   let stack = [];
   let index = -1;
+  const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+  const decode = (value) => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return null;
+    }
+  };
+  const positive = (value) => /^[1-9]\d{0,15}$/.test(value ?? "");
+  const trackable = (hash) => {
+    if (typeof hash !== "string" || !hash.startsWith("#/") || hash.length >= 4096) return false;
+    const raw = hash.slice(2);
+    const queryIndex = raw.indexOf("?");
+    const parts = (queryIndex >= 0 ? raw.slice(0, queryIndex) : raw).split("/");
+    const [name, repo, a, b] = parts;
+    if (name === "cache" || name === "accounts") return parts.length === 1;
+    if (name === "browser") return parts.length === 1;
+    if (name === "docs") return parts.length <= 2 && (parts[1] === undefined || decode(parts[1]) !== null);
+    if (name === "pulls") return parts.length === 2 && REPO.test(decode(repo) ?? "");
+    if (name === "pull" || name === "issue") return parts.length === 3 && REPO.test(decode(repo) ?? "") && positive(a);
+    if (name === "artifact") {
+      return parts.length === 4 && REPO.test(decode(repo) ?? "") && positive(a) && positive(b);
+    }
+    return false;
+  };
+  const isBrowser = (hash) => typeof hash === "string" && hash.startsWith("#/browser");
   try {
     const saved = JSON.parse(sessionStorage.getItem(NAV_HISTORY_KEY) || "null");
     if (saved && Array.isArray(saved.stack) && Number.isInteger(saved.index)) {
-      stack = saved.stack.filter((item) => typeof item === "string" && item.startsWith("#/"));
+      stack = saved.stack.filter(trackable);
       index = stack.length === saved.stack.length ? Math.min(saved.index, stack.length - 1) : stack.length - 1;
     }
   } catch {}
@@ -24,10 +50,19 @@ const navHistory = (() => {
     if (routeBack) routeBack.disabled = index <= 0;
     if (routeForward) routeForward.disabled = index >= stack.length - 1;
   };
-  const trackable = (hash) =>
-    typeof hash === "string" && hash.startsWith("#/") && hash.length < 4096 && !hash.startsWith("#/browser");
   return {
+    // Browser view URL/zoom/resize updates replace the current browser entry.
+    replaceBrowser(hash) {
+      if (!isBrowser(hash)) return;
+      if (isBrowser(stack[index])) {
+        if (stack[index] !== hash) {
+          stack[index] = hash;
+          sync();
+        }
+      } else this.record(hash);
+    },
     record(hash = location.hash) {
+      if (isBrowser(hash) && isBrowser(stack[index]) && trackable(hash)) return this.replaceBrowser(hash);
       if (!trackable(hash) || stack[index] === hash) return sync();
       stack = stack.slice(0, index + 1);
       stack.push(hash);
@@ -713,6 +748,18 @@ function artifactHash(repository, pullNumber, artifactId, filePath = null, raw =
 }
 
 function parseRoute() {
+  try {
+    return parseRouteUnsafe();
+  } catch {
+    return {
+      name: "pulls",
+      repository: bootstrapState?.prefs?.repository ?? "microsoft/aspire",
+      state: bootstrapState?.prefs?.pullState ?? "open",
+    };
+  }
+}
+
+function parseRouteUnsafe() {
   const raw = location.hash.startsWith("#/") ? location.hash.slice(2) : "";
   const queryIndex = raw.indexOf("?");
   const path = queryIndex >= 0 ? raw.slice(0, queryIndex) : raw;
