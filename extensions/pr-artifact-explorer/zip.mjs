@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { open, stat } from "node:fs/promises";
 import { posix } from "node:path";
 import { pipeline } from "node:stream/promises";
-import { Transform } from "node:stream";
+import { Transform, Writable } from "node:stream";
 import { createInflateRaw } from "node:zlib";
 
 const ZIP64_EOCD_SIGNATURE = 0x06064b50;
@@ -445,11 +445,42 @@ export async function streamZipEntry(
 }
 
 /**
+ * Verifies the whole entry (declared size and CRC-32) with bounded streaming and no
+ * buffering. Throws on any mismatch. Soft limits report but never stop the stream.
+ */
+export async function verifyZipEntry(
+  zipPath,
+  entry,
+  { onSoftLimit = null, softLimit = null, onProgress = null, signal = null } = {},
+) {
+  if (!entry?.supported) {
+    throw new Error(`ZIP entry cannot be served: ${entry?.name ?? "unknown"}`);
+  }
+  const onBytes = (bytes) => {
+    onProgress?.(bytes);
+    const limit = typeof softLimit === "function" ? softLimit() : softLimit;
+    if (limit != null && bytes > limit) onSoftLimit?.("streamedEntryBytes", bytes, entry.name);
+  };
+  if (entry.compressedSize === 0) {
+    if (entry.uncompressedSize !== 0 || entry.crc32 !== 0) {
+      throw new Error(`ZIP entry size check failed: ${entry.name}`);
+    }
+    return;
+  }
+  const { start, endExclusive } = await entryDataRange(zipPath, entry);
+  const streams = [createReadStream(zipPath, { start, end: endExclusive - 1 })];
+  if (entry.method !== 0) streams.push(createInflateRaw());
+  streams.push(createVerifyTransform(entry, onBytes));
+  streams.push(new Writable({ write(_chunk, _encoding, done) { done(); } }));
+  await pipeline(...streams, signal ? { signal } : {});
+}
+
+/**
  * Streams the inclusive byte range [start, end] of an entry's decompressed content
  * (for HTTP Range / media seeking). Stored entries seek directly inside the ZIP;
- * deflated entries inflate and discard the leading bytes. The full-entry CRC cannot be
- * verified for a partial read, so it is only checked by full `streamZipEntry` reads;
- * the path, host and token checks happen before this is called.
+ * deflated entries inflate and discard the leading bytes. A partial read cannot check the
+ * whole-entry CRC itself, so callers must run `verifyZipEntry` once first (the cache layer
+ * does, and remembers the result); path, host and token checks happen before this is called.
  */
 export async function streamZipEntryRange(
   zipPath,

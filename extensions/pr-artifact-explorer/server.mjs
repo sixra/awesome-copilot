@@ -12,6 +12,7 @@ import {
   getCachedArtifact,
   getCachedEntry,
   streamCachedEntry,
+  verifyCachedEntry,
   JobsActiveError,
   jobRegistry,
   readCachedEntry,
@@ -424,6 +425,13 @@ async function handleContentRequest(req, res, pathname, searchParams) {
     return true;
   }
   if (range.kind === "range") {
+    if (req.method !== "HEAD") {
+      try {
+        await verifyCachedEntry(context);
+      } catch (error) {
+        throw new HttpError(502, `Entry failed integrity verification: ${error.message}`);
+      }
+    }
     status = 206;
     partial = { start: range.start, end: range.end };
     headers["Content-Range"] = `bytes ${range.start}-${range.end}/${size}`;

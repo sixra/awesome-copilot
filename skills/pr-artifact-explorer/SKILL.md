@@ -39,6 +39,12 @@ Use `share { input, preset?, zoom?, width?, height? }` to produce a link, route,
 - `controlled_navigate { url, preset?, ... }`, `controlled_back`, `controlled_forward`, `controlled_refresh`, `controlled_close` drive an isolated Chromium (in-memory profile, no login state) with real history; use it for sites that block iframes. Navigation failures are returned as errors, never as blank pages. If Playwright or Chromium is missing, relay the returned setup instructions to the user; never install silently.
 - Pages that forbid framing (X-Frame-Options / CSP) are reported and not bypassed.
 
+## Previewing files
+
+- A contextual **Browser view** action appears in the preview toolbar only for static-site HTML artifacts; it is not a global nav item. Open URLs directly with `open_target` / `navigate_browser` or a `#/browser?v=...` route.
+- `.webm`, `.mp4` and `.mov` use native `<video controls>` with range seeking (the whole entry is CRC/size verified once, then reused). Codec support is browser-dependent (WebM VP8/VP9 is most reliable; H.264 MP4/MOV may not play), so a failure shows an explanation and a download fallback.
+- JUnit XML (`testsuites`/`testsuite` roots) renders a native report with totals, status filters, search and failure/error/skipped/stdout/stderr details; the XML source and download stay available. Malformed reports fall back to source with an error; other XML uses the generic viewer.
+
 ## Recovery
 
 If the canvas misbehaves, call `restart_canvas`: it keeps the port, token, and running jobs. Use `docs` to open the built-in Docs tab, which also lists keyboard shortcuts (press `?`).

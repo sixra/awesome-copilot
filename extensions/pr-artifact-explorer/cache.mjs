@@ -30,9 +30,13 @@ import {
   readZipIndex,
   streamZipEntry,
   streamZipEntryRange,
+  verifyZipEntry,
 } from "./zip.mjs";
 
 const indexCache = new Map();
+const verifiedEntries = new Map();
+const verificationsInFlight = new Map();
+const MAX_VERIFIED_ENTRIES = 512;
 const maintenance = new CacheMaintenanceCoordinator();
 export const jobRegistry = new JobRegistry(limitPolicy, { file: JOBS_FILE });
 let reservedDownloadBytes = 0;
@@ -441,6 +445,68 @@ export async function getCachedEntry(artifactId, entryPath) {
   return { metadata, archivePath: paths.archive, index, entry };
 }
 
+async function verifyEntryOnce(context, options) {
+  const { entry, archivePath } = context;
+  const info = await stat(archivePath);
+  const key = [archivePath, info.size, info.mtimeMs, entry.name, entry.localHeaderOffset, entry.compressedSize, entry.uncompressedSize, entry.crc32].join("|");
+  for (;;) {
+    if (verifiedEntries.has(key)) return;
+    let pending = verificationsInFlight.get(key);
+    const leader = !pending;
+    if (leader) {
+      pending = verifyZipEntry(archivePath, entry, options).then(() => {
+        if (verifiedEntries.size >= MAX_VERIFIED_ENTRIES) verifiedEntries.delete(verifiedEntries.keys().next().value);
+        verifiedEntries.set(key, true);
+      });
+      verificationsInFlight.set(key, pending);
+      pending.then(
+        () => verificationsInFlight.delete(key),
+        () => verificationsInFlight.delete(key),
+      );
+    }
+    try {
+      await pending;
+      return;
+    } catch (error) {
+      // A follower retries when only the leader's request was cancelled.
+      if (leader || options.signal?.aborted || error?.name !== "AbortError") throw error;
+    }
+  }
+}
+
+/**
+ * Verifies a whole entry (size + CRC) before any ranged bytes are served, so the caller
+ * can still answer with a real error status. Progress and soft-limit prompts are tracked
+ * like a stream job; verification is never stopped by a soft limit.
+ */
+export async function verifyCachedEntry(context) {
+  const outer = new AbortController();
+  let tracker = null;
+  const ensure = () => {
+    if (tracker) return;
+    tracker = jobRegistry.track({
+      repository: context.metadata?.repository,
+      artifactId: context.metadata?.artifact?.id,
+      name: context.entry.name,
+    });
+    tracker.signal.addEventListener("abort", () => outer.abort(), { once: true });
+  };
+  const limit = () => limitPolicy.get("streamedEntryBytes");
+  if (context.entry.uncompressedSize > limit()) ensure();
+  try {
+    await verifyEntryOnce(context, {
+      signal: outer.signal,
+      softLimit: limit,
+      onSoftLimit: ensure,
+      onProgress: (bytes) => tracker?.update(bytes),
+    });
+    tracker?.finish();
+  } catch (error) {
+    tracker?.finish(error);
+    throw error;
+  }
+}
+
 /**
  * Streams a cached entry to `writable`. A tracked stream job appears (with a soft-limit
  * prompt) only once the live decompressed size crosses the current limit; the stream
@@ -461,7 +527,8 @@ export async function streamCachedEntry(context, writable, transform = null, ran
   };
   const limit = () => limitPolicy.get("streamedEntryBytes");
   const servedBytes = range ? range.end - range.start + 1 : context.entry.uncompressedSize;
-  if (servedBytes > limit()) ensure();
+  const verifyBytes = range ? context.entry.uncompressedSize : servedBytes;
+  if (Math.max(servedBytes, verifyBytes) > limit()) ensure();
   try {
     const options = {
       signal: outer.signal,
@@ -470,6 +537,7 @@ export async function streamCachedEntry(context, writable, transform = null, ran
       onProgress: (bytes) => tracker?.update(bytes),
     };
     if (range) {
+      await verifyEntryOnce(context, options);
       await streamZipEntryRange(context.archivePath, context.entry, writable, range, options);
     } else {
       await streamZipEntry(context.archivePath, context.entry, writable, transform, options);
