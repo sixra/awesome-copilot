@@ -347,17 +347,16 @@
 
   function applyFilters(preview) {
     if (!preview) return;
-    const terms = String(preview.querySelector("[data-trx-search-input]")?.value ?? "")
+    const phrase = String(preview.querySelector("[data-trx-search-input]")?.value ?? "")
       .trim()
       .toLocaleLowerCase()
-      .split(/\s+/)
-      .filter(Boolean);
+      .replace(/\s+/g, " ");
     const category = preview.querySelector('[data-trx-filter][aria-pressed="true"]')?.dataset.trxFilter ?? "all";
     const results = [...preview.querySelectorAll("[data-trx-result]")];
     let visible = 0;
     for (const result of results) {
       const matches = (category === "all" || result.dataset.trxCategory === category) &&
-        terms.every((term) => (result.dataset.trxSearch ?? "").includes(term));
+        (result.dataset.trxSearch ?? "").replace(/\s+/g, " ").includes(phrase);
       result.hidden = !matches;
       if (matches) visible += 1;
     }

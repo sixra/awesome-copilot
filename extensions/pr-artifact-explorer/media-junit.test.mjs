@@ -215,4 +215,20 @@ test("JUnit viewer detects, aggregates, escapes and falls back in real Chromium"
   assert.deepEqual(timing[1], ["0 s", "0 s"]);
   assert.deepEqual(timing[2], ["Not recorded", "Not recorded"]);
   assert.deepEqual(timing[3], ["1.5 s", "1 s"]);
+
+  const search = await page.evaluate((xml) => {
+    const out = document.getElementById("out");
+    JunitPreview.render(xml, out, { highlightXml: (s) => s });
+    const preview = out.querySelector(".trx-preview");
+    const input = preview.querySelector("[data-trx-search-input]");
+    const visible = () => [...preview.querySelectorAll("[data-trx-result]")].filter((r) => !r.hidden).length;
+    input.value = "Browser A";
+    JunitPreview.applyFilters(preview);
+    const a = [visible(), preview.querySelector("[data-trx-result-count]").textContent];
+    input.value = "browser   b";
+    JunitPreview.applyFilters(preview);
+    return [a, visible()];
+  }, `<testsuites><testsuite name="Browser A"><testcase name="one"/><testcase name="two"/></testsuite><testsuite name="Browser B"><testcase name="three"/><testcase name="four"/></testsuite></testsuites>`);
+  assert.deepEqual(search[0], [2, "2 of 4 results"]);
+  assert.equal(search[1], 2);
 });
