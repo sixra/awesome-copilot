@@ -21,7 +21,16 @@ Start either mode from Chat or from the canvas. The canvas includes 61 industry 
 
 ## How SDD works
 
-Each phase follows its skill in fresh-context subagents:
+Each phase follows its guide in the `agentic-loop` skill, in fresh-context subagents:
+
+| Phase | Work |
+| --- | --- |
+| Specify | EARS spec, frozen implementation contract, workstreams and deployment plan after a read-only Azure preflight |
+| Implement | azd scaffold and provisioning, the hosted integration checkpoint, then parallel workstreams |
+| Verify | Local end-to-end tests per acceptance criterion, hosted invocation, telemetry and Foundry evaluations |
+| Deploy | `azd up` after approval, health checks and end-to-end tests against the deployed endpoints |
+
+In each phase:
 
 - A **lead** does the work.
 - An independent **reviewer** reruns the checks and reports issues with evidence.
@@ -33,22 +42,18 @@ The workflow pauses for your approval of the spec (unless autonomy is `auto`) an
 
 | Type | Name | Description |
 | --- | --- | --- |
-| Skill | [Agentic Loop](../../skills/agentic-loop/) | Entry point: setup, mode selection, defaults, working rules and the improve mode |
-| Skill | [Specify](../../skills/agentic-loop-specify/) | EARS spec, frozen implementation contract, workstreams and deployment plan after a read-only Azure preflight |
-| Skill | [Implement](../../skills/agentic-loop-implement/) | azd scaffold and provisioning, the hosted integration checkpoint, then parallel workstreams |
-| Skill | [Verify](../../skills/agentic-loop-verify/) | Local end-to-end tests per acceptance criterion, hosted invocation, telemetry and Foundry evaluations |
-| Skill | [Deploy](../../skills/agentic-loop-deploy/) | `azd up` after approval, health checks and end-to-end tests against the deployed endpoints |
+| Skill | [Agentic Loop](../../skills/agentic-loop/) | One skill: setup, mode selection, defaults and working rules, plus guides for rapid prototyping, each SDD phase and improve mode |
 | Canvas | [Agentic Loop canvas](../../extensions/agentic-loop-canvas/) | Setup, project selection, scenarios, the live workflow view, exploration, optimization and costs |
 | Workflow | [Agentic Loop workflow](../../extensions/agentic-loop-workflow/) | The dynamic workflow that runs the four SDD phases in sequence behind evidence gates |
 
 ## Improve mode
 
-Each build records verified lessons in `LOOP.md`, and each SDD run leaves a flight record. Ask Copilot to **improve the agentic loop** to mine both. Copilot proposes evidence-backed changes to the skills and workflow, each with a regression check, and applies only the changes you approve. Approvals, RBAC, safety and evidence gates are never weakened.
+Each build records verified lessons in `LOOP.md`, and each SDD run leaves a flight record. Ask Copilot to **improve the agentic loop** to mine both. Copilot proposes evidence-backed changes to the skill and workflow, each with a regression check, and applies only the changes you approve. Approvals, RBAC, safety and evidence gates are never weakened.
 
 ## Requirements
 
 - GitHub Copilot App for the canvas. The workflow also runs from the Copilot CLI with `copilot workflow run agentic-loop-workflow`
-- An Azure subscription, the Azure CLI and the Azure Developer CLI with its Foundry (`azure.ai.*`) extensions. The canvas Setup tab helps install missing tools with Foundry DevPack, and the skills ask before installing or upgrading anything
+- An Azure subscription, the Azure CLI and the Azure Developer CLI with its Foundry (`azure.ai.*`) extensions. The canvas Setup tab helps install missing tools with Foundry DevPack, and the skill asks before installing or upgrading anything
 - Python 3.13, Node.js and Git
 
 Both modes create billable Azure resources, such as model deployments, hosted agents, Container Apps and monitoring, plus Azure AI Search when grounding needs it. Copilot confirms billable changes before making them. To remove an SDD environment, ask Copilot to tear it down. After you approve, it runs `azd down --purge` and deletes the Entra app registrations the build created, which live outside the resource group.

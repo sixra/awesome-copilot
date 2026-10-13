@@ -1,6 +1,6 @@
 ---
 name: agentic-loop
-description: 'Build complete agentic solutions on Microsoft Foundry, GitHub and Azure: hosted agents, toolbox tools and skills, Foundry IQ grounding and a React/FastAPI app. Two modes: rapid prototyping in an existing Foundry project, or spec-driven delivery (SDD) that runs the agentic-loop-workflow through Specify, Implement, Verify and Deploy, creating the Foundry project and deploying with azd. Improve mode refines these skills and the workflow from past runs. Use for Agentic Loop requests, Agentic Loop canvas actions, or end-to-end agent solutions spanning architecture, implementation, testing and Azure deployment. Not for isolated Azure administration or unrelated UI edits.'
+description: 'Build complete agentic solutions on Microsoft Foundry, GitHub and Azure: hosted agents, toolbox tools and skills, Foundry IQ grounding and a React/FastAPI app. Two modes: rapid prototyping in an existing Foundry project, or spec-driven delivery (SDD) that runs the agentic-loop-workflow through Specify, Implement, Verify and Deploy, creating the Foundry project and deploying with azd. Also runs one SDD phase on its own, such as deriving a spec from a prototype. Improve mode refines this skill and the workflow from past runs. Use for Agentic Loop requests, Agentic Loop canvas actions, or end-to-end agent solutions spanning architecture, implementation, testing and Azure deployment. Not for isolated Azure administration or unrelated UI edits.'
 ---
 
 # Agentic Loop
@@ -10,7 +10,7 @@ Coordinate the solution; use `microsoft-foundry` to execute platform operations.
 ## Bootstrap (once per session)
 
 1. **Foundry skill.** If `microsoft-foundry` is unavailable, ask, then install it (`copilot plugin install azure@awesome-copilot`, or `gh skill install microsoft/azure-skills microsoft-foundry --agent github-copilot --scope project`) and reload skills.
-2. **Canvas and workflow.** The `agentic-loop` plugin ships both, listed as `agentic-loop:agentic-loop-canvas` and `agentic-loop:agentic-loop-workflow`. Call `extensions_manage` with `operation: "list"`. For each one missing under either name, call `install_extension` with `url: "https://github.com/github/awesome-copilot/tree/main/extensions/<name>"` and `scope: "user"`, then call `extensions_reload` once. Never install duplicates. If one is listed as disabled, ask, then remove only its ID from `extensions.disabledExtensions` in `~/.copilot/settings.json`, and have the user continue in a new session: running sessions keep it disabled, even after a reload. If an extension failed, `inspect` it and report its log. If the phase skills are also missing, recommend `copilot plugin install agentic-loop@awesome-copilot`.
+2. **Canvas and workflow.** The `agentic-loop` plugin ships both, listed as `agentic-loop:agentic-loop-canvas` and `agentic-loop:agentic-loop-workflow`. Call `extensions_manage` with `operation: "list"`. For each one missing under either name, call `install_extension` with `url: "https://github.com/github/awesome-copilot/tree/main/extensions/<name>"` and `scope: "user"`, then call `extensions_reload` once. Never install duplicates. If one is listed as disabled, ask, then remove only its ID from `extensions.disabledExtensions` in `~/.copilot/settings.json`, and have the user continue in a new session: running sessions keep it disabled, even after a reload. If an extension failed, `inspect` it and report its log.
 3. **Canvas.** When work starts from Chat, open it once: `open_canvas` with `canvasId: "agentic-loop-canvas"`, `instanceId: "agentic-loop"` and `input: { mode }`. Prompts beginning `[Agentic Loop canvas action]` come from the canvas; follow their target, approval and resume instructions literally.
 
 ## Choose the mode
@@ -21,7 +21,7 @@ Coordinate the solution; use `microsoft-foundry` to execute platform operations.
 | Existing Foundry project selected or named; fast prototype; no deployment pipeline needed | **Rapid prototyping** → [rapid.md](references/rapid.md) |
 | Spec, new Foundry project, azd/IaC, CI-ready repo or full Azure deployment | **SDD** → [sdd.md](references/sdd.md) |
 | Improve, learn from runs, or canvas improve prompt | **Improve** → [improve.md](references/improve.md) |
-| One named phase | That phase skill: `agentic-loop-specify`, `-implement`, `-verify` or `-deploy` |
+| One named SDD phase | Its guide — [Specify](references/specify.md), [Implement](references/implement.md), [Verify](references/verify.md) or [Deploy](references/deploy.md) — with the [SDD defaults](references/sdd.md#sdd-defaults) |
 
 Otherwise ask once with the choices "Rapid prototyping (existing Foundry project)" and "SDD (new project, deployed with azd)".
 
@@ -58,7 +58,10 @@ Right after a fix is verified — the failing probe or an equivalent boundary ch
 | --- | --- |
 | [rapid.md](references/rapid.md) | Running rapid prototyping |
 | [sdd.md](references/sdd.md) | Starting, resuming or manually running SDD |
-| [improve.md](references/improve.md) | Improving skills or the workflow from evidence |
+| [specify.md](references/specify.md), [implement.md](references/implement.md), [verify.md](references/verify.md), [deploy.md](references/deploy.md) | Running that SDD phase (workflow subagents read them too) |
+| [azd-layout.md](references/azd-layout.md) | SDD `azure.yaml` layers, services, hooks and post-deploy grants |
+| [spec-template.md](assets/spec-template.md), [deployment-plan-template.md](assets/deployment-plan-template.md), [devcontainer.json](assets/devcontainer.json) | Specify's templates |
+| [improve.md](references/improve.md) | Improving the skill or the workflow from evidence |
 | [foundry-hosted-agent.md](references/foundry-hosted-agent.md) | Hosted-agent protocol and Python dependencies |
 | [copilot-sdk-foundry.md](references/copilot-sdk-foundry.md) | Copilot SDK provider, auth, telemetry and packaging |
 | [copilot-sdk-with-toolbox.py](references/copilot-sdk-with-toolbox.py) | Reference Copilot SDK agent with toolbox and OTel |

@@ -1,6 +1,6 @@
 # Improve mode
 
-Recursive improvement: learn from past executions and refine the Agentic Loop skills and workflow with the smallest evidence-backed changes. Analysis is read-only; nothing is applied without approval.
+Recursive improvement: learn from past executions and refine the Agentic Loop skill and workflow with the smallest evidence-backed changes. Analysis is read-only; nothing is applied without approval.
 
 ## 1. Gather evidence
 
@@ -12,7 +12,7 @@ Recursive improvement: learn from past executions and refine the Agentic Loop sk
 - **Lessons:** `LOOP.md` entries and their status.
 - **Workflow history:** `dynamic_workflows_manage` with `runs`, filtered to `agentic-loop-workflow`, then `inspect-run` for each failed, blocked or slow run.
 - **Session history:** `session_store_sql` for recent Agentic Loop sessions in scope: failed tools, retries, user corrections, questions asked and manual fixes after a blocked pause. Time-bound every query and use `LIMIT`.
-- **Current sources:** the `agentic-loop*` skills, their references, the workflow `lib/*.mjs` and `skills/agentic-loop/evals/evals.json`.
+- **Current sources:** the `agentic-loop` skill (`SKILL.md`, `references/`, `assets/` and `evals/evals.json`) and the workflow `lib/*.mjs`.
 
 ## 2. Analyze
 
@@ -40,6 +40,6 @@ Prefer tightening or deleting text over adding it. Keep `SKILL.md` lean and put 
 
 ## 4. Apply after approval
 
-- **In a clone of `github/awesome-copilot`:** edit `skills/agentic-loop*` and `extensions/agentic-loop-*` directly. Validate with `npm run skill:validate`, `npm run plugin:validate` and `node --test extensions/agentic-loop-*/tests/*.test.mjs`, then offer a pull request.
-- **In a solution repository:** plugin files are replaced on update, so write project overrides instead. Copy the affected skill folder to `.github/skills/<name>/` and edit it there. Workflow subagents read project skills first, so overrides apply to the next run. Change workflow code only through an upstream pull request.
+- **In a clone of `github/awesome-copilot`:** edit `skills/agentic-loop/` and `extensions/agentic-loop-*` directly. Validate with `npm run skill:validate`, `npm run plugin:validate` and `node --test extensions/agentic-loop-*/tests/*.test.mjs`, then offer a pull request.
+- **In a solution repository:** plugin files are replaced on update, so write project overrides instead. Copy the whole skill folder to `.github/skills/agentic-loop/` and edit it there; the workflow ignores a copy without `SKILL.md`, `references/sdd.md` and the four phase guides. Workflow subagents read project skills first, so overrides apply to the next run. Change workflow code only through an upstream pull request.
 - **Afterwards:** reload with `extensions_reload` when extensions change. Run the affected evals in one parallel batch, fix the failures, then rerun only those, once. If an eval still fails, run it once against the base commit. If it fails there too, record it as pre-existing and stop iterating. Mark matching `LOOP.md` lessons `adopted`, and mark them `validated` only after a later run confirms the benefit. Offer to upstream generalizable improvements.

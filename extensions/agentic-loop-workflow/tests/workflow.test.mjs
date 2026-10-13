@@ -184,7 +184,7 @@ test("gated run: phases in order, approvals, replay without duplicate work, flig
     assert.deepEqual(record.checkpoints.map(row => row.key), ["approve-spec-v1", "approve-deploy-v1"]);
     assert.deepEqual(record.phases.map(row => `${row.phase}:${row.round}:${row.status}`), ["Specify:1:passed", "Implement:1:passed", "Verify:1:passed", "Deploy:1:passed"]);
     assert.ok(record.phases[1].lessons.includes("Implement · api lesson"));
-    assert.equal(record.skills["agentic-loop-specify"], "repository");
+    assert.deepEqual(record.skills, { "agentic-loop": "repository", "microsoft-foundry": "skill-tool" });
     assert.ok(record.completedAt);
 });
 
@@ -477,9 +477,9 @@ test("skills missing on disk are logged and loaded through the skill tool", asyn
     const { cwd, home } = await workspace(t);
     const run = harness({ cwd, home, args: { brief: BRIEF, autonomy: "auto", skipDeploy: true }, dir: path.join(cwd, "x", "y", "z") });
     assert.equal((await run.attempt()).status, "completed");
-    assert.equal(run.state.logs[1], "Skills not found on disk, so subagents load them with the skill tool: agentic-loop, agentic-loop-specify, agentic-loop-implement, agentic-loop-verify, agentic-loop-deploy, microsoft-foundry");
+    assert.equal(run.state.logs[1], "Skills not found on disk, so subagents load them with the skill tool: agentic-loop, microsoft-foundry");
     assert.ok(run.state.calls.every(call => call.prompt.includes("(load it with the skill tool)")));
-    assert.equal((await run.record()).skills["agentic-loop-deploy"], "skill-tool");
+    assert.equal((await run.record()).skills["agentic-loop"], "skill-tool");
 });
 
 test("validateArgs enforces the documented contract", () => {
@@ -622,7 +622,8 @@ test("prompts are deterministic, scoped and fall back to the skill tool", async 
     assert.ok(specify.includes(`<brief>\n${BRIEF}\n</brief>`));
     assert.ok(specify.includes("Canvas scenario: insurance-claims-triage."));
     assert.ok(specify.includes("pass --subscription to az commands"));
-    assert.ok(specify.includes(path.join(skills.Specify.dir, "SKILL.md")));
+    assert.ok(specify.includes(`Follow ${path.join(skills.router.dir, "references", "specify.md")} with the defaults in ${path.join(skills.router.dir, "SKILL.md")}`));
+    assert.ok(!specify.includes(path.join(skills.router.dir, "references", "verify.md")), "each phase reads only its own guide");
     assert.ok(specify.includes(path.join(skills.router.dir, "references", "sdd.md")));
     assert.ok(specify.includes("For Foundry platform operations use SKILL.md of the microsoft-foundry skill (load it with the skill tool)."));
     assert.match(specify, /never search other projects on this machine/);
@@ -641,21 +642,25 @@ test("prompts are deterministic, scoped and fall back to the skill tool", async 
     assert.ok(worker.includes("Hosted agents start from foundry-agent/create/quick-start-hosted.md of the microsoft-foundry skill (load it with the skill tool)."));
     const foundry = { ...skills, foundry: { name: "microsoft-foundry", dir: path.join(home, ".agents", "skills", "microsoft-foundry"), source: "personal" } };
     assert.ok(buildPrompt({ base: { ...base, skills: foundry }, phase: "Implement", round: 1, role: "lead", task: TASKS.Implement.foundation }).includes(`Hosted agents start from ${path.join(home, ".agents", "skills", "microsoft-foundry", "foundry-agent", "create", "quick-start-hosted.md")}.`));
-    const fallback = { ...skills, Verify: { name: "agentic-loop-verify", dir: null, source: "skill-tool" } };
-    assert.match(buildPrompt({ base: { ...base, skills: fallback }, phase: "Verify", round: 1, role: "lead", task: TASKS.Verify.lead }), /SKILL\.md of the agentic-loop-verify skill \(load it with the skill tool\)/);
+    const fallback = { ...skills, router: { name: "agentic-loop", dir: null, source: "skill-tool" } };
+    assert.ok(buildPrompt({ base: { ...base, skills: fallback }, phase: "Verify", round: 1, role: "lead", task: TASKS.Verify.lead }).includes(`Follow ${path.join("references", "verify.md")} of the agentic-loop skill (load it with the skill tool)`));
 });
 
-test("skill resolution prefers project overrides, then the shipping plugin or repository", async t => {
+test("skill resolution prefers complete project overrides, then the shipping plugin or repository", async t => {
     const { cwd, home } = await workspace(t);
-    const override = path.join(cwd, ".github", "skills", SKILLS.Verify);
-    await mkdir(override, { recursive: true });
-    await writeFile(path.join(override, "SKILL.md"), "---\nname: agentic-loop-verify\n---\n");
+    const override = path.join(cwd, ".github", "skills", SKILLS.router);
+    await mkdir(path.join(override, "references"), { recursive: true });
+    await writeFile(path.join(override, "SKILL.md"), "---\nname: agentic-loop\n---\n");
+    const partial = await resolveSkills({ cwd, extensionDir, home });
+    assert.equal(partial.router.source, "repository", "a copy without the SDD and phase guides never shadows a complete one");
+    for (const file of ["sdd.md", "specify.md", "implement.md", "verify.md", "deploy.md"]) await writeFile(path.join(override, "references", file), "# Guide\n");
     const skills = await resolveSkills({ cwd, extensionDir, home });
-    assert.deepEqual(skills.Verify, { name: "agentic-loop-verify", dir: override, source: "project" });
-    assert.equal(skills.router.source, "repository");
-    const nowhere = await resolveSkills({ cwd, extensionDir: path.join(cwd, "a", "b", "c"), home });
-    assert.equal(nowhere.Specify.source, "skill-tool");
-    assert.equal(nowhere.Verify.source, "project");
+    assert.deepEqual(skills.router, { name: "agentic-loop", dir: override, source: "project" });
+    assert.equal(skills.foundry.source, "skill-tool");
+    const elsewhere = path.join(cwd, "a", "b", "c");
+    assert.equal((await resolveSkills({ cwd, extensionDir: elsewhere, home })).router.source, "project");
+    await rm(override, { recursive: true });
+    assert.equal((await resolveSkills({ cwd, extensionDir: elsewhere, home })).router.source, "skill-tool");
 });
 
 test("the flight record reducer folds events and rejects unknown ones", () => {

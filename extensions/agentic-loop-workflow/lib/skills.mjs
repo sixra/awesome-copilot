@@ -1,13 +1,20 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { PHASES } from "./args.mjs";
 
 export const SKILLS = Object.freeze({
     router: "agentic-loop",
-    Specify: "agentic-loop-specify",
-    Implement: "agentic-loop-implement",
-    Verify: "agentic-loop-verify",
-    Deploy: "agentic-loop-deploy",
     foundry: "microsoft-foundry",
+});
+
+export function phaseGuide(phase) {
+    return path.join("references", `${phase.toLowerCase()}.md`);
+}
+
+// A partial override or an older copy of a skill must not shadow a complete one.
+const REQUIRED = Object.freeze({
+    router: ["SKILL.md", path.join("references", "sdd.md"), ...PHASES.map(phaseGuide)],
+    foundry: ["SKILL.md"],
 });
 
 async function isFile(file) {
@@ -39,12 +46,17 @@ export async function candidates(name, { cwd, extensionDir, home }) {
     ];
 }
 
+async function complete(dir, files) {
+    for (const file of files) if (!(await isFile(path.join(dir, file)))) return false;
+    return true;
+}
+
 export async function resolveSkills(options) {
     const resolved = {};
     for (const [key, name] of Object.entries(SKILLS)) {
         resolved[key] = { name, dir: null, source: "skill-tool" };
         for (const [source, dir] of await candidates(name, options)) {
-            if (await isFile(path.join(dir, "SKILL.md"))) { resolved[key] = { name, dir, source }; break; }
+            if (await complete(dir, REQUIRED[key])) { resolved[key] = { name, dir, source }; break; }
         }
     }
     return resolved;

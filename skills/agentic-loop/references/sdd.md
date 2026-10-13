@@ -1,13 +1,13 @@
 # Spec-driven delivery (SDD)
 
-SDD turns a brief into a deployed, reproducible solution: a new Foundry project and Azure resources provisioned with azd and Bicep (AVM), keyless and monitored. The `agentic-loop-workflow` dynamic workflow runs four phases in sequence. Each phase runs in fresh-context subagents, follows its skill, must pass an evidence gate and leaves durable artifacts:
+SDD turns a brief into a deployed, reproducible solution: a new Foundry project and Azure resources provisioned with azd and Bicep (AVM), keyless and monitored. The `agentic-loop-workflow` dynamic workflow runs four phases in sequence. Each phase runs in fresh-context subagents, follows its phase guide, must pass an evidence gate and leaves durable artifacts:
 
-| Phase | Skill | Gate evidence | Artifacts |
+| Phase | Guide | Gate evidence | Artifacts |
 | --- | --- | --- | --- |
-| Specify | `agentic-loop-specify` | Independent review of EARS criteria, contract, workstreams, verification mapping, placement and RBAC verdict | `docs/spec.md`, `.azure/deployment-plan.md` |
-| Implement | `agentic-loop-implement` | `azd provision`, hosted checkpoint, parallel workstreams integrated, builds and unit tests | `docs/implementation.md` |
-| Verify | `agentic-loop-verify` | Local E2E and contract tests, independent spec-conformance review, agent evaluations | `docs/verify.md` |
-| Deploy | `agentic-loop-deploy` | `azd up`, health checks, deployed smoke and E2E tests | `docs/deploy.md` |
+| Specify | [specify.md](specify.md) | Independent review of EARS criteria, contract, workstreams, verification mapping, placement and RBAC verdict | `docs/spec.md`, `.azure/deployment-plan.md` |
+| Implement | [implement.md](implement.md) | `azd provision`, hosted checkpoint, parallel workstreams integrated, builds and unit tests | `docs/implementation.md` |
+| Verify | [verify.md](verify.md) | Local E2E and contract tests, independent spec-conformance review, agent evaluations | `docs/verify.md` |
+| Deploy | [deploy.md](deploy.md) | `azd up`, health checks, deployed smoke and E2E tests | `docs/deploy.md` |
 
 In each phase a lead does the work, a fresh-context reviewer reruns the checks, and fixers get up to `maxFixLoops` rounds. Only the reviewer's verdict passes a gate. Implement runs disjoint workstreams in parallel.
 
@@ -47,7 +47,7 @@ A pause posts a `Needs you:` line. Answer it in one message: what paused and why
 - **Effort.** Subagents inherit the session's model and reasoning effort. Prefer medium or high: maximum effort multiplies step time.
 - A run that ends in `error` with `workflow_limit_reached` resumes with only that limit raised, after approval. For other errors, read the run with `dynamic_workflows_manage` (`inspect-run`), fix the cause and start a new run.
 - Never weaken a gate, skip a phase or report unverified checks as passed.
-- Without the workflow, or for a single named phase, run the phase skills yourself in order, checking each gate and pausing at the same approvals.
+- Without the workflow, or for a single named phase, follow the phase guides yourself in order, checking each gate and pausing at the same approvals.
 
 ## SDD defaults
 
@@ -55,7 +55,7 @@ A pause posts a `Needs you:` line. Answer it in one message: what paused and why
 - **Naming:** azd environment `<solution>-<stage>` in at most 20 characters; resource group `rg-<environment>`, set with `azd env set AZURE_RESOURCE_GROUP` right after scaffolding to replace the salted default. Check `az group exists` and add a short suffix on collision.
 - **Skills first:** reusable agent behavior goes into Foundry skills authored at `skills/<name>/SKILL.md` and declared as `host: azure.ai.skill` services, so `azd deploy` versions them. Agents download governed versions at runtime, so the image never copies `skills/`. Agents that use skills run on the Copilot SDK; basic agents and graph workflows use MAF.
 - **Toolbox:** one `host: azure.ai.toolbox` service carries the skills, MCP tools (each through a `host: azure.ai.connection` service) and grounding. Agents list it in `uses` and read `TOOLBOX_<NAME>_MCP_ENDPOINT`. Older azd extensions without upgrade approval fall back to ordered `postprovision` hooks.
-- **Infra:** scaffold the Basic sample with `azd ai agent init .` in an empty `.scaffold` folder, then move it into place ([scaffold](../../agentic-loop-implement/references/azd-layout.md#scaffold-into-an-existing-workspace)); never `azd init -t <template>` followed by agent init (it rewrites the provider). `azure.yaml` then uses two `infra.layers`: `foundry` (`provider: microsoft.foundry`: account, project and the model deployments in `services.ai-project`) and `app` (Bicep with AVM, `dependsOn: [foundry]`) for user-assigned identities, Log Analytics and Application Insights connected to the project, one ACR pulled by managed identity, the Container Apps environment and apps, and every RBAC row. Agents use `host: azure.ai.agent`; MCP servers, backend and frontend use `host: containerapp` with `docker.remoteBuild: true`. Cosmos DB for NoSQL only when state is needed. No private networking unless required. Layout: [azd-layout.md](../../agentic-loop-implement/references/azd-layout.md).
+- **Infra:** scaffold the Basic sample with `azd ai agent init .` in an empty `.scaffold` folder, then move it into place ([scaffold](azd-layout.md#scaffold-into-an-existing-workspace)); never `azd init -t <template>` followed by agent init (it rewrites the provider). `azure.yaml` then uses two `infra.layers`: `foundry` (`provider: microsoft.foundry`: account, project and the model deployments in `services.ai-project`) and `app` (Bicep with AVM, `dependsOn: [foundry]`) for user-assigned identities, Log Analytics and Application Insights connected to the project, one ACR pulled by managed identity, the Container Apps environment and apps, and every RBAC row. Agents use `host: azure.ai.agent`; MCP servers, backend and frontend use `host: containerapp` with `docker.remoteBuild: true`. Cosmos DB for NoSQL only when state is needed. No private networking unless required. Layout: [azd-layout.md](azd-layout.md).
 - **Identity:** user-assigned managed identities. Bicep creates the [RBAC contract](rbac-contract.md) rows at provision; an idempotent `postdeploy` hook creates the runtime instance rows and the MCP Easy Auth allow-lists. The [RBAC preflight](rbac-preflight.md) runs in Specify and as an azd `preprovision` hook; `BLOCKED` stops the run and hands the owner a ready-to-run grant block.
 - **Repository:** `.gitignore` covers `.azure/*` with `!.azure/deployment-plan.md`, `.env` and build output. Python dependencies follow the [dependency contract](foundry-hosted-agent.md#python-dependency-contract-requirementstxt) and are locked with `uv.lock` or pinned requirements. `.gitattributes` sets `* text=auto eol=lf`.
 - **Evaluations:** Verify always runs a small agent evaluation on spec scenarios (task adherence, groundedness when grounded, safety). Add recurring or CI evaluations only on request.

@@ -11,7 +11,7 @@ It ships with the `agentic-loop` plugin. The **SDD** mode of the `agentic-loop` 
 
 ## How a phase runs
 
-Each phase follows its skill (`agentic-loop-specify`, `-implement`, `-verify` or `-deploy`) in fresh-context subagents, using `microsoft-foundry` for platform operations. Subagents stay inside the workspace, read skills from the paths resolved at setup and delete only Azure resources the run created whose provisioning failed:
+Each phase follows its guide in the `agentic-loop` skill (`references/specify.md`, `implement.md`, `verify.md` or `deploy.md`) in fresh-context subagents, using `microsoft-foundry` for platform operations. Subagents stay inside the workspace, read skills from the paths resolved at setup and delete only Azure resources the run created whose provisioning failed:
 
 - **Lead**: does the phase work and records lessons in `LOOP.md`.
 - **Review**: an independent reviewer reruns every check and reports all blocking issues at once, with evidence. Earlier reports count as claims, not evidence.

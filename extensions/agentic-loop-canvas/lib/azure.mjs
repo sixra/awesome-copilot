@@ -4,7 +4,6 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 const arm = "https://management.azure.com";
 const version = "2025-06-01";
-export const PHASE_SKILLS = Object.freeze(["agentic-loop-specify", "agentic-loop-implement", "agentic-loop-verify", "agentic-loop-deploy"]);
 
 export async function command(file, args, { json = true } = {}) {
     try {
@@ -120,7 +119,7 @@ export class Azure {
         });
         const checks = await Promise.all([
             skill("microsoft-foundry", "microsoft-foundry skill", ["microsoft-foundry"]),
-            skill("agentic-loop", "agentic-loop skills", ["agentic-loop", ...PHASE_SKILLS]),
+            skill("agentic-loop", "agentic-loop skill", ["agentic-loop"]),
             extension("agentic-loop-canvas"),
             extension("agentic-loop-workflow"),
             ...[

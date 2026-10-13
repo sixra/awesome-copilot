@@ -69,7 +69,7 @@ Live mode shells out to the **Azure CLI** — `az ad signed-in-user show` to res
 | `BLOCKED` | `2` | One or more required assignments are missing. The full list is printed. **Do not start provisioning.** |
 | `ERROR` | `1` | The check could not be evaluated (no caller identity, `az` unavailable, CLI failure). Resolve it rather than skipping the gate. |
 
-`BLOCKED` is not a repair loop — unlike the [hosted-agent guarantee](hosted-agent-guarantee.md), the loop cannot grant itself permissions. The correct response is to hand the report to someone who can, then re-run the pre-flight.
+`BLOCKED` is not a repair loop — unlike the [hosted integration checkpoint](hosted-integration-checkpoint.md#diagnostic-decision-tree), the loop cannot grant itself permissions. The correct response is to hand the report to someone who can, then re-run the pre-flight.
 
 ## Report contract
 

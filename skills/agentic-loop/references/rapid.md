@@ -63,4 +63,4 @@ Only after the user confirms:
 
 If the user declines, leave the working local app as it is.
 
-To take a prototype to production, switch to SDD: `agentic-loop-specify` can derive a spec from this workspace (reverse mode) before you start the workflow.
+To take a prototype to production, switch to SDD: the [Specify](specify.md) phase can derive a spec from this workspace (`reverse`) before you start the workflow.

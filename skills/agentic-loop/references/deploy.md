@@ -1,11 +1,6 @@
----
-name: agentic-loop-deploy
-description: 'Deploy phase of the Agentic Loop spec-driven workflow. Checks tooling, target and packaging, previews infra changes, runs azd up for the layered Foundry and Container Apps solution, checks revisions and hosted agents, reruns the E2E suite against the deployed endpoints, and writes docs/deploy.md and the README. Use when agentic-loop-workflow runs Deploy, or to ship a verified solution to Azure after approval.'
----
+# Deploy phase
 
-# Agentic Loop · Deploy
-
-Ship the verified solution to the target in `.azure/deployment-plan.md`. Apply the [agentic-loop](../agentic-loop/SKILL.md) defaults and use `microsoft-foundry` for platform operations. Run azd from the workspace root, with `AZURE_DEV_USER_AGENT=microsoft_foundry_skill` set inline.
+Ship the verified solution to the target in `.azure/deployment-plan.md`. Apply the [skill defaults](../SKILL.md#defaults) and use `microsoft-foundry` for platform operations. Run azd from the workspace root, with `AZURE_DEV_USER_AGENT=microsoft_foundry_skill` set inline.
 
 ## 1. Preflight
 
@@ -22,7 +17,7 @@ Run these checks read-only and report every gap at once.
 ## 2. Deploy
 
 1. When the infrastructure changed, run `azd provision --preview <layer> --no-prompt` for each `infra.layers` name (a plain `--preview` fails on multiple layers) and review deletions and replacements. Stop on surprises.
-2. Run `azd up --no-prompt`, or `azd deploy --no-prompt` when the infrastructure is unchanged. Wait for it to finish, record the exit code, and read back the [grants after deploy](../agentic-loop-implement/references/azd-layout.md#grants-after-deploy).
+2. Run `azd up --no-prompt`, or `azd deploy --no-prompt` when the infrastructure is unchanged. Wait for it to finish, record the exit code, and read back the [grants after deploy](azd-layout.md#grants-after-deploy).
 3. Read the endpoints from `azd env get-values` (`SERVICE_<NAME>_URI`, `AGENT_<NAME>_RESPONSES_ENDPOINT`). Confirm each container app has an active, healthy revision (`az containerapp revision list`).
 4. For each agent, run:
    - `azd ai agent show <agent>` to get the endpoint and playground URL;

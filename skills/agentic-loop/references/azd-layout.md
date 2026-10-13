@@ -1,6 +1,6 @@
 # azd layout for SDD solutions
 
-Reference for `agentic-loop-implement` and `agentic-loop-deploy`. All names below are examples. Take the real names from `docs/spec.md`.
+Reference for the [Implement](implement.md) and [Deploy](deploy.md) phases. All names below are examples. Take the real names from `docs/spec.md`.
 
 ## Scaffold into an existing workspace
 
@@ -106,8 +106,8 @@ infra:
   2. `azd ai connection create <name> --kind remote-tool --target <url> --auth-type agentic-identity --audience <aud> --force`
   3. `azd ai toolbox create <name> --from-file <file>`
 
-  See [foundry-toolbox.md](../../agentic-loop/references/foundry-toolbox.md).
-- **MCP auth:** the agent identity calls MCP tools through the connection ([rbac-contract.md](../../agentic-loop/references/rbac-contract.md)).
+  See [foundry-toolbox.md](foundry-toolbox.md).
+- **MCP auth:** the agent identity calls MCP tools through the connection ([rbac-contract.md](rbac-contract.md)).
   - **Keyless (default):** use `AgenticIdentityToken` with the MCP server's Entra app ID URI as the audience. The MCP server validates the token with Container Apps authentication, which must allow the agents' client IDs ([grants after deploy](#grants-after-deploy)). This needs an Entra app registration, which the deployer creates or which comes from the Microsoft Graph Bicep extension; record each one's display name and app ID in `docs/implementation.md` for teardown. If the tenant blocks app registrations, report the gate as `blocked`.
   - **No auth:** use `authType: None` only for read-only tools over synthetic or public data, with explicit approval. Record it as an assumption in the spec.
 
@@ -125,7 +125,7 @@ Pin each AVM module to its latest version. Find it at `https://mcr.microsoft.com
 | `container-registry/registry` | Basic SKU with the admin user disabled; grant AcrPull to every app identity |
 | `app/managed-environment` | Consumption profile, logs sent to the workspace |
 | `app/container-app` ×n | See [Container app settings](#container-app-settings) |
-| `Microsoft.Authorization/roleAssignments` | One per [RBAC contract](../../agentic-loop/references/rbac-contract.md) row, such as backend → Foundry User on the account and apps → Monitoring Metrics Publisher. Reference roles by definition ID. |
+| `Microsoft.Authorization/roleAssignments` | One per [RBAC contract](rbac-contract.md) row, such as backend → Foundry User on the account and apps → Monitoring Metrics Publisher. Reference roles by definition ID. |
 
 ### Container app settings
 
@@ -137,7 +137,7 @@ Pin each AVM module to its latest version. Find it at `https://mcr.microsoft.com
 
 ### Grants after deploy
 
-The hosted agent's runtime identities exist only after deploy. An idempotent `postdeploy` hook creates their [RBAC contract](../../agentic-loop/references/rbac-contract.md) rows and the MCP allow-lists. For each agent:
+The hosted agent's runtime identities exist only after deploy. An idempotent `postdeploy` hook creates their [RBAC contract](rbac-contract.md) rows and the MCP allow-lists. For each agent:
 
 1. Run `azd ai agent show <agent> --output json --no-prompt` and read the principal and client IDs of `instance_identity` and `blueprint`.
 2. Grant the runtime rows to the instance principal only; the blueprint returns `PrincipalTypeNotSupported`. Check with `az role assignment list --assignee <id> --role <role> --scope <scope>` first, then run `az role assignment create --assignee-object-id <id> --assignee-principal-type ServicePrincipal` only when missing.
@@ -177,6 +177,6 @@ Each output becomes an azd environment variable:
 
 ## App wiring
 
-- **Backend:** receives `FOUNDRY_PROJECT_ENDPOINT`, the agent name and `AZURE_CLIENT_ID` as environment variables. It calls the agent's dedicated endpoint with a token for `https://ai.azure.com/.default`, as in the [hosted integration checkpoint](../../agentic-loop/references/hosted-integration-checkpoint.md).
+- **Backend:** receives `FOUNDRY_PROJECT_ENDPOINT`, the agent name and `AZURE_CLIENT_ID` as environment variables. It calls the agent's dedicated endpoint with a token for `https://ai.azure.com/.default`, as in the [hosted integration checkpoint](hosted-integration-checkpoint.md).
 - **Frontend:** nginx serves the Vite build and proxies `/api` to `${BACKEND_URL}` through the nginx image's `templates/` substitution. This needs no CORS and no build-time URLs.
-- **Telemetry:** every app receives `APPLICATIONINSIGHTS_CONNECTION_STRING` ([observability.md](../../agentic-loop/references/observability.md)).
+- **Telemetry:** every app receives `APPLICATIONINSIGHTS_CONNECTION_STRING` ([observability.md](observability.md)).
