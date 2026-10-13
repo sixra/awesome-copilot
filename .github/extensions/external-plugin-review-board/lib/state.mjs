@@ -195,6 +195,7 @@ export class BoardStore {
             (item) =>
                 isReadyForApproval(item.labels ?? []) &&
                 !item.decision &&
+                !item.pendingDecision &&
                 item.reviewStatus !== "queued",
         );
         if (numbers?.length) {
