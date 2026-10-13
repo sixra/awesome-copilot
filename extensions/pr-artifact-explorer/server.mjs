@@ -110,6 +110,23 @@ class HttpError extends Error {
   }
 }
 
+/** Owned artifact sites bake their theme at start; re-resolve to the requested theme, keeping path/query/hash. Foreign URLs return null. */
+async function themedOwnedUrl(value, theme) {
+  if (theme !== "light" && theme !== "dark") return null;
+  let parsed;
+  try {
+    parsed = new URL(String(value ?? ""));
+  } catch {
+    return null;
+  }
+  const owned = describeOwnedPreview(parsed.origin);
+  if (!owned || owned.theme === theme) return null;
+  const fresh = new URL(
+    await startStaticPreview(owned.artifactId, owned.entryPath, { theme, parentOrigin: owned.canvasOrigin }),
+  );
+  return `${fresh.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+}
+
 function createCapabilityToken() {
   return randomBytes(32).toString("base64url");
 }
@@ -828,7 +845,7 @@ async function handleApi(req, res, entry, url) {
     const body = await readJsonBody(req);
     try {
       const result = await captureScreenshot({
-        url: body.url,
+        url: (await themedOwnedUrl(body.url, body.theme)) ?? body.url,
         preset: body.preset,
         width: body.width,
         height: body.height,
@@ -853,10 +870,19 @@ async function handleApi(req, res, entry, url) {
     const viewport = { preset: body.preset, width: body.width, height: body.height, deviceScaleFactor: body.deviceScaleFactor, orientation: body.orientation };
     try {
       entry.controlled ??= new ControlledBrowser();
-      if (action === "theme") return sendJson(res, 200, { controlled: await entry.controlled.setColorScheme(body.theme) });
+      if (action === "theme") {
+        const result = await entry.controlled.setColorScheme(body.theme);
+        const current = entry.controlled.currentUrl;
+        const rebuilt = current ? await themedOwnedUrl(current, body.theme) : null;
+        if (rebuilt && rebuilt !== current) {
+          return sendJson(res, 200, { controlled: { ...result, ...(await entry.controlled.navigate(rebuilt, viewport)) } });
+        }
+        return sendJson(res, 200, { controlled: result });
+      }
       if (action === "navigate") {
         await entry.controlled.setColorScheme(body.theme);
-        return sendJson(res, 200, { controlled: await entry.controlled.navigate(body.url, viewport) });
+        const target = (await themedOwnedUrl(body.url, body.theme)) ?? body.url;
+        return sendJson(res, 200, { controlled: await entry.controlled.navigate(target, viewport) });
       }
       if (action === "history") {
         if (!["back", "forward", "refresh"].includes(body.direction)) throw new HttpError(400, "direction must be back, forward or refresh.");
@@ -870,8 +896,8 @@ async function handleApi(req, res, entry, url) {
         return;
       }
       if (action === "screenshot") return sendJson(res, 200, { capture: await entry.controlled.screenshot({ fullPage: body.fullPage === true }) });
-      await entry.controlled.close();
-      return sendJson(res, 200, { closed: true });
+      const closed = await entry.controlled.close();
+      return sendJson(res, 200, { closed: true, clean: closed.clean });
     } catch (error) {
       if (error instanceof CaptureError) {
         throw new HttpError(["invalid_viewport", "invalid_url", "not_started"].includes(error.code) ? 400 : 424, error.message, { code: error.code });
@@ -1078,18 +1104,7 @@ async function handleApi(req, res, entry, url) {
     const body = await readJsonBody(req);
     try {
       let target = validateExternalUrl(body.url);
-      const parsed = new URL(target);
-      const owned = describeOwnedPreview(parsed.origin);
-      if (owned && (body.theme === "light" || body.theme === "dark")) {
-        // Owned artifact sites bake their theme at start; rebuild for the current theme.
-        const fresh = new URL(
-          await startStaticPreview(owned.artifactId, owned.entryPath, {
-            theme: body.theme,
-            parentOrigin: owned.canvasOrigin,
-          }),
-        );
-        target = `${fresh.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
-      }
+      target = (await themedOwnedUrl(target, body.theme)) ?? target;
       await openInDefaultBrowser(target);
       return sendJson(res, 200, { opened: true, url: target });
     } catch (error) {

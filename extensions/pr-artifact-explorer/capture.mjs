@@ -128,6 +128,28 @@ async function launchChromium() {
   return browser;
 }
 
+const CLOSE_TIMEOUT_MS = 5_000;
+
+/** Closes a Playwright browser without ever waiting forever; returns whether it closed cleanly in time. */
+export async function closeBrowserBounded(browser, timeoutMs = CLOSE_TIMEOUT_MS) {
+  return closeBounded(browser, timeoutMs);
+}
+
+/** Bounded close of any Playwright closable (browser or context); false only on timeout. */
+async function closeBounded(target, timeoutMs = CLOSE_TIMEOUT_MS) {
+  if (!target) return true;
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([Promise.resolve().then(() => target.close()).then(() => true, () => true), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function savePng(png, outputDir) {
   await mkdir(outputDir, { recursive: true });
   const file = join(outputDir, `screenshot-${Date.now()}-${randomUUID().slice(0, 8)}.png`);
@@ -187,7 +209,7 @@ export async function captureScreenshot({ url, fullPage = false, outputDir = get
       page: dimensions,
     };
   } finally {
-    await browser.close();
+    await closeBrowserBounded(browser);
   }
 }
 
@@ -206,6 +228,11 @@ export class ControlledBrowser {
 
   get active() {
     return Boolean(this.#page);
+  }
+
+  get currentUrl() {
+    const url = this.#page?.url();
+    return url && url !== "about:blank" ? url : null;
   }
 
   async setColorScheme(value) {
@@ -327,15 +354,16 @@ export class ControlledBrowser {
         await this.#page.goBack({ waitUntil: "load", timeout: 30_000 });
       }
     } catch (error) {
-      await this.#context?.close().catch(() => {});
+      await closeBounded(this.#context);
       this.#viewport = previousViewport;
       this.#context = previous;
       this.#page = previous.pages()[0] ?? this.#page;
       throw new CaptureError("navigation_failed", `Could not re-open the page with the new device settings: ${error?.message?.split("\n")[0] ?? error}`);
     }
-    await previous.close().catch(() => {});
+    await closeBounded(previous);
     return this.#state();
   }
+
   async screenshot({ fullPage = false, outputDir = getScreenshotRoot() } = {}) {
     if (!this.#page) throw new CaptureError("not_started", "Open a page in the controlled browser first.");
     const png = await this.#page.screenshot({ type: "png", fullPage: Boolean(fullPage) });
@@ -360,6 +388,7 @@ export class ControlledBrowser {
   async close() {
     const browser = this.#browser;
     this.#browser = this.#context = this.#page = null;
-    await browser?.close().catch(() => {});
+    const clean = await closeBrowserBounded(browser);
+    return { clean };
   }
 }

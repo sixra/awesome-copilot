@@ -3947,6 +3947,41 @@ function stepPlayerTextSize(direction) {
 
 let rawRequestToken = 0;
 
+const reportViewStates = new Map();
+
+function reportStateKey(artifact, path) {
+  return `${artifact.id}\u0000${path}`;
+}
+
+function captureReportState(artifact, path) {
+  const preview = document.getElementById("preview-content");
+  const report = preview?.querySelector(".trx-preview");
+  if (!report) return;
+  const details = [...report.querySelectorAll("details")];
+  reportViewStates.set(reportStateKey(artifact, path), {
+    query: report.querySelector("[data-trx-search-input]")?.value ?? "",
+    filter: report.querySelector('[data-trx-filter][aria-pressed="true"]')?.dataset.trxFilter ?? "all",
+    open: details.map((item) => item.open),
+    scroll: preview.scrollTop,
+  });
+}
+
+function restoreReportState(artifact, path, preview) {
+  const state = reportViewStates.get(reportStateKey(artifact, path));
+  const report = preview.querySelector(".trx-preview");
+  if (!state || !report) return;
+  const input = report.querySelector("[data-trx-search-input]");
+  if (input) input.value = state.query;
+  for (const button of report.querySelectorAll("[data-trx-filter]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.trxFilter === state.filter));
+  }
+  [...report.querySelectorAll("details")].forEach((item, index) => {
+    if (index < state.open.length) item.open = state.open[index];
+  });
+  reportModule(report).applyFilters(report);
+  preview.scrollTop = state.scroll;
+}
+
 function syncPreviewModeControl() {
   const raw = currentArtifact?.rawMode === true;
   for (const button of document.querySelectorAll("[data-preview-mode]")) {
@@ -3961,6 +3996,7 @@ async function setPreviewMode(mode) {
   if (!artifact?.selectedPath) return;
   const raw = mode === "raw";
   if ((artifact.rawMode === true) === raw) return;
+  if (raw) captureReportState(artifact, artifact.selectedPath);
   artifact.rawMode = raw;
   history.replaceState(
     null,
@@ -4111,10 +4147,12 @@ async function previewArtifactFile(entry, sequence) {
       if (sequence !== renderSequence || currentArtifact?.selectedPath !== entry.path) return;
       if (entryKind === "trx") {
         TrxPreview.render(result.content, preview, { highlightXml });
+        restoreReportState(artifact, entry.path, preview);
         return;
       }
       if (entryKind === "xml" && JunitPreview.detect(result.content)) {
         JunitPreview.render(result.content, preview, { highlightXml });
+        restoreReportState(artifact, entry.path, preview);
         return;
       }
       let content = result.content;
