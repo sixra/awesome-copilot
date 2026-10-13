@@ -175,15 +175,19 @@ test("breadcrumb Back/Forward keeps independent in-canvas route history", async 
   const browserEntries = s.stack.filter((h) => h.startsWith("#/browser"));
   assert.equal(browserEntries.length, 1, "browser entry recorded once");
   const top = s.stack.length;
-  // Breadcrumb chrome (and these controls) is deliberately hidden in browser view.
-  assert.equal(await page.locator("#route-back").isVisible(), false);
-  await page.evaluate(() => navHistory.step(-1));
+  // Canvas history controls stay in a compact row in browser view, distinct from site history.
+  assert.equal(await page.locator("#route-back").isVisible(), true);
+  assert.equal(await page.locator("#route-back").getAttribute("aria-label"), "Back in Artifact Explorer");
+  assert.equal(await page.locator("#br-back").getAttribute("aria-label"), "Back in site (Alt+Left)");
+  await page.click("#route-back");
   await page.waitForFunction((h) => location.hash === h, artifactRoute);
   s = await state();
   assert.equal(s.stack.length, top, "Back from browser does not append");
   assert.equal(await page.locator("#route-forward").isDisabled(), false, "Forward available to browser");
   await page.click("#route-forward");
   await page.waitForFunction(() => location.hash.startsWith("#/browser"));
+  await page.waitForSelector("#br-back");
+  assert.equal(await page.locator("#route-back").isVisible(), true);
   s = await state();
   assert.equal(s.stack.length, top);
   assert.deepEqual(errors, []);

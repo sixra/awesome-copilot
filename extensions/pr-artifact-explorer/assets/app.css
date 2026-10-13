@@ -3975,7 +3975,7 @@ select {
 .job-actions { display: flex; gap: 6px; }
 
 .browser-view { display: grid; min-width: 0; gap: 0; }
-.app-shell:has(.browser-view) .breadcrumb-bar { display: none; }
+.app-shell:has(.browser-view) .breadcrumb-bar { min-height: 36px; }
 .app-main:has(.browser-view) { max-width: none; padding: 0; margin: 0; }
 .browser-toolbar {
   display: grid;

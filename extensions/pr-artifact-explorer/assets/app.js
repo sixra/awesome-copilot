@@ -4855,7 +4855,10 @@ async function renderRoute({ force = false } = {}) {
     else if (route.name === "accounts") await renderAccountsPage(sequence);
     else if (route.name === "issue") await renderIssue(route, sequence);
     else if (route.name === "docs") renderDocs(route);
-    else if (route.name === "browser") renderBrowser(route);
+    else if (route.name === "browser") {
+      setBreadcrumbs([{ label: "Browser view" }]);
+      renderBrowser(route);
+    }
     if (route.name !== "browser") disposeBrowser();
   } catch (error) {
     if (sequence === renderSequence) renderError(error);

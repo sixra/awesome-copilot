@@ -534,7 +534,7 @@ const DOCS_SECTIONS = [
     <p class="docs-lead">Keep common actions close at hand. These shortcuts work when focus is in the Explorer, outside a text field—not inside the previewed website.</p>
     ${SHORTCUT_REFERENCE}
     <h2>Explorer history</h2>
-    <p>The right-aligned <strong>Back</strong> and <strong>Forward</strong> buttons in the breadcrumb row move through Explorer's own views only, never the app or a previewed site. Opening a Browser view is one step; changing its URL, zoom, or size replaces that step. Browser view has no breadcrumb row, so use its own address-bar Back/Forward for site history.</p>
+    <p>The right-aligned <strong>Back</strong> and <strong>Forward</strong> buttons in the breadcrumb row move through Explorer's own views only, never the app or a previewed site. Opening a Browser view is one step; changing its URL, zoom, or size replaces that step. Browser view keeps a compact breadcrumb row with the same buttons (named "Back in Artifact Explorer"), separate from the address-bar "Back in site" and "Forward in site" buttons that move through the previewed website.</p>
     <h2>Navigate without a mouse</h2>
     <p>Use Tab to move through the header, address bar, and preview controls. Open <strong>Options</strong> or <strong>More</strong> with Enter, then Tab through their actions. Escape closes the menu and returns focus to its trigger.</p>
     <p>The <strong>g</strong> shortcuts are a sequence: press g, then the second key. Browser navigation, zoom, and capture shortcuts apply while Browser is open.</p>
@@ -673,8 +673,8 @@ function renderBrowser(route) {
     <h1 class="sr-only">Browser preview</h1>
     <div class="browser-toolbar" aria-label="Browser controls">
       <div class="browser-navigation" role="group" aria-label="Page navigation">
-      <button type="button" class="icon-button" id="br-back" aria-label="Back (Alt+Left)" title="Back (Alt+←)">${icon("arrow-left")}</button>
-      <button type="button" class="icon-button" id="br-forward" aria-label="Forward (Alt+Right)" title="Forward (Alt+→)">${icon("arrow-right")}</button>
+      <button type="button" class="icon-button" id="br-back" aria-label="Back in site (Alt+Left)" title="Back in site (Alt+←)">${icon("arrow-left")}</button>
+      <button type="button" class="icon-button" id="br-forward" aria-label="Forward in site (Alt+Right)" title="Forward in site (Alt+→)">${icon("arrow-right")}</button>
       <button type="button" class="icon-button" id="br-refresh" aria-label="Refresh" title="Refresh">${icon("sync")}</button>
       <form id="br-form"><input class="form-control browser-address" id="br-address" aria-label="Address or request" title="Enter a URL or a request like “open PR 12”" placeholder="Enter a URL or request" value="${escapeHtml(state.url)}" autocomplete="off"></form>
       </div>
