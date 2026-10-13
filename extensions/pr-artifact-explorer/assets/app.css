@@ -3986,7 +3986,11 @@ kbd { background: var(--app-bg-muted); border: 1px solid var(--app-border); bord
 }
 
 .browser-frame[hidden] { display: none; }
-.preview-open-browser { margin-bottom: 8px; }
+.video-preview { display: flex; flex-direction: column; gap: 12px; width: 100%; min-width: 0; }
+.video-preview-player { width: 100%; max-height: 70vh; background: #000; border-radius: 6px; }
+.video-preview-player[hidden], .video-preview-error[hidden] { display: none; }
+.trx-outcome-error { border-left-color: var(--danger-fg, #d1242f); }
+.trx-metric-failed strong, .trx-metric-error strong { color: var(--danger-fg, #d1242f); }
 
 .app-header {
   display: flex;

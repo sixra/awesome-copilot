@@ -17,7 +17,7 @@ Artifact Explorer is a community-built Copilot canvas extension with the interna
 - Bounds artifact discovery to the newest 30 workflow runs per head commit and reports when older runs are omitted.
 - Downloads an artifact once, indexes its ZIP, and streams entries directly from the archive without extracting them to disk.
 - Previews root-level static sites in a sandboxed loopback frame when the artifact contains `index.html`.
-- Plays asciinema terminal recordings and renders structured TRX test reports.
+- Plays asciinema terminal recordings and renders structured TRX and JUnit XML test reports (content-detected; other XML keeps the plain viewer). Plays `.webm`, `.mp4` and `.mov` with native video controls and byte-range seeking; playback depends on the browser's codecs, with a download fallback. A contextual "Browser view" action appears only when previewing an HTML artifact.
 - Syntax-highlights JSON and XML, previews images and PDFs, renders text with safe escaping, and identifies binary content.
 - Keeps large files available for direct download and falls back to the original artifact archive when a ZIP entry uses an unsupported encoding.
 - Provides per-artifact cleanup, clear-all cleanup, and a cache usage view.

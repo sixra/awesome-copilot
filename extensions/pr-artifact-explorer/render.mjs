@@ -23,6 +23,7 @@ export const HTML = `<!doctype html>
     <link rel="stylesheet" href="/assets/app.css" />
     <script defer src="/assets/asciinema-player.min.js"></script>
     <script defer src="/assets/trx-preview.js"></script>
+    <script defer src="/assets/junit-preview.js"></script>
     <script defer src="/assets/browser.js"></script>
     <script defer src="/assets/app.js"></script>
   </head>
@@ -71,10 +72,6 @@ export const HTML = `<!doctype html>
           </div>
         </form>
         <nav class="Header-item header-cache-item app-navigation" aria-label="Explorer">
-          <a id="browser-link" class="Header-link cache-link" href="#/browser" title="Preview a URL (g b)">
-            <span class="octicon icon-browser" aria-hidden="true"></span>
-            <span>Browser</span>
-          </a>
           <a id="docs-link" class="Header-link cache-link" href="#/docs" title="Docs (?)">
             <span class="octicon icon-book" aria-hidden="true"></span>
             <span>Docs</span>

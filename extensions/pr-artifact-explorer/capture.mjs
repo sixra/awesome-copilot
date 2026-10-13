@@ -37,7 +37,7 @@ export const SETUP_INSTRUCTIONS = [
   "2. Install the browser once: npx playwright install chromium",
 ].join("\n");
 
-async function loadPlaywright() {
+export async function loadPlaywright() {
   const candidates = [process.env[SETUP_ENV], EXTENSION_ROOT].filter(Boolean);
   for (const base of candidates) {
     for (const name of ["playwright", "playwright-core"]) {

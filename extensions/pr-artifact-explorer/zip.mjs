@@ -444,6 +444,86 @@ export async function streamZipEntry(
   await pipeline(...streams, signal ? { signal } : {});
 }
 
+/**
+ * Streams the inclusive byte range [start, end] of an entry's decompressed content
+ * (for HTTP Range / media seeking). Stored entries seek directly inside the ZIP;
+ * deflated entries inflate and discard the leading bytes. The full-entry CRC cannot be
+ * verified for a partial read, so it is only checked by full `streamZipEntry` reads;
+ * the path, host and token checks happen before this is called.
+ */
+export async function streamZipEntryRange(
+  zipPath,
+  entry,
+  writable,
+  { start, end },
+  { onProgress = null, onSoftLimit = null, softLimit = null, signal = null } = {},
+) {
+  if (!entry?.supported) {
+    throw new Error(`ZIP entry cannot be served: ${entry?.name ?? "unknown"}`);
+  }
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end >= entry.uncompressedSize) {
+    throw new Error(`Invalid byte range for ${entry.name}.`);
+  }
+  const { start: dataStart, endExclusive } = await entryDataRange(zipPath, entry);
+  const stored = entry.method === 0;
+  const source = stored
+    ? createReadStream(zipPath, { start: dataStart + start, end: dataStart + end })
+    : createReadStream(zipPath, { start: dataStart, end: endExclusive - 1 });
+  const inflate = stored ? null : createInflateRaw();
+  let failure = null;
+  source.once("error", (error) => {
+    failure = error;
+    inflate?.destroy(error);
+  });
+  if (inflate) source.pipe(inflate);
+  const readable = inflate ?? source;
+  const onAbort = () => {
+    failure = signal.reason ?? new Error("Aborted");
+    readable.destroy(failure);
+    source.destroy();
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  let position = stored ? start : 0;
+  let closed = false;
+  writable.once("close", () => {
+    closed = true;
+    readable.destroy();
+    source.destroy();
+  });
+  try {
+    for await (const chunk of readable) {
+      if (closed) break;
+      const chunkStart = position;
+      position += chunk.length;
+      const limit = typeof softLimit === "function" ? softLimit() : softLimit;
+      onProgress?.(Math.min(position, end + 1));
+      if (limit != null && position > limit) onSoftLimit?.("streamedEntryBytes", position, entry.name);
+      if (position - 1 < start) continue;
+      const slice = chunk.subarray(Math.max(start, chunkStart) - chunkStart, Math.min(end + 1, position) - chunkStart);
+      if (slice.length && !writable.write(slice)) {
+        await new Promise((resolve) => {
+          const done = () => {
+            writable.off("drain", done);
+            writable.off("close", done);
+            resolve();
+          };
+          writable.once("drain", done);
+          writable.once("close", done);
+        });
+      }
+      if (position - 1 >= end) break;
+    }
+  } catch (error) {
+    if (!closed) throw failure ?? error;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    readable.destroy();
+    source.destroy();
+  }
+  if (failure && !closed) throw failure;
+  if (!closed) writable.end();
+}
+
 export async function readEntryPrefix(zipPath, entry, maxBytes) {
   if (!entry?.supported) return null;
   if (entry.uncompressedSize === 0) return Buffer.alloc(0);

@@ -29,6 +29,7 @@ import {
   readZipEntry,
   readZipIndex,
   streamZipEntry,
+  streamZipEntryRange,
 } from "./zip.mjs";
 
 const indexCache = new Map();
@@ -446,7 +447,7 @@ export async function getCachedEntry(artifactId, entryPath) {
  * itself is never stopped by it, only by explicit cancel, a closed client or an
  * integrity failure.
  */
-export async function streamCachedEntry(context, writable, transform = null) {
+export async function streamCachedEntry(context, writable, transform = null, range = null) {
   const outer = new AbortController();
   let tracker = null;
   const ensure = () => {
@@ -459,14 +460,20 @@ export async function streamCachedEntry(context, writable, transform = null) {
     tracker.signal.addEventListener("abort", () => outer.abort(), { once: true });
   };
   const limit = () => limitPolicy.get("streamedEntryBytes");
-  if (context.entry.uncompressedSize > limit()) ensure();
+  const servedBytes = range ? range.end - range.start + 1 : context.entry.uncompressedSize;
+  if (servedBytes > limit()) ensure();
   try {
-    await streamZipEntry(context.archivePath, context.entry, writable, transform, {
+    const options = {
       signal: outer.signal,
       softLimit: limit,
       onSoftLimit: ensure,
       onProgress: (bytes) => tracker?.update(bytes),
-    });
+    };
+    if (range) {
+      await streamZipEntryRange(context.archivePath, context.entry, writable, range, options);
+    } else {
+      await streamZipEntry(context.archivePath, context.entry, writable, transform, options);
+    }
     tracker?.finish();
   } catch (error) {
     tracker?.finish(error);

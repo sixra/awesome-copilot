@@ -188,7 +188,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
   const updateNavigation = () => {
-    for (const [id, route] of [["browser-link", "#/browser"], ["docs-link", "#/docs"]]) {
+    for (const [id, route] of [["docs-link", "#/docs"]]) {
       const link = document.getElementById(id);
       if (location.hash.startsWith(route)) link?.setAttribute("aria-current", "page");
       else link?.removeAttribute("aria-current");
@@ -434,13 +434,13 @@ const DOCS_SECTIONS = [
     <p class="docs-lead">Start with the change you want to understand. Open a pull request, inspect its build artifacts, or bring a local website into the browser—without leaving the canvas.</p>
     <h2>Your first look</h2>
     <ol class="docs-steps">
-      <li><strong>Find your repository.</strong> Use the field in the header to enter <code>owner/repository</code>, or paste a GitHub pull request URL. You can also open Browser and enter a request such as <code>open PR 123 in github/awesome-copilot</code>.</li>
+      <li><strong>Find your repository.</strong> Use the field in the header to enter <code>owner/repository</code>, or paste a GitHub pull request URL. You can also press <kbd>g</kbd> then <kbd>b</kbd> and enter a request such as <code>open PR 123 in github/awesome-copilot</code>.</li>
       <li><strong>Open the pull request.</strong> Choose a change from the list to see its workflow artifacts. An issue URL opens issue details instead; issues do not have PR artifacts.</li>
-      <li><strong>Choose what to inspect.</strong> Open an artifact to browse its files or preview a supported file. A website artifact can open in Browser for a closer look at different screen sizes.</li>
+      <li><strong>Choose what to inspect.</strong> Open an artifact to browse its files or preview a supported file. A website artifact with an HTML page shows a <strong>Browser view</strong> button in the preview toolbar for a closer look at different screen sizes. Videos (.webm, .mp4, .mov) play with native controls, and JUnit XML test reports open as a summarized report.</li>
     </ol>
     <p>Artifact Explorer reads build outputs. It does <strong>not</strong> run artifact programs, install their dependencies, or execute their build scripts.</p>
     <h2>Already have a page running?</h2>
-    <p>Open <a href="#/browser">Browser</a>, enter an HTTP(S) or localhost URL, and press Enter. Keep your development server running on the same machine as the preview service.</p>
+    <p>Press <kbd>g</kbd> then <kbd>b</kbd> (or open a localhost link, an agent request, or a shared route), enter an HTTP(S) or localhost URL, and press Enter. Keep your development server running on the same machine as the preview service.</p>
     ${docsFigure("preview-controls", "Artifact Explorer previewing a sample localhost website, with Mobile selected and compact navigation, zoom, Screenshot and Options controls.", "The redesigned browser, showing a sample localhost page and illustrative account/repository metadata.", 882, 480)}
     <div class="docs-next"><strong>Where next?</strong><a href="#/docs/artifacts">Open a PR or artifact</a><a href="#/docs/browser">Preview a local website</a></div>`],
   ["artifacts", "PRs and artifacts", `
@@ -448,7 +448,7 @@ const DOCS_SECTIONS = [
     <h2>Open a pull request</h2>
     <ol class="docs-steps">
       <li><strong>Choose a repository.</strong> Enter <code>github/awesome-copilot</code> in the header, or use the repository quick switch. Pins and favorites make frequently used repositories easier to return to.</li>
-      <li><strong>Find the change.</strong> Select a pull request from the list. To go straight to one, paste its GitHub URL or enter <code>open PR 123</code> in Browser using the current repository context.</li>
+      <li><strong>Find the change.</strong> Select a pull request from the list. To go straight to one, paste its GitHub URL or enter <code>open PR 123</code> in the address bar (<kbd>g</kbd> then <kbd>b</kbd>) using the current repository context.</li>
       <li><strong>Inspect an artifact.</strong> Choose an available workflow artifact, then browse the file list. Select a supported file to read, watch, or preview it.</li>
     </ol>
     <h2>Jump straight to an artifact</h2>
@@ -461,7 +461,7 @@ const DOCS_SECTIONS = [
     <h2>Preview a local or published page</h2>
     <ol class="docs-steps">
       <li><strong>Start your site.</strong> Keep your local development server running, or use an existing HTTP(S) address.</li>
-      <li><strong>Open Browser.</strong> Enter a URL such as <code>http://localhost:3000</code> and press Enter. A short localhost address such as <code>localhost:3000</code> works too.</li>
+      <li><strong>Open the address bar.</strong> Press <kbd>g</kbd> then <kbd>b</kbd>, or use <strong>Browser view</strong> on an HTML artifact. Enter a URL such as <code>http://localhost:3000</code> and press Enter. A short localhost address such as <code>localhost:3000</code> works too.</li>
       <li><strong>Navigate.</strong> Use Back, Forward, and Refresh for addresses opened through the toolbar. Use the page’s own controls for navigation inside an embedded page; cross-origin history is not observable by Explorer.</li>
     </ol>
     <h2>Size and zoom do different jobs</h2>
@@ -1000,7 +1000,7 @@ function renderBrowser(route) {
 function handleBrowserCommand(command) {
   const state = browserState;
   if (!state?.api) {
-    showToast("Open the Browser tab to use that command.", "error");
+    showToast("Open the browser with g then b first.", "error");
     return;
   }
   switch (command.command) {

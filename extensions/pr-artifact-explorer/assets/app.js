@@ -3277,7 +3277,7 @@ async function renderPull(route, sequence, { force = false } = {}) {
 function fileIconName(kind) {
   if (kind === "asciinema") return "terminal";
   if (kind === "html") return "browser";
-  if (kind === "image") return "file-media";
+  if (kind === "image" || kind === "video") return "file-media";
   if (kind === "markdown") return "markdown";
   if (kind === "trx") return "check-circle";
   if (kind === "json" || kind === "text" || kind === "xml") return "file-code";
@@ -3286,7 +3286,14 @@ function fileIconName(kind) {
   return "file-binary";
 }
 
+function reportModule(preview) {
+  return preview?.dataset.junit ? JunitPreview : TrxPreview;
+}
+
 function artifactEntryKind(entry) {
+  if (/\.(?:webm|mp4|m4v|mov)$/i.test(String(entry.path ?? entry.name ?? ""))) {
+    return "video";
+  }
   if (/\.trx$/i.test(String(entry.path ?? entry.name ?? ""))) {
     return "trx";
   }
@@ -3933,6 +3940,8 @@ async function previewArtifactFile(entry, sequence) {
     ? `Download ${entry.path}`
     : "This ZIP entry cannot be extracted safely; download the original artifact.";
   downloadLink.hidden = false;
+  const browserAction = document.getElementById("preview-open-browser");
+  if (browserAction) browserAction.hidden = true;
   preview.innerHTML = `
     <div class="loading-list w-100">
       <div class="skeleton-row"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div>
@@ -3959,13 +3968,13 @@ async function previewArtifactFile(entry, sequence) {
           sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-downloads"
           referrerpolicy="no-referrer"
         ></iframe>`;
-      const openInBrowser = document.createElement("a");
-      openInBrowser.className = "btn btn-sm preview-open-browser";
-      openInBrowser.textContent = "Open in browser view";
-      openInBrowser.title = "Preview at mobile, tablet or desktop sizes with zoom, history and screenshots";
-      openInBrowser.href = browserHash({ url: result.url, preset: "desktop" });
-      openInBrowser.addEventListener("click", () => sessionStorage.setItem("pae.shareRoute", location.hash.replace(/([?&])v=[^&]*&?/, "$1").replace(/[?&]$/, "")));
-      preview.prepend(openInBrowser);
+      const openInBrowser = document.getElementById("preview-open-browser");
+      if (openInBrowser) {
+        openInBrowser.title = "Preview at mobile, tablet or desktop sizes with zoom, history and screenshots";
+        openInBrowser.href = browserHash({ url: result.url, preset: "desktop" });
+        openInBrowser.onclick = () => sessionStorage.setItem("pae.shareRoute", location.hash.replace(/([?&])v=[^&]*&?/, "$1").replace(/[?&]$/, ""));
+        openInBrowser.hidden = false;
+      }
       const frame = preview.querySelector("iframe[data-theme-aware-preview]");
       if (frame) {
         frame.style.colorScheme = theme;
@@ -4005,6 +4014,10 @@ async function previewArtifactFile(entry, sequence) {
         TrxPreview.render(result.content, preview, { highlightXml });
         return;
       }
+      if (entryKind === "xml" && JunitPreview.detect(result.content)) {
+        JunitPreview.render(result.content, preview, { highlightXml });
+        return;
+      }
       let content = result.content;
       if (entryKind === "json") {
         try {
@@ -4018,6 +4031,30 @@ async function previewArtifactFile(entry, sequence) {
         : entryKind === "json"
           ? `<pre class="text-preview syntax-code syntax-json"><code>${highlightJson(content)}</code></pre>`
           : `<pre class="text-preview">${escapeHtml(content)}</pre>`;
+      return;
+    }
+
+    if (entryKind === "video") {
+      const src = encodedEntryUrl(artifact.id, entry.path);
+      const download = encodedEntryUrl(artifact.id, entry.path, true);
+      preview.innerHTML = `
+        <div class="video-preview">
+          <video class="video-preview-player" controls playsinline preload="metadata" src="${src}" aria-label="${escapeHtml(entry.path)}"></video>
+          <div class="video-preview-error flash flash-error" role="alert" hidden>
+            <strong>This video can't be played here.</strong>
+            <div class="mt-1" data-video-error-detail></div>
+            <a class="app-button app-button-small mt-2" href="${download}">${icon("download")} Download video</a>
+          </div>
+        </div>`;
+      const video = preview.querySelector("video");
+      video.addEventListener("error", () => {
+        const container = preview.querySelector(".video-preview-error");
+        const ext = (entry.path.match(/\.([a-z0-9]+)$/i)?.[1] ?? "video").toLocaleLowerCase();
+        preview.querySelector("[data-video-error-detail]").textContent =
+          `Your browser could not decode this .${ext} file. Support depends on the container and codec (for example H.264, HEVC, VP8/VP9 or AV1); WebM and MP4 are most widely supported and QuickTime MOV often is not. Download it to play it locally.`;
+        container.hidden = false;
+        video.hidden = true;
+      });
       return;
     }
 
@@ -4230,6 +4267,7 @@ async function renderArtifact(route, sequence) {
           >${icon(bootstrapState.prefs.explorer?.sidebarCollapsed ? "sidebar-expand" : "sidebar-collapse")}</button>
           ${icon("eye")}
           <span id="preview-path" class="preview-path">${preferredPath ? escapeHtml(preferredPath) : "Select a file"}</span>
+          <a id="preview-open-browser" class="app-button app-button-small" href="#" hidden>${icon("browser")} Browser view</a>
           <a id="preview-download" class="app-button app-button-small" href="#" hidden>${icon("download")} Download</a>
         </div>
         <div id="preview-content" class="preview-content">
@@ -4868,7 +4906,7 @@ view.addEventListener("submit", (event) => {
 
 view.addEventListener("input", (event) => {
   if (event.target.matches("[data-trx-search-input]")) {
-    TrxPreview.applyFilters(event.target.closest(".trx-preview"));
+    reportModule(event.target.closest(".trx-preview")).applyFilters(event.target.closest(".trx-preview"));
     return;
   }
   if (event.target.id === "pull-query") {
@@ -4900,7 +4938,7 @@ view.addEventListener("click", (event) => {
     event.preventDefault();
     const preview = trxView.closest(".trx-preview");
     const viewName = trxView.dataset.trxView;
-    TrxPreview.showView(preview, viewName);
+    reportModule(preview).showView(preview, viewName);
     if (viewName === "structured") {
       preview.querySelector("[data-trx-search-input]")?.focus();
     }
@@ -4913,7 +4951,7 @@ view.addEventListener("click", (event) => {
     for (const button of preview.querySelectorAll("[data-trx-filter]")) {
       button.setAttribute("aria-pressed", String(button === trxFilter));
     }
-    TrxPreview.applyFilters(preview);
+    reportModule(preview).applyFilters(preview);
     return;
   }
   const pullQuerySuggestion = event.target.closest("[data-pull-query-suggestion]");

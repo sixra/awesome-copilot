@@ -398,9 +398,12 @@ async function handleContentRequest(req, res, pathname, searchParams) {
     return true;
   }
 
+  const size = context.entry.uncompressedSize;
+  const range = download ? { kind: "none" } : parseByteRange(req.headers.range, size);
   const headers = {
+    "Accept-Ranges": "bytes",
     "Cache-Control": "no-store",
-    "Content-Length": String(context.entry.uncompressedSize),
+    "Content-Length": String(size),
     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
     "Content-Type": mimeForPath(context.entry.name),
     "Cross-Origin-Resource-Policy": "same-origin",
@@ -411,13 +414,50 @@ async function handleContentRequest(req, res, pathname, searchParams) {
     headers["Content-Disposition"] =
       `attachment; filename*=UTF-8''${encodeURIComponent(posix.basename(context.entry.name))}`;
   }
-  res.writeHead(200, headers);
+  let status = 200;
+  let partial = null;
+  if (range.kind === "unsatisfiable") {
+    headers["Content-Range"] = `bytes */${size}`;
+    headers["Content-Length"] = "0";
+    res.writeHead(416, headers);
+    res.end();
+    return true;
+  }
+  if (range.kind === "range") {
+    status = 206;
+    partial = { start: range.start, end: range.end };
+    headers["Content-Range"] = `bytes ${range.start}-${range.end}/${size}`;
+    headers["Content-Length"] = String(range.end - range.start + 1);
+  }
+  res.writeHead(status, headers);
   if (req.method === "HEAD") {
     res.end();
   } else {
-    await streamCachedEntry(context, res);
+    await streamCachedEntry(context, res, null, partial);
   }
   return true;
+}
+
+/** Parses a single-range `Range` header; multi-range or malformed values fall back to a full 200. */
+export function parseByteRange(header, size) {
+  if (typeof header !== "string") return { kind: "none" };
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match || (match[1] === "" && match[2] === "")) return { kind: "none" };
+  let start;
+  let end;
+  if (match[1] === "") {
+    const suffix = Number(match[2]);
+    if (!Number.isSafeInteger(suffix) || suffix === 0) return { kind: "unsatisfiable" };
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] === "" ? size - 1 : Math.min(Number(match[2]), size - 1);
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) return { kind: "none" };
+    if (start >= size || end < start) return { kind: "unsatisfiable" };
+  }
+  if (size === 0) return { kind: "unsatisfiable" };
+  return { kind: "range", start, end };
 }
 
 async function handleApi(req, res, entry, url) {
@@ -1099,6 +1139,7 @@ async function handleRequest(req, res, entry) {
       ["/assets/asciinema-player-worker.min.js", ["asciinema-player-worker.min.js", "text/javascript; charset=utf-8"]],
       ["/assets/app.css", ["app.css", "text/css; charset=utf-8"]],
       ["/assets/trx-preview.js", ["trx-preview.js", "text/javascript; charset=utf-8"]],
+      ["/assets/junit-preview.js", ["junit-preview.js", "text/javascript; charset=utf-8"]],
       ["/assets/app.js", ["app.js", "text/javascript; charset=utf-8"]],
       ["/assets/browser.js", ["browser.js", "text/javascript; charset=utf-8"]],
     ]);
