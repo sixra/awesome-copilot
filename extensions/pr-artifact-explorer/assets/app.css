@@ -2432,6 +2432,41 @@ select {
   align-items: center;
 }
 
+.preview-mode {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.preview-mode [aria-pressed="true"] {
+  background: var(--app-bg-inset);
+  font-weight: 600;
+}
+
+.raw-view {
+  display: flex;
+  min-height: 0;
+  padding: var(--base-size-12, 12px);
+  flex-direction: column;
+  gap: var(--base-size-8, 8px);
+}
+
+.raw-note {
+  color: var(--app-fg-muted);
+  font-size: 12px;
+}
+
+.raw-content {
+  margin: 0;
+  padding: var(--base-size-12, 12px);
+  overflow: auto;
+  background: var(--app-bg);
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  font-family: var(--app-mono);
+  font-size: 12px;
+  white-space: pre;
+}
+
 .preview-path {
   min-width: 0;
   overflow: hidden;

@@ -139,9 +139,16 @@ async function savePng(png, outputDir) {
  * Renders the URL in a fresh, isolated headless Chromium and saves a PNG.
  * This is a NEW render, not a snapshot of the page currently shown in the canvas.
  */
-export async function captureScreenshot({ url, fullPage = false, outputDir = getScreenshotRoot(), ...viewportOptions }) {
+export function normalizeColorScheme(value) {
+  if (value === undefined || value === null) return undefined;
+  if (value === "light" || value === "dark") return value;
+  throw new CaptureError("invalid_viewport", 'Color scheme must be "light" or "dark".');
+}
+
+export async function captureScreenshot({ url, fullPage = false, outputDir = getScreenshotRoot(), colorScheme, ...viewportOptions }) {
   const target = assertHttpUrl(url);
   const viewport = resolveViewport(viewportOptions);
+  const scheme = normalizeColorScheme(colorScheme);
   const browser = await launchChromium();
   try {
     // A new context has no cookies or profile data and is discarded afterwards.
@@ -150,6 +157,7 @@ export async function captureScreenshot({ url, fullPage = false, outputDir = get
       deviceScaleFactor: viewport.deviceScaleFactor,
       isMobile: viewport.isMobile,
       hasTouch: viewport.hasTouch,
+      ...(scheme ? { colorScheme: scheme } : {}),
     });
     const page = await context.newPage();
     let status = null;
@@ -169,6 +177,7 @@ export async function captureScreenshot({ url, fullPage = false, outputDir = get
     return {
       ...(await savePng(png, outputDir)),
       source: "fresh-render",
+      colorScheme: scheme ?? null,
       note: "Fresh headless Chromium render of the URL. It does not include unsaved page state from the canvas preview.",
       requestedUrl: target.href,
       finalUrl,
@@ -193,9 +202,18 @@ export class ControlledBrowser {
   #page = null;
   #viewport = null;
   #starting = null;
+  #colorScheme = undefined;
 
   get active() {
     return Boolean(this.#page);
+  }
+
+  async setColorScheme(value) {
+    const scheme = normalizeColorScheme(value);
+    if (!scheme || scheme === this.#colorScheme) return { colorScheme: this.#colorScheme ?? null };
+    this.#colorScheme = scheme;
+    if (this.#page) await this.#page.emulateMedia({ colorScheme: scheme });
+    return { colorScheme: scheme };
   }
 
   async #ensure(viewportOptions) {
@@ -217,6 +235,7 @@ export class ControlledBrowser {
       deviceScaleFactor: v.deviceScaleFactor,
       isMobile: v.isMobile,
       hasTouch: v.hasTouch,
+      ...(this.#colorScheme ? { colorScheme: this.#colorScheme } : {}),
     });
     this.#page = await this.#context.newPage();
   }

@@ -636,8 +636,11 @@ function pullHash(repository, pullNumber) {
   return `#/pull/${encodeURIComponent(repository)}/${Number(pullNumber)}`;
 }
 
-function artifactHash(repository, pullNumber, artifactId, filePath = null) {
-  const query = filePath ? `?file=${encodeURIComponent(filePath)}` : "";
+function artifactHash(repository, pullNumber, artifactId, filePath = null, raw = false) {
+  const params = [];
+  if (filePath) params.push(`file=${encodeURIComponent(filePath)}`);
+  if (filePath && raw) params.push("view=raw");
+  const query = params.length ? `?${params.join("&")}` : "";
   return `#/artifact/${encodeURIComponent(repository)}/${Number(pullNumber)}/${Number(artifactId)}${query}`;
 }
 
@@ -672,6 +675,7 @@ function parseRoute() {
       pullNumber: Number(parts[2]),
       artifactId: Number(parts[3]),
       filePath: query.get("file"),
+      raw: query.get("view") === "raw",
     };
   }
   if (parts[0] === "issue" && parts[1] && parts[2]) {
@@ -3922,6 +3926,77 @@ function stepPlayerTextSize(direction) {
   }
 }
 
+let rawRequestToken = 0;
+
+function syncPreviewModeControl() {
+  const raw = currentArtifact?.rawMode === true;
+  for (const button of document.querySelectorAll("[data-preview-mode]")) {
+    const active = (button.dataset.previewMode === "raw") === raw;
+    button.setAttribute("aria-pressed", String(active));
+    button.classList.toggle("is-active", active);
+  }
+}
+
+async function setPreviewMode(mode) {
+  const artifact = currentArtifact;
+  if (!artifact?.selectedPath) return;
+  const raw = mode === "raw";
+  if ((artifact.rawMode === true) === raw) return;
+  artifact.rawMode = raw;
+  history.replaceState(
+    null,
+    "",
+    artifactHash(artifact.repository, artifact.pullNumber, artifact.id, artifact.selectedPath, raw),
+  );
+  const entry = artifact.analysis.entries.find((item) => item.path === artifact.selectedPath);
+  if (entry) await previewArtifactFile(entry, renderSequence);
+}
+
+async function renderRawPreview(entry, preview, sequence) {
+  const artifact = currentArtifact;
+  const token = ++rawRequestToken;
+  const stale = () =>
+    token !== rawRequestToken ||
+    sequence !== renderSequence ||
+    currentArtifact !== artifact ||
+    artifact.selectedPath !== entry.path ||
+    artifact.rawMode !== true;
+  preview.innerHTML = `<div class="loading-list w-100"><div class="skeleton-row"><span class="skeleton"></span><span class="skeleton"></span></div></div>`;
+  let result;
+  try {
+    result = await api(`/api/artifacts/${artifact.id}/raw?path=${encodeURIComponent(entry.path)}`);
+  } catch (error) {
+    if (stale()) return;
+    const box = document.createElement("div");
+    box.className = "preview-error";
+    box.setAttribute("role", "alert");
+    box.textContent = `Could not read the raw bytes: ${error instanceof Error ? error.message : String(error)}. Use Download to get the original file.`;
+    preview.replaceChildren(box);
+    return;
+  }
+  if (stale()) return;
+  const wrap = document.createElement("div");
+  wrap.className = "raw-view";
+  wrap.dataset.rawMode = result.mode;
+  const note = document.createElement("p");
+  note.className = "raw-note";
+  if (result.mode === "unsupported") {
+    note.textContent = result.reason || "These bytes cannot be inspected safely. Download the original artifact ZIP instead.";
+    wrap.append(note);
+  } else {
+    const parts = [formatBytes(result.size)];
+    if (result.encoding) parts.push(result.encoding);
+    if (result.truncated) parts.push(`partial: showing the first ${formatBytes(result.shown)}; Download has the full file`);
+    note.textContent = [parts.join(" · "), result.note].filter(Boolean).join(" — ");
+    const pre = document.createElement("pre");
+    pre.className = "raw-content";
+    pre.tabIndex = 0;
+    pre.textContent = result.mode === "empty" ? "(empty file)" : result.content;
+    wrap.append(note, pre);
+  }
+  preview.replaceChildren(wrap);
+}
+
 async function previewArtifactFile(entry, sequence) {
   disposePlayer();
   const artifact = currentArtifact;
@@ -3942,6 +4017,11 @@ async function previewArtifactFile(entry, sequence) {
   downloadLink.hidden = false;
   const browserAction = document.getElementById("preview-open-browser");
   if (browserAction) browserAction.hidden = true;
+  syncPreviewModeControl(entry);
+  if (artifact.rawMode) {
+    await renderRawPreview(entry, preview, sequence);
+    return;
+  }
   preview.innerHTML = `
     <div class="loading-list w-100">
       <div class="skeleton-row"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div>
@@ -4167,6 +4247,7 @@ async function selectArtifactFile(path, updateHash = true) {
         currentArtifact.pullNumber,
         currentArtifact.id,
         path,
+        currentArtifact.rawMode === true,
       ),
     );
   }
@@ -4229,6 +4310,7 @@ async function renderArtifact(route, sequence) {
     analysis,
     fileTree: createArtifactFileTreeState(analysis.entries, preferredPath),
     selectedPath: preferredPath,
+    rawMode: route.raw === true && Boolean(route.filePath),
   };
   setBreadcrumbs(artifactBreadcrumbItems(currentArtifact, preferredPath));
   const primary = analysis.primary;
@@ -4285,6 +4367,10 @@ async function renderArtifact(route, sequence) {
           ${icon("eye")}
           <span id="preview-path" class="preview-path">${preferredPath ? escapeHtml(preferredPath) : "Select a file"}</span>
           <a id="preview-open-browser" class="app-button app-button-small" href="#" hidden>${icon("browser")} Browser view</a>
+          <span class="preview-mode" role="group" aria-label="Preview mode">
+            <button type="button" class="app-button app-button-small" data-preview-mode="preview" aria-pressed="${route.raw ? "false" : "true"}" title="Rendered preview">Preview</button>
+            <button type="button" class="app-button app-button-small" data-preview-mode="raw" aria-pressed="${route.raw ? "true" : "false"}" title="Original source or bytes">Raw</button>
+          </span>
           <a id="preview-download" class="app-button app-button-small" href="#" hidden>${icon("download")} Download</a>
         </div>
         <div id="preview-content" class="preview-content">
@@ -4950,6 +5036,12 @@ view.addEventListener("input", (event) => {
 });
 
 view.addEventListener("click", (event) => {
+  const modeButton = event.target.closest("[data-preview-mode]");
+  if (modeButton) {
+    event.preventDefault();
+    void setPreviewMode(modeButton.dataset.previewMode);
+    return;
+  }
   const trxView = event.target.closest("[data-trx-view]");
   if (trxView) {
     event.preventDefault();

@@ -43,6 +43,9 @@ Use `share { input, preset?, zoom?, width?, height? }` to produce a link, route,
 
 - A contextual **Browser view** action appears in the preview toolbar only for static-site HTML artifacts; it is not a global nav item. Open URLs directly with `open_target` / `navigate_browser` or a `#/browser?v=...` route.
 - `.webm`, `.mp4` and `.mov` use native `<video controls>` with range seeking (the whole entry is CRC/size verified once, then reused). Codec support is browser-dependent (WebM VP8/VP9 is most reliable; H.264 MP4/MOV may not play), so a failure shows an explanation and a download fallback.
+- A compact **Preview / Raw** toggle sits beside Download for every file (`&view=raw` in routes). Raw shows exact source for text and a bounded, labelled-partial hex+ASCII view for binary; unsafe/encrypted entries explain why and keep the ZIP download.
+- Browser chrome and owned artifact HTML follow the inherited canvas theme (initial and live changes); controlled Chromium and captures follow the current color scheme. External sites keep their own theme.
+- **Open in default browser** (Sharing and help menu) launches the current http(s) target in the OS browser. Owned artifact sites are served by this canvas's loopback server and stop when it closes.
 - JUnit XML (`testsuites`/`testsuite` roots) renders a native report with totals, status filters, search and failure/error/skipped/stdout/stderr details; the XML source and download stay available. Malformed reports fall back to source with an error; other XML uses the generic viewer.
 
 ## Recovery

@@ -43,12 +43,15 @@ import {
   suggestRepositories,
 } from "./github.mjs";
 import {
+  describeOwnedPreview,
   startStaticPreview,
   stopAllStaticPreviews,
   stopStaticPreviewsForArtifact,
   stopStaticPreviewsForOrigin,
 } from "./preview.mjs";
 import { ExpiringPromiseCache } from "./memory-cache.mjs";
+import { buildRawView } from "./raw.mjs";
+import { ExternalOpenError, openInDefaultBrowser, validateExternalUrl } from "./external-open.mjs";
 import { renderHtml } from "./render.mjs";
 import {
   hasCapabilityToken,
@@ -831,6 +834,7 @@ async function handleApi(req, res, entry, url) {
         height: body.height,
         deviceScaleFactor: body.deviceScaleFactor,
         orientation: body.orientation,
+        colorScheme: body.theme,
         fullPage: body.fullPage === true,
       });
       return sendJson(res, 200, { capture: result });
@@ -842,14 +846,18 @@ async function handleApi(req, res, entry, url) {
     }
   }
 
-  const controlledMatch = path.match(/^\/api\/controlled\/(navigate|history|viewport|screenshot|frame|close)$/);
+  const controlledMatch = path.match(/^\/api\/controlled\/(navigate|history|viewport|screenshot|frame|close|theme)$/);
   if (req.method === "POST" && controlledMatch) {
     const body = await readJsonBody(req);
     const action = controlledMatch[1];
     const viewport = { preset: body.preset, width: body.width, height: body.height, deviceScaleFactor: body.deviceScaleFactor, orientation: body.orientation };
     try {
       entry.controlled ??= new ControlledBrowser();
-      if (action === "navigate") return sendJson(res, 200, { controlled: await entry.controlled.navigate(body.url, viewport) });
+      if (action === "theme") return sendJson(res, 200, { controlled: await entry.controlled.setColorScheme(body.theme) });
+      if (action === "navigate") {
+        await entry.controlled.setColorScheme(body.theme);
+        return sendJson(res, 200, { controlled: await entry.controlled.navigate(body.url, viewport) });
+      }
       if (action === "history") {
         if (!["back", "forward", "refresh"].includes(body.direction)) throw new HttpError(400, "direction must be back, forward or refresh.");
         return sendJson(res, 200, { controlled: await entry.controlled.history(body.direction) });
@@ -1036,6 +1044,60 @@ async function handleApi(req, res, entry, url) {
       kind,
       content: context.content.toString("utf8"),
     });
+  }
+
+  const rawMatch = path.match(/^\/api\/artifacts\/(\d+)\/raw$/);
+  if (req.method === "GET" && rawMatch) {
+    const entryPath = url.searchParams.get("path");
+    if (!entryPath) throw new HttpError(400, "File path is required.");
+    try {
+      return sendJson(res, 200, await buildRawView(rawMatch[1], entryPath));
+    } catch (error) {
+      if (error instanceof HttpError || error instanceof LimitError) throw error;
+      const status = /not found|not cached/i.test(error?.message ?? "") ? 404 : 502;
+      throw new HttpError(status, error?.message || "Could not read the original bytes.", {
+        code: "raw_unavailable",
+        cause: error,
+      });
+    }
+  }
+
+  if (req.method === "POST" && path === "/api/browser/owned") {
+    const body = await readJsonBody(req);
+    let origin = null;
+    try {
+      origin = new URL(String(body.url ?? "")).origin;
+    } catch {
+      origin = null;
+    }
+    const owned = origin ? describeOwnedPreview(origin) : null;
+    return sendJson(res, 200, { owned: Boolean(owned), artifactId: owned?.artifactId ?? null });
+  }
+
+  if (req.method === "POST" && path === "/api/browser/open-external") {
+    const body = await readJsonBody(req);
+    try {
+      let target = validateExternalUrl(body.url);
+      const parsed = new URL(target);
+      const owned = describeOwnedPreview(parsed.origin);
+      if (owned && (body.theme === "light" || body.theme === "dark")) {
+        // Owned artifact sites bake their theme at start; rebuild for the current theme.
+        const fresh = new URL(
+          await startStaticPreview(owned.artifactId, owned.entryPath, {
+            theme: body.theme,
+            parentOrigin: owned.canvasOrigin,
+          }),
+        );
+        target = `${fresh.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+      await openInDefaultBrowser(target);
+      return sendJson(res, 200, { opened: true, url: target });
+    } catch (error) {
+      if (error instanceof ExternalOpenError) {
+        throw new HttpError(error.code === "launch_failed" ? 502 : 400, error.message, { code: error.code });
+      }
+      throw error;
+    }
   }
 
   const previewMatch = path.match(/^\/api\/artifacts\/(\d+)\/preview-url$/);

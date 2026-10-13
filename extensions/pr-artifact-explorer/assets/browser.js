@@ -449,7 +449,7 @@ const DOCS_SECTIONS = [
     <ol class="docs-steps">
       <li><strong>Choose a repository.</strong> Enter <code>github/awesome-copilot</code> in the header, or use the repository quick switch. Pins and favorites make frequently used repositories easier to return to.</li>
       <li><strong>Find the change.</strong> Select a pull request from the list. To go straight to one, paste its GitHub URL or enter <code>open PR 123</code> in the address bar (<kbd>g</kbd> then <kbd>b</kbd>) using the current repository context.</li>
-      <li><strong>Inspect an artifact.</strong> Choose an available workflow artifact, then browse the file list. Select a supported file to read, watch, or preview it.</li>
+      <li><strong>Inspect an artifact.</strong> Choose an available workflow artifact, then browse the file list. Select a supported file to read, watch, or preview it. Use <strong>Raw</strong> beside Download to see the original source or a bounded hex view; Preview returns to the rendered view.</li>
     </ol>
     <h2>Jump straight to an artifact</h2>
     <p>Paste a GitHub artifact URL or an Explorer share route into the address field. Explorer resolves the target; you do not need to reconstruct its local preview address.</p>
@@ -468,6 +468,10 @@ const DOCS_SECTIONS = [
     <p><strong>Device size changes the layout.</strong> Mobile uses 390 × 844 CSS pixels, Tablet 768 × 1024, and Desktop 1440 × 900. Native follows the panel. Choose Custom to reveal width and height in Options; Rotate switches orientation.</p>
     <p><strong>Zoom changes only what you see.</strong> The − and + buttons scale the preview without changing its CSS viewport. In Options, Fit makes it fit the available width, and 100% resets the visual scale.</p>
     ${docsFigure("preview-controls", "Mobile preview controls with visual zoom separate from the device preset.", "Sample mobile preview: the device sets the page layout; zoom adjusts its display size.", 882, 480)}
+    <h2>Open it in your default browser</h2>
+    <p>Choose <strong>Options → Open in default browser</strong> to open the current page in your operating system’s browser. For a website artifact, Explorer restarts its local preview with your current light or dark theme and keeps the same route, query and hash. That local server runs only while Artifact Explorer is open; it is not a published site.</p>
+    <h2>Theme</h2>
+    <p>Explorer’s own controls follow the canvas theme. Website artifacts it serves, and its fresh screenshots and controlled Chromium, follow the current light or dark setting and update when it changes. External websites keep their own theme rules.</p>
     <h2>If the page will not embed</h2>
     <p>Some sites deliberately refuse to appear in an iframe. Explorer reports the restriction rather than bypassing it. Open <strong>Options → Controlled browser</strong> to use an isolated Chromium view with its own real history.</p>
     <div class="docs-next"><strong>Next</strong><a href="#/docs/screenshots">Capture the right page state</a><a href="#/docs/recovery">Fix a blank or unavailable preview</a></div>`],
@@ -705,6 +709,7 @@ function renderBrowser(route) {
       </section>
       <section class="popover-section" aria-label="Sharing and help">
         <button type="button" class="popover-action" id="br-copy" aria-label="Copy share link" title="Copy share route">${icon("copy")}Copy share link</button>
+        <button type="button" class="popover-action" id="br-open-external" title="Open the current page in your operating system's default browser">${icon("link-external")}Open in default browser</button>
         <button type="button" class="popover-action" id="br-kbd" aria-label="Keyboard hints" aria-pressed="false" aria-expanded="false" aria-controls="br-hints" title="Keyboard hints (?)">${icon("keyboard")}Keyboard shortcuts</button>
         <div class="kbd-hints" id="br-hints" hidden>${SHORTCUT_REFERENCE}</div>
       </section>
@@ -781,7 +786,7 @@ function renderBrowser(route) {
 
   const controlledBody = () => {
     const { w, h } = viewport();
-    return { preset: state.preset === "native" ? "custom" : state.preset, width: w, height: h };
+    return { preset: state.preset === "native" ? "custom" : state.preset, width: w, height: h, theme: resolvedCanvasTheme() };
   };
 
   async function showControlledFrame() {
@@ -868,6 +873,16 @@ function renderBrowser(route) {
       notice.hidden = false;
       notice.textContent = error instanceof Error ? error.message : String(error);
     }
+    let owned = false;
+    try {
+      owned = (await api("/api/browser/owned", { method: "POST", body: { url } })).owned === true;
+    } catch {
+      owned = false;
+    }
+    if (browserState !== state) return;
+    state.owned = owned;
+    if (owned) frame.setAttribute("data-theme-aware-preview", "");
+    else frame.removeAttribute("data-theme-aware-preview");
     frame.src = url;
   }
 
@@ -910,7 +925,7 @@ function renderBrowser(route) {
         ? await api("/api/controlled/screenshot", { method: "POST", body: { fullPage: false } })
         : await api("/api/capture", {
             method: "POST",
-            body: { url: state.url, preset: state.preset === "native" ? "custom" : state.preset, width: w, height: h, fullPage: false },
+            body: { url: state.url, preset: state.preset === "native" ? "custom" : state.preset, width: w, height: h, fullPage: false, theme: resolvedCanvasTheme() },
           });
       const file = capture.path.split(/[\\/]/).pop();
       const src = `/api/screenshots/${file}?token=${encodeURIComponent(capabilityToken)}`;
@@ -969,7 +984,7 @@ function renderBrowser(route) {
     const view = { preset: state.preset, width: state.preset === "custom" ? w : undefined, height: state.preset === "custom" ? h : undefined, zoom: state.fit ? undefined : state.zoom, orientation: state.orientation === "landscape" ? "landscape" : undefined };
     let sourceRoute = null;
     try {
-      sourceRoute = state.url && new URL(state.url, location.href).origin === location.origin ? sessionStorage.getItem("pae.shareRoute") : null;
+      sourceRoute = state.url && state.owned ? sessionStorage.getItem("pae.shareRoute") : null;
     } catch {
       sourceRoute = null;
     }
@@ -977,6 +992,26 @@ function renderBrowser(route) {
     const route = sourceRoute ? `${sourceRoute}${sourceRoute.includes("?") ? "&" : "?"}v=${encodeViewClient(view)}` : browserHash({ ...view, url: state.url || undefined });
     void copyText(route, sourceRoute ? "Copied artifact share route" : "Copied share route");
   });
+  $("br-open-external").addEventListener("click", async (event) => {
+    if (!state.url) return showToast("Open an address first.", "error");
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await api("/api/browser/open-external", { method: "POST", body: { url: state.url, theme: resolvedCanvasTheme() } });
+      showToast("Opened in your default browser");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error), "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+  frame.addEventListener("load", () => {
+    if (frame.hasAttribute("data-theme-aware-preview")) syncPreviewTheme();
+  });
+  const themeObserver = new MutationObserver(() => {
+    if (state.controlled && browserState === state) void api("/api/controlled/theme", { method: "POST", body: { theme: resolvedCanvasTheme() } }).then(showControlledFrame).catch(() => {});
+  });
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-color-mode", "data-theme-tone"] });
   $("br-kbd").addEventListener("click", (event) => {
     const hints = $("br-hints");
     hints.hidden = !hints.hidden;
@@ -990,6 +1025,7 @@ function renderBrowser(route) {
   state.api = { go, refresh, setZoom, screenshot, load, applyLayout, viewport, setControlled };
   browserCleanup = () => {
     window.removeEventListener("resize", onResize);
+    themeObserver.disconnect();
     disposeOptions();
   };
 

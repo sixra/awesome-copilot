@@ -258,8 +258,30 @@ export async function startStaticPreview(artifactId, entryPath, options) {
   }
   serverEntry.host = `127.0.0.1:${address.port}`;
   const url = `http://127.0.0.1:${address.port}/`;
-  previewServers.set(key, { artifactId: String(artifactId), server, url, canvasOrigin: parentOrigin });
+  previewServers.set(key, {
+    artifactId: String(artifactId),
+    entryPath: context.entry.name,
+    server,
+    url,
+    canvasOrigin: parentOrigin,
+    theme,
+  });
   return url;
+}
+
+/** Maps an origin back to the owned static preview serving it, or null for any foreign origin. */
+export function describeOwnedPreview(origin) {
+  for (const value of previewServers.values()) {
+    if (new URL(value.url).origin === origin) {
+      return {
+        artifactId: value.artifactId,
+        entryPath: value.entryPath,
+        theme: value.theme,
+        canvasOrigin: value.canvasOrigin,
+      };
+    }
+  }
+  return null;
 }
 
 export async function stopStaticPreviewsForArtifact(artifactId) {
