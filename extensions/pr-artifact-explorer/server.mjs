@@ -11,13 +11,16 @@ import {
   getCacheSummary,
   getCachedArtifact,
   getCachedEntry,
-  inspectArtifact,
+  streamCachedEntry,
+  JobsActiveError,
+  jobRegistry,
   readCachedEntry,
+  startArtifactJob,
 } from "./cache.mjs";
+import { LimitError, limitPolicy } from "./limits.mjs";
 import {
   ASSET_ROOT,
   MAX_INLINE_PREVIEW_BYTES,
-  MAX_STREAMED_ENTRY_BYTES,
   MAX_TRX_PREVIEW_BYTES,
 } from "./constants.mjs";
 import {
@@ -29,6 +32,7 @@ import {
 import {
   enrichPullRequests,
   filterPullRequests,
+  getIssue,
   getRepository,
   GitHubApiError,
   listRepositoryContributors,
@@ -62,7 +66,8 @@ import {
   setPlayerPreferences,
   setPullFilterPreferences,
 } from "./state.mjs";
-import { streamZipEntry } from "./zip.mjs";
+import { CaptureError, ControlledBrowser, SCREENSHOT_ROOT, captureScreenshot, getScreenshotRoot } from "./capture.mjs";
+import { TargetError, describeShare, parseTarget, routeFor } from "./targets.mjs";
 
 const servers = new Map();
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -83,8 +88,8 @@ const MAIN_CSP = [
   "connect-src 'self'",
   "font-src 'self' data:",
   "form-action 'self'",
-  "frame-src http://127.0.0.1:*",
-  "img-src 'self' data: https://avatars.githubusercontent.com https://github.com",
+  "frame-src http: https:",
+  "img-src 'self' data: blob: https://avatars.githubusercontent.com https://github.com",
   "object-src 'none'",
   "script-src 'self' 'wasm-unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
@@ -92,10 +97,12 @@ const MAIN_CSP = [
 ].join("; ");
 
 class HttpError extends Error {
-  constructor(status, message) {
-    super(message);
+  constructor(status, message, extra = {}) {
+    super(message, extra.cause ? { cause: extra.cause } : undefined);
     this.name = "HttpError";
     this.status = status;
+    const { cause, ...rest } = extra;
+    this.extra = rest;
   }
 }
 
@@ -270,6 +277,33 @@ function broadcast(entry, event, payload) {
   }
 }
 
+function assertNoActiveJobs(artifactId = null) {
+  const active = jobRegistry
+    .activeJobs()
+    .filter((job) => artifactId === null || job.artifactId === String(artifactId));
+  if (active.length) {
+    throw new HttpError(409, new JobsActiveError(active).message, {
+      code: "jobs_active",
+      jobs: active.map((job) => jobRegistry.snapshot(job)),
+    });
+  }
+}
+
+let jobSubscription = null;
+function ensureJobBroadcast() {
+  if (jobSubscription) return;
+  let lastStatus = new Map();
+  jobSubscription = jobRegistry.subscribe((snapshot) => {
+    for (const entry of servers.values()) broadcast(entry, "job", snapshot);
+    const previous = lastStatus.get(snapshot.id);
+    lastStatus.set(snapshot.id, snapshot.status);
+    if (previous !== snapshot.status && snapshot.status !== "running") {
+      void broadcastCache();
+      if (lastStatus.size > 100) lastStatus = new Map([...lastStatus].slice(-50));
+    }
+  });
+}
+
 async function resolveAuth(repository, force = false) {
   const prefs = await loadPrefs();
   const previousRepository = prefs.repository;
@@ -363,12 +397,6 @@ async function handleContentRequest(req, res, pathname, searchParams) {
     await sendArchiveDownload(req, res, context, artifactId);
     return true;
   }
-  if (context.entry.uncompressedSize > MAX_STREAMED_ENTRY_BYTES) {
-    throw new HttpError(
-      413,
-      "This file exceeds the 512 MiB streaming safety limit.",
-    );
-  }
 
   const headers = {
     "Cache-Control": "no-store",
@@ -387,7 +415,7 @@ async function handleContentRequest(req, res, pathname, searchParams) {
   if (req.method === "HEAD") {
     res.end();
   } else {
-    await streamZipEntry(context.archivePath, context.entry, res);
+    await streamCachedEntry(context, res);
   }
   return true;
 }
@@ -714,21 +742,225 @@ async function handleApi(req, res, entry, url) {
     });
   }
 
+  const issueMatch = path.match(/^\/api\/issues\/(\d+)$/);
+  if (req.method === "GET" && issueMatch) {
+    const repository = normalizeRepository(url.searchParams.get("repo"));
+    const { auth } = await resolveAuth(repository);
+    const issue = await getIssue(auth.activeToken, repository, issueMatch[1]);
+    return sendJson(res, 200, { repository, issue, account: auth.active });
+  }
+
+  if (req.method === "POST" && path === "/api/targets/parse") {
+    const body = await readJsonBody(req);
+    const prefs = await loadPrefs();
+    try {
+      const target = parseTarget(body.input, { defaultRepository: body.repository || prefs.repository });
+      return sendJson(res, 200, { target, route: routeFor(target) });
+    } catch (error) {
+      if (error instanceof TargetError) throw new HttpError(400, error.message, { code: error.code });
+      throw error;
+    }
+  }
+
+  if (req.method === "POST" && path === "/api/share") {
+    const body = await readJsonBody(req);
+    try {
+      const target = parseTarget(body.input, { defaultRepository: body.repository });
+      return sendJson(res, 200, { share: describeShare(target) });
+    } catch (error) {
+      if (error instanceof TargetError) throw new HttpError(400, error.message, { code: error.code });
+      throw error;
+    }
+  }
+
+  if (req.method === "POST" && path === "/api/capture") {
+    const body = await readJsonBody(req);
+    try {
+      const result = await captureScreenshot({
+        url: body.url,
+        preset: body.preset,
+        width: body.width,
+        height: body.height,
+        deviceScaleFactor: body.deviceScaleFactor,
+        orientation: body.orientation,
+        fullPage: body.fullPage === true,
+      });
+      return sendJson(res, 200, { capture: result });
+    } catch (error) {
+      if (error instanceof CaptureError) {
+        throw new HttpError(error.code === "invalid_viewport" || error.code === "invalid_url" ? 400 : 424, error.message, { code: error.code });
+      }
+      throw error;
+    }
+  }
+
+  const controlledMatch = path.match(/^\/api\/controlled\/(navigate|history|viewport|screenshot|frame|close)$/);
+  if (req.method === "POST" && controlledMatch) {
+    const body = await readJsonBody(req);
+    const action = controlledMatch[1];
+    const viewport = { preset: body.preset, width: body.width, height: body.height, deviceScaleFactor: body.deviceScaleFactor, orientation: body.orientation };
+    try {
+      entry.controlled ??= new ControlledBrowser();
+      if (action === "navigate") return sendJson(res, 200, { controlled: await entry.controlled.navigate(body.url, viewport) });
+      if (action === "history") {
+        if (!["back", "forward", "refresh"].includes(body.direction)) throw new HttpError(400, "direction must be back, forward or refresh.");
+        return sendJson(res, 200, { controlled: await entry.controlled.history(body.direction) });
+      }
+      if (action === "viewport") return sendJson(res, 200, { controlled: await entry.controlled.setViewport(viewport) });
+      if (action === "frame") {
+        const png = await entry.controlled.frame();
+        res.writeHead(200, { "content-type": "image/png", "content-length": png.length, "cache-control": "no-store", "x-content-type-options": "nosniff" });
+        res.end(png);
+        return;
+      }
+      if (action === "screenshot") return sendJson(res, 200, { capture: await entry.controlled.screenshot({ fullPage: body.fullPage === true }) });
+      await entry.controlled.close();
+      return sendJson(res, 200, { closed: true });
+    } catch (error) {
+      if (error instanceof CaptureError) {
+        throw new HttpError(["invalid_viewport", "invalid_url", "not_started"].includes(error.code) ? 400 : 424, error.message, { code: error.code });
+      }
+      throw error;
+    }
+  }
+
+  const shotMatch = path.match(/^\/api\/screenshots\/(screenshot-[0-9]+-[0-9a-f]{8}\.png)$/);
+  if (req.method === "GET" && shotMatch) {
+    let file = join(getScreenshotRoot(), shotMatch[1]);
+    let info = await stat(file).catch(() => null);
+    if (!info?.isFile()) {
+      file = join(SCREENSHOT_ROOT, shotMatch[1]);
+      info = await stat(file).catch(() => null);
+    }
+    if (!info?.isFile()) throw new HttpError(404, "Screenshot not found.");
+    res.writeHead(200, {
+      "content-type": "image/png",
+      "content-length": info.size,
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    });
+    await pipeline(createReadStream(file), res);
+    return;
+  }
+
+  if (req.method === "POST" && path === "/api/probe") {
+    const body = await readJsonBody(req);
+    let target;
+    try {
+      target = new URL(String(body.url ?? ""));
+      if (target.protocol !== "http:" && target.protocol !== "https:") throw new Error("scheme");
+    } catch {
+      throw new HttpError(400, "Enter an http(s) URL.", { code: "invalid_url" });
+    }
+    try {
+      const response = await fetch(target, {
+        method: "GET",
+        redirect: "follow",
+        signal: AbortSignal.timeout(6_000),
+      });
+      await response.body?.cancel();
+      const xfo = response.headers.get("x-frame-options");
+      const csp = response.headers.get("content-security-policy") ?? "";
+      const frameAncestors = /frame-ancestors\s+([^;]+)/i.exec(csp)?.[1]?.trim() ?? null;
+      const blockedByXfo = Boolean(xfo && /deny|sameorigin/i.test(xfo));
+      const blockedByCsp = Boolean(frameAncestors && !/\*/.test(frameAncestors));
+      return sendJson(res, 200, {
+        reachable: true,
+        status: response.status,
+        finalUrl: response.url,
+        embeddable: !blockedByXfo && !blockedByCsp,
+        reason: blockedByXfo
+          ? `The site sends X-Frame-Options: ${xfo}.`
+          : blockedByCsp
+            ? `The site sends CSP frame-ancestors ${frameAncestors}.`
+            : null,
+      });
+    } catch (error) {
+      return sendJson(res, 200, {
+        reachable: false,
+        embeddable: false,
+        reason: `Could not reach the URL (${error?.cause?.code ?? error?.name ?? "error"}).`,
+      });
+    }
+  }
+
+  if (req.method === "POST" && path === "/api/browser/state") {
+    const body = await readJsonBody(req);
+    entry.browserState = {
+      url: typeof body.url === "string" ? body.url.slice(0, 2048) : null,
+      preset: typeof body.preset === "string" ? body.preset : null,
+      width: Number.isFinite(body.width) ? body.width : null,
+      height: Number.isFinite(body.height) ? body.height : null,
+      zoom: Number.isFinite(body.zoom) ? body.zoom : null,
+    };
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (req.method === "POST" && path === "/api/restart") {
+    broadcast(entry, "restart", { reason: "user" });
+    const instanceId = [...servers.entries()].find(([, value]) => value === entry)?.[0];
+    const jobsPreserved = jobRegistry.activeJobs().length;
+    sendJson(res, 200, { restarted: true, jobsPreserved });
+    if (instanceId) {
+      setTimeout(() => {
+        restartInstance(instanceId, entry.log).catch((error) =>
+          entry.log?.(`Restart failed: ${error.message}`),
+        );
+      }, 100);
+    }
+    return;
+  }
+
   if (req.method === "POST" && path === "/api/artifacts/inspect") {
     const body = await readJsonBody(req);
     const repository = normalizeRepository(body.repository);
     const { auth } = await resolveAuth(repository);
-    const metadata = await inspectArtifact(
-      auth.activeToken,
-      repository,
-      body.artifactId,
-      {
-        onProgress: (progress) =>
-          broadcast(entry, "artifact-progress", { repository, ...progress }),
-      },
-    );
-    broadcast(entry, "cache", await getCacheSummary());
-    return sendJson(res, 200, metadata);
+    const job = await startArtifactJob(auth.activeToken, repository, body.artifactId, {
+      account: auth.active?.id ?? null,
+    });
+    return sendJson(res, 202, { job: jobRegistry.snapshot(job) });
+  }
+
+  if (req.method === "GET" && path === "/api/jobs") {
+    return sendJson(res, 200, {
+      jobs: jobRegistry.list(),
+      limits: limitPolicy.snapshot(),
+      persistError: limitPolicy.persistError ?? jobRegistry.persistError,
+      warnings: [limitPolicy.loadWarning, jobRegistry.loadWarning].filter(Boolean),
+    });
+  }
+
+  const jobMatch = path.match(/^\/api\/jobs\/([0-9a-f-]{36})(?:\/(cancel))?$/);
+  if (jobMatch) {
+    const job = jobRegistry.get(jobMatch[1]);
+    if (!job) throw new HttpError(404, "Job was not found.");
+    if (req.method === "GET" && !jobMatch[2]) {
+      return sendJson(res, 200, { job: jobRegistry.snapshot(job) });
+    }
+    if (req.method === "POST" && jobMatch[2] === "cancel") {
+      jobRegistry.cancel(job.id);
+      return sendJson(res, 200, { job: jobRegistry.snapshot(job) });
+    }
+  }
+
+  if (req.method === "PUT" && path === "/api/limits") {
+    const body = await readJsonBody(req);
+    try {
+      const result = limitPolicy.submit(body.kind, body.value);
+      return sendJson(res, 200, { ...result, limits: limitPolicy.snapshot() });
+    } catch (error) {
+      if (error instanceof LimitError) {
+        return sendJson(res, error.code === "below_current" ? 409 : 400, {
+          error: error.message,
+          code: error.code,
+          kind: error.kind,
+          minimum: error.minimum,
+          requested: error.requested,
+          status: error.code === "below_current" ? 409 : 400,
+        });
+      }
+      throw error;
+    }
   }
 
   const artifactMatch = parseArtifactRoute(path);
@@ -791,15 +1023,19 @@ async function handleApi(req, res, entry, url) {
 
   const cacheMatch = path.match(/^\/api\/cache\/(\d+)$/);
   if (req.method === "DELETE" && cacheMatch) {
+    const cancelJobs = url.searchParams.get("cancelJobs") === "1";
+    if (!cancelJobs) assertNoActiveJobs(cacheMatch[1]);
     await stopStaticPreviewsForArtifact(cacheMatch[1]);
-    const result = await deleteCachedArtifact(cacheMatch[1]);
+    const result = await deleteCachedArtifact(cacheMatch[1], { cancelJobs });
     broadcast(entry, "cache", await getCacheSummary());
     return sendJson(res, 200, result);
   }
 
   if (req.method === "DELETE" && path === "/api/cache") {
+    const cancelJobs = url.searchParams.get("cancelJobs") === "1";
+    if (!cancelJobs) assertNoActiveJobs();
     await stopAllStaticPreviews();
-    const result = await clearArtifactCache();
+    const result = await clearArtifactCache({ cancelJobs });
     broadcast(entry, "cache", await getCacheSummary());
     return sendJson(res, 200, result);
   }
@@ -811,6 +1047,14 @@ async function handleApi(req, res, entry, url) {
       "Content-Type": "text/event-stream",
     });
     res.write(": connected\n\n");
+    res.write(
+      `event: snapshot\ndata: ${JSON.stringify({
+        jobs: jobRegistry.list(),
+        limits: limitPolicy.snapshot(),
+        warnings: [limitPolicy.loadWarning, jobRegistry.loadWarning].filter(Boolean),
+        persistError: limitPolicy.persistError ?? jobRegistry.persistError,
+      })}\n\n`,
+    );
     entry.sseClients.add(res);
     req.on("close", () => entry.sseClients.delete(res));
     return;
@@ -856,6 +1100,7 @@ async function handleRequest(req, res, entry) {
       ["/assets/app.css", ["app.css", "text/css; charset=utf-8"]],
       ["/assets/trx-preview.js", ["trx-preview.js", "text/javascript; charset=utf-8"]],
       ["/assets/app.js", ["app.js", "text/javascript; charset=utf-8"]],
+      ["/assets/browser.js", ["browser.js", "text/javascript; charset=utf-8"]],
     ]);
     if (req.method === "GET" && assetTypes.has(url.pathname)) {
       const [name, type] = assetTypes.get(url.pathname);
@@ -868,6 +1113,17 @@ async function handleRequest(req, res, entry) {
         join(ASSET_ROOT, "octicons", `${iconMatch[1]}.svg`),
         "image/svg+xml",
       );
+    }
+
+    const docsMatch = url.pathname.match(/^\/assets\/docs\/([a-z0-9][a-z0-9-]{0,63})\.(png|webp|jpg|svg)$/);
+    if (req.method === "GET" && docsMatch) {
+      const types = { png: "image/png", webp: "image/webp", jpg: "image/jpeg", svg: "image/svg+xml" };
+      try {
+        return await sendFile(res, join(ASSET_ROOT, "docs", `${docsMatch[1]}.${docsMatch[2]}`), types[docsMatch[2]]);
+      } catch (error) {
+        if (error?.code === "ENOENT") throw new HttpError(404, "Asset not found.");
+        throw error;
+      }
     }
 
     if (await handleContentRequest(req, res, url.pathname, url.searchParams)) return;
@@ -888,13 +1144,16 @@ async function handleRequest(req, res, entry) {
           ? error.status
           : 500;
     sendJson(res, status, {
+      ...(error instanceof HttpError ? error.extra : {}),
       error: error instanceof Error ? error.message : String(error),
       status,
     });
   }
 }
 
-export async function startInstance(instanceId, initialInput, log) {
+export async function startInstance(instanceId, initialInput, log, reuse = null) {
+  await Promise.all([limitPolicy.load(), jobRegistry.load()]).catch((error) => log?.(`Limits or job history could not be loaded: ${error.message}`));
+  ensureJobBroadcast();
   let entry = servers.get(instanceId);
   if (entry) {
     entry.initialInput = initialInput ?? entry.initialInput;
@@ -902,13 +1161,15 @@ export async function startInstance(instanceId, initialInput, log) {
   }
 
   entry = {
+    browserState: reuse?.browserState ?? null,
+    controlled: reuse?.controlled ?? null,
     host: null,
     initialInput: initialInput ?? null,
     log,
     origin: null,
     server: null,
     sseClients: new Set(),
-    token: createCapabilityToken(),
+    token: reuse?.token ?? createCapabilityToken(),
     url: null,
   };
   const server = createServer((req, res) => {
@@ -916,7 +1177,7 @@ export async function startInstance(instanceId, initialInput, log) {
   });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(reuse?.port ?? 0, "127.0.0.1", resolve);
   });
   const address = server.address();
   if (!address || typeof address === "string") {
@@ -931,11 +1192,12 @@ export async function startInstance(instanceId, initialInput, log) {
   return entry;
 }
 
-export async function stopInstance(instanceId) {
+export async function stopInstance(instanceId, { keepControlled = false } = {}) {
   const entry = servers.get(instanceId);
   if (!entry) return;
   servers.delete(instanceId);
   for (const response of entry.sseClients) response.end();
+  if (!keepControlled) await entry.controlled?.close();
   if (entry.url) {
     await stopStaticPreviewsForOrigin(new URL(entry.url).origin);
   }
@@ -947,6 +1209,57 @@ export function navigateInstance(instanceId, route) {
   if (!entry) return false;
   broadcast(entry, "navigate", { route });
   return true;
+}
+
+export function sendBrowserCommand(instanceId, command) {
+  const entry = servers.get(instanceId);
+  if (!entry) return false;
+  broadcast(entry, "browser-command", command);
+  return true;
+}
+
+export function getControlledBrowser(instanceId) {
+  const entry = servers.get(instanceId);
+  if (!entry) return null;
+  entry.controlled ??= new ControlledBrowser();
+  return entry.controlled;
+}
+
+export function getBrowserState(instanceId) {
+  return servers.get(instanceId)?.browserState ?? null;
+}
+
+// Full server restart that keeps the same port and capability token so the open
+// panel reconnects in place. Jobs live at module level and are never touched.
+export async function restartInstance(instanceId, log) {
+  const entry = servers.get(instanceId);
+  if (!entry) return null;
+  const reuse = {
+    port: Number(entry.host.split(":").pop()),
+    token: entry.token,
+    browserState: entry.browserState,
+    controlled: entry.controlled,
+  };
+  const initialInput = entry.initialInput;
+  await stopInstance(instanceId, { keepControlled: true });
+  let lastError;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      const next = await startInstance(instanceId, initialInput, log, reuse);
+      return { entry: next, samePort: true };
+    } catch (error) {
+      lastError = error;
+      if (error?.code !== "EADDRINUSE") throw error;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+  log?.(`Could not rebind the previous port (${lastError?.code}); using a new port.`);
+  const next = await startInstance(instanceId, initialInput, log, {
+    token: reuse.token,
+    browserState: reuse.browserState,
+    controlled: reuse.controlled,
+  });
+  return { entry: next, samePort: false };
 }
 
 export async function broadcastCache({ refresh = false } = {}) {

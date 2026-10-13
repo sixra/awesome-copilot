@@ -674,6 +674,19 @@ function parseRoute() {
       filePath: query.get("file"),
     };
   }
+  if (parts[0] === "issue" && parts[1] && parts[2]) {
+    return {
+      name: "issue",
+      repository: decodeURIComponent(parts[1]),
+      issueNumber: Number(parts[2]),
+    };
+  }
+  if (parts[0] === "docs") {
+    return { name: "docs", section: parts[1] ? decodeURIComponent(parts[1]) : null };
+  }
+  if (parts[0] === "browser") {
+    return { name: "browser", query };
+  }
   if (parts[0] === "cache") return { name: "cache" };
   if (parts[0] === "accounts") return { name: "accounts" };
   return {
@@ -3151,10 +3164,7 @@ function renderPullPayload(repository, pullNumber, payload, cache) {
   view.innerHTML = `
     <div class="page-header">
       <div>
-        <h1 class="page-title">
-          <strong>${titleHtml(pull.title)}</strong>
-          <span class="page-title-number">#${pull.number}</span>
-        </h1>
+        ${pageTitleHtml(pull.title, pull.number, pull.url)}
       </div>
       <div class="page-actions">
         <a class="app-button" href="${escapeHtml(pull.url)}" target="_blank" rel="noreferrer">
@@ -3949,6 +3959,13 @@ async function previewArtifactFile(entry, sequence) {
           sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-downloads"
           referrerpolicy="no-referrer"
         ></iframe>`;
+      const openInBrowser = document.createElement("a");
+      openInBrowser.className = "btn btn-sm preview-open-browser";
+      openInBrowser.textContent = "Open in browser view";
+      openInBrowser.title = "Preview at mobile, tablet or desktop sizes with zoom, history and screenshots";
+      openInBrowser.href = browserHash({ url: result.url, preset: "desktop" });
+      openInBrowser.addEventListener("click", () => sessionStorage.setItem("pae.shareRoute", location.hash.replace(/([?&])v=[^&]*&?/, "$1").replace(/[?&]$/, "")));
+      preview.prepend(openInBrowser);
       const frame = preview.querySelector("iframe[data-theme-aware-preview]");
       if (frame) {
         frame.style.colorScheme = theme;
@@ -4492,6 +4509,10 @@ async function renderRoute({ force = false } = {}) {
       await renderArtifact(route, sequence);
     } else if (route.name === "cache") await renderCache(sequence);
     else if (route.name === "accounts") await renderAccountsPage(sequence);
+    else if (route.name === "issue") await renderIssue(route, sequence);
+    else if (route.name === "docs") renderDocs(route);
+    else if (route.name === "browser") renderBrowser(route);
+    if (route.name !== "browser") disposeBrowser();
   } catch (error) {
     if (sequence === renderSequence) renderError(error);
   }
@@ -4526,6 +4547,7 @@ function routeFromInput(value) {
 }
 
 async function navigateToRepository(value) {
+  if (!isPlainRepositoryInput(value) && (await navigateNaturalLanguage(value))) return;
   const target = repositoryTargetFromInput(value);
   const searchIcon = repositoryCombobox.querySelector(".repository-search-icon");
   repositoryInput.readOnly = true;
@@ -4588,10 +4610,14 @@ async function inspectArtifactButton(button) {
   for (const control of controls) control.disabled = true;
   statusButton.setAttribute("aria-label", "Downloading artifact");
   try {
-    await api("/api/artifacts/inspect", {
+    const started = await api("/api/artifacts/inspect", {
       method: "POST",
       body: { artifactId, repository },
     });
+    const finalJob = await waitForJob(started.job.id);
+    if (finalJob.status !== "succeeded") {
+      throw new Error(finalJob.error || `Artifact job ${finalJob.status}.`);
+    }
     updateCacheHeader(await api("/api/cache"));
     artifactDownloadProgress.delete(String(artifactId));
     location.hash = artifactHash(repository, pullNumber, artifactId);
@@ -5292,13 +5318,13 @@ view.addEventListener("keydown", (event) => {
     openPullSignal.focus();
     return;
   }
-  if (event.key === "Escape" && !document.getElementById("pull-author-panel")?.hidden) {
+  if (event.key === "Escape" && !document.getElementById("pull-author-panel")?.hidden === false) {
     event.preventDefault();
     setPullAuthorPanelOpen(false);
     document.querySelector("[data-toggle-pull-author]")?.focus();
     return;
   }
-  if (event.key === "Escape" && !document.getElementById("pull-state-panel")?.hidden) {
+  if (event.key === "Escape" && !document.getElementById("pull-state-panel")?.hidden === false) {
     event.preventDefault();
     setPullStatePanelOpen(false);
     document.querySelector("[data-toggle-pull-state]")?.focus();
@@ -5334,19 +5360,22 @@ async function initialize() {
     events.addEventListener("refresh", () => {
       void renderRoute();
     });
+    events.addEventListener("job", (event) => handleJobEvent(JSON.parse(event.data)));
+    events.addEventListener("snapshot", (event) => handleSnapshotEvent(JSON.parse(event.data)));
+    events.addEventListener("restart", () => handleRestartEvent());
+    events.addEventListener("browser-command", (event) =>
+      handleBrowserCommand(JSON.parse(event.data)),
+    );
+    events.addEventListener("error", () => setConnectionState(false));
+    events.addEventListener("open", () => setConnectionState(true));
+    installJobPanel();
+    installGlobalShortcuts();
 
     if (!location.hash || location.hash === "#/") {
       const input = bootstrapState.initialInput ?? {};
-      if (typeof input.url === "string" && input.url) {
-        location.hash = routeFromInput(input.url);
-        return;
-      }
-      if (typeof input.repository === "string" && input.pullNumber) {
-        location.hash = pullHash(input.repository, input.pullNumber);
-        return;
-      }
-      if (typeof input.repository === "string") {
-        location.hash = pullsHashForRepository(input.repository);
+      const initialRoute = await initialRouteFromInput(input);
+      if (initialRoute) {
+        location.hash = initialRoute;
         return;
       }
       location.hash = pullsHashForRepository(bootstrapState.prefs.repository);

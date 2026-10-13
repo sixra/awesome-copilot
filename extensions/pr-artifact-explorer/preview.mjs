@@ -1,10 +1,9 @@
 import { createServer } from "node:http";
 import { posix } from "node:path";
 import { Transform } from "node:stream";
-import { getCachedEntry } from "./cache.mjs";
+import { getCachedEntry, streamCachedEntry } from "./cache.mjs";
 import { mimeForPath } from "./detector.mjs";
 import { isCanonicalHost } from "./security.mjs";
-import { streamZipEntry } from "./zip.mjs";
 
 const previewServers = new Map();
 const HTML_INJECTION_SEARCH_BYTES = 64 * 1024;
@@ -188,9 +187,8 @@ async function servePreviewRequest(
       res.end(themeBridge);
       return;
     }
-    await streamZipEntry(
-      context.archivePath,
-      context.entry,
+    await streamCachedEntry(
+      context,
       res,
       themeBridge ? createHtmlInjectionTransform(themeBridge) : null,
     );
