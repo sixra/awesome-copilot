@@ -1,4 +1,5 @@
 import path from "node:path";
+import { LESSONS } from "./args.mjs";
 import { phaseGuide } from "./skills.mjs";
 
 export const MAX_ITEMS = 20;
@@ -34,22 +35,22 @@ const COMMON = [
     "Never print secrets or .env values; name keys only.",
     "Stay inside the workspace: read the skills these instructions name, but never search other projects on this machine for code or examples.",
     "You run inside agentic-loop-workflow: never start, resume or pause workflows, and never open canvases.",
-    "A human may have changed the workspace since the last step: re-read the phase artifacts and LOOP.md before acting.",
+    `A human may have changed the workspace since the last step: re-read the phase artifacts and ${LESSONS} before acting.`,
 ];
 
 // Reviews converge when each one finishes every check, holds the same blocking bar and re-checks what was just fixed.
 const ROLES = {
-    lead: { title: "phase lead", rules: ["You own LOOP.md in this step: upsert the lessons you verify."] },
-    worker: { title: "workstream worker", rules: ["Edit only the files you own. Never edit azure.yaml, infra/, docs/, .env, LOOP.md or lockfiles, and never change Azure resources; report needed changes as issues."] },
+    lead: { title: "phase lead", rules: [`You own ${LESSONS} in this step: upsert the lessons you verify.`] },
+    worker: { title: "workstream worker", rules: ["Edit only the files you own. Never edit azure.yaml, infra/, docs/, .env or lockfiles, and never change Azure resources; report needed changes as issues."] },
     review: {
         title: "independent reviewer",
         rules: [
-            "You have fresh context. Do not edit source, infrastructure, docs or LOOP.md. Rerun the checks yourself: earlier reports are claims, not evidence.",
+            "You have fresh context. Do not edit source, infrastructure or anything in docs/. Rerun the checks yourself: earlier reports are claims, not evidence.",
             "Finish every check before you report, so this review finds every blocking issue at once.",
             "An issue is a verified defect: a failed gate or checklist item, a brief requirement that is missing or contradicted, or a fault that would fail a later test or deployment or break a security or RBAC rule. Give its evidence and the fix. Leave out style preferences, optional improvements and details the contract deliberately leaves to the implementer.",
         ],
     },
-    fix: { title: "fixer", rules: ["Fix each root cause in the smallest scope and correct other instances of it in the same artifacts. Rerun each failing check and then the affected suite, and upsert the lessons you verify in LOOP.md."] },
+    fix: { title: "fixer", rules: [`Fix each root cause in the smallest scope and correct other instances of it in the same artifacts. Rerun each failing check and then the affected suite, and upsert the lessons you verify in ${LESSONS}.`] },
 };
 
 // Every role in the phase follows these, because an unneeded deployment costs minutes and can hide what changed.
@@ -65,7 +66,7 @@ export const TASKS = Object.freeze({
     },
     Implement: {
         lead: "Resume Implement against the existing workspace and Azure resources. Start with read-only state checks (azd env get-values, hosted agent versions, container app revisions), then re-check sections 1-3 and complete or repair every unfinished step without redoing passing work. Then run section 4 (Record) and self-check the Gate.",
-        foundation: "Run sections 1 (Scaffold) and 2 (Infra and services, including azd provision), then section 3 steps 1-2: contract first and the hosted integration checkpoint. Then plan the rest of the build from the spec workstreams: up to four workstreams, each with a name, goal, exclusive files or folders, and acceptance checks. Shared files stay with the lead: azure.yaml, infra/, docs/, .env, LOOP.md and lockfiles. Return no workstreams when the remaining work is small or cannot be split into disjoint files.",
+        foundation: "Run sections 1 (Scaffold) and 2 (Infra and services, including azd provision), then section 3 steps 1-2: contract first and the hosted integration checkpoint. Then plan the rest of the build from the spec workstreams: up to four workstreams, each with a name, goal, exclusive files or folders, and acceptance checks. Shared files stay with the lead: azure.yaml, infra/, docs/, .env and lockfiles. Return no workstreams when the remaining work is small or cannot be split into disjoint files.",
         worker: "Build your workstream against the frozen contract in docs/spec.md and run its acceptance checks.",
         build: "Build the remaining work in sequence (section 3 step 3), then run section 3 step 4 (Integration) and section 4 (Record). Self-check the Gate.",
         integration: "Run section 3 step 4 (Integration) and section 4 (Record): merge the workstreams, finish any that failed, resolve their issues, run builds, linters and unit tests, lock Python dependencies and write docs/implementation.md. Self-check the Gate.",

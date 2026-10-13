@@ -18,6 +18,7 @@ function setMark(id, text, label = "", tone = "") {
 
 const TABS = { rapid: ["setup", "resources", "build", "explore", "optimize"], sdd: ["setup", "build", "workflow", "explore", "optimize"] };
 const PHASES = ["Specify", "Implement", "Verify", "Deploy"];
+const LESSONS = "docs/loop-sri.md";
 const PHASE_COPY = {
     Specify: "EARS acceptance criteria, a frozen contract, workstreams and a deployment plan, checked by an independent reviewer.",
     Implement: "azd provisions the Foundry project and a hosted checkpoint proves the integration before agents, tools and app are built in parallel.",
@@ -620,7 +621,7 @@ function phaseView(phase, run) {
     return phase.status === "skipped" ? "skipped" : "pending";
 }
 
-const artifactExists = (run, file) => file === "LOOP.md" ? run.loop : run.phases.some(phase => phase.artifacts.some(row => row.path === file && row.exists));
+const artifactExists = (run, file) => file === LESSONS ? run.loop : run.phases.some(phase => phase.artifacts.some(row => row.path === file && row.exists));
 const artifactButton = (run, file, label, key = `artifact:${file}`) => `<button data-artifact="${escape(file)}" data-key="${escape(key)}"${artifactExists(run, file) ? "" : ' disabled title="Not written yet"'}>${escape(label)}</button>`;
 
 const RUNNING = new Set(["running", "active"]);
@@ -727,7 +728,7 @@ function calloutHtml(run) {
         const list = issues.length ? `<p class="issues-head">${issues.length === 1 ? "Fix this issue" : `Fix these ${issues.length} issues`}, then resume:</p><ol class="issues">${issues.map(issue => `<li>${escape(issue)}</li>`).join("")}</ol>` : "";
         const files = (row?.artifacts ?? []).map(file => artifactButton(run, file.path, `Open ${file.path.split("/").at(-1)}`)).join("");
         return box("warning", escape(title), `<p>${escape(blocker?.summary || row?.gate?.summary || BLOCKED_COPY[blocked])}</p>${list}
-            <div class="actions">${files}${run.loop ? artifactButton(run, "LOOP.md", "Open LOOP.md") : ""}</div>
+            <div class="actions">${files}${run.loop ? artifactButton(run, LESSONS, "Open loop-sri.md") : ""}</div>
             <details class="guidance"><summary>Add guidance for the fix</summary><label for="wf-feedback" class="visually-hidden">Guidance for the fix</label><textarea id="wf-feedback" data-key="feedback" rows="3" maxlength="8000" placeholder="Optional: point Copilot at the cause, a region with quota or an acceptable trade-off."></textarea></details>
             <div class="actions"><button class="primary" data-wf="fix" data-key="fix">Fix in Chat</button><button data-wf="resume" data-key="retry">Resume and retry ${escape(blocked)}</button>${cancel}</div>
             <p class="muted">Fixing in Chat leaves the run paused. Resume when Copilot reports the fix; ${escape(blocked)} then runs again as attempt ${round + 1}, and its review first confirms these issues are resolved.</p>`);
@@ -752,7 +753,7 @@ function calloutHtml(run) {
                 <div class="actions"><button class="primary" data-prompt="deploy" data-run="${escape(run.runId)}" data-key="deploy">Deploy from Chat</button>${artifactButton(run, "docs/verify.md", "Open verification report")}${artifactButton(run, ".azure/deployment-plan.md", "Open deployment plan")}${improve}</div>`);
         }
         return box("success", "Delivered", `<p>${run.outcome?.status === "deployed" ? "Specified, implemented, verified and deployed." : "The run completed."} Every phase left its evidence in the workspace.</p>${endpoints}
-            <div class="actions">${deployed ? '<button class="primary" data-frontend="deployed" data-key="deployed">Open deployed app</button>' : ""}${artifactButton(run, "docs/deploy.md", "Open deployment report")}<button data-go="explore" data-key="explore">Explore resources</button>${improve}${run.loop ? artifactButton(run, "LOOP.md", "Open LOOP.md") : ""}</div>`);
+            <div class="actions">${deployed ? '<button class="primary" data-frontend="deployed" data-key="deployed">Open deployed app</button>' : ""}${artifactButton(run, "docs/deploy.md", "Open deployment report")}<button data-go="explore" data-key="explore">Explore resources</button>${improve}${run.loop ? artifactButton(run, LESSONS, "Open loop-sri.md") : ""}</div>`);
     }
     if (run.status === "error" || run.status === "halted") {
         const message = run.error || formatFailure(run.failure) || run.reason || "The run stopped before finishing.";

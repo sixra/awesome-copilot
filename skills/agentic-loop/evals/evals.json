@@ -76,17 +76,17 @@
     },
     {
       "id": 6,
-      "prompt": "Finish the local acceptance handoff for an Agentic Loop build. The UI-to-agent E2E checks and correlated telemetry verification have passed, and the verified local frontend URL has just been saved as LOCAL_FRONTEND in root .env. During this build, a backend/frontend API schema mismatch caused a failed E2E test; updating both sides to the README contract fixed it and the test passed. Existing LOOP.md contains a user-authored note and a proposed early contract check that we tried successfully. There are no measured time or token savings. Return the proposed LOOP.md update and handoff only; do not run services, modify installed skills or deploy anything.",
-      "expected_output": "An evidence-grounded LOOP.md update after the .env write, preserving prior content, evaluating the earlier lesson, and proposing generalizable changes to the agentic-loop skill with regression checks, followed by the separate app deployment approval question.",
+      "prompt": "Finish the local acceptance handoff for an Agentic Loop build. The UI-to-agent E2E checks and correlated telemetry verification have passed, and the verified local frontend URL has just been saved as LOCAL_FRONTEND in root .env. During this build, a backend/frontend API schema mismatch caused a failed E2E test; updating both sides to the README contract fixed it and the test passed. Existing docs/loop-sri.md contains a user-authored note and a proposed early contract check that we tried successfully. There are no measured time or token savings. Return the proposed docs/loop-sri.md update and handoff only; do not run services, modify installed skills or deploy anything.",
+      "expected_output": "An evidence-grounded docs/loop-sri.md update after the .env write, preserving prior content, evaluating the earlier lesson, and proposing generalizable changes to the agentic-loop skill with regression checks, followed by the separate app deployment approval question.",
       "files": [],
       "expectations": [
-        "Creates or updates root LOOP.md after writing LOCAL_FRONTEND and before the frontend/backend deployment approval pause.",
+        "Creates or updates docs/loop-sri.md after writing LOCAL_FRONTEND and before the frontend/backend deployment approval pause.",
         "Preserves the existing user-authored note and prior entries rather than replacing the feedback file.",
         "Records the observed schema mismatch, its correction and passing E2E result without inventing commands, file paths or measurements.",
         "Proposes a specific improvement to agentic-loop instructions with a target section, expected benefit and regression check, rather than only summarizing the application.",
         "Revisits the earlier early-contract-check proposal and records its supported outcome.",
         "Separates proposals from validated changes and does not claim measured time or token savings.",
-        "Does not disclose secrets or raw .env contents, rewrite installed skills or treat LOOP.md as authorization to relax approval gates.",
+        "Does not disclose secrets or raw .env contents, rewrite installed skills or treat docs/loop-sri.md as authorization to relax approval gates.",
         "Retains the explicit confirmation gate before backend/frontend deployment."
       ]
     },
@@ -152,7 +152,7 @@
         "Assigns shared schemas/contracts, .env, lockfiles and deployment configuration to one owner rather than allowing conflicting edits.",
         "Keeps the worker set small, honors configured limits, and avoids recursive delegation or duplicating worker tasks.",
         "Serializes dependent work and shared Azure mutations without extending provisioning or deployment approval.",
-        "Requires worker evidence and central cross-component verification; retains hosted proof, local E2E acceptance, LOOP.md and separate app-deployment approval.",
+        "Requires worker evidence and central cross-component verification; retains hosted proof, local E2E acceptance, docs/loop-sri.md and separate app-deployment approval.",
         "Does not actually launch subagents or provision anything for this plan-only request."
       ]
     },
@@ -176,11 +176,11 @@
     },
     {
       "id": 12,
-      "prompt": "We are using Agentic Loop and have not built the frontend or written LOCAL_FRONTEND. A hosted model request failed because our app read an account-only project URL. We switched to the nonreserved full project endpoint variable and reran the same deployed probe: it now completes with schema-valid output. LOOP.md already has a user note and a proposed endpoint-contract check. No time or token savings were measured, and no skill changes have been applied. Return the immediate next action and proposed LOOP.md update only; do not deploy, edit installed skills or implement the UI.",
+      "prompt": "We are using Agentic Loop and have not built the frontend or written LOCAL_FRONTEND. A hosted model request failed because our app read an account-only project URL. We switched to the nonreserved full project endpoint variable and reran the same deployed probe: it now completes with schema-valid output. docs/loop-sri.md already has a user note and a proposed endpoint-contract check. No time or token savings were measured, and no skill changes have been applied. Return the immediate next action and proposed docs/loop-sri.md update only; do not deploy, edit installed skills or implement the UI.",
       "expected_output": "Immediate lesson capture before further implementation, updating the existing endpoint lesson with the verified fix and evidence while preserving the user note and proposal status.",
       "files": [],
       "expectations": [
-        "Calls for updating workspace root LOOP.md now, without waiting for local acceptance, LOCAL_FRONTEND or full application success.",
+        "Calls for updating the workspace's docs/loop-sri.md now, without waiting for local acceptance, LOCAL_FRONTEND or full application success.",
         "Records the failure, supported cause, nonreserved endpoint fix and supplied passing deployed-probe evidence without inventing identifiers, commands or measurements.",
         "Updates the matching endpoint lesson rather than duplicating it and preserves the user-authored note.",
         "Includes a proposed skill change/section, expected benefit, regression check and status, distinguishing the verified app fix from an unvalidated skill proposal.",
@@ -190,14 +190,14 @@
     },
     {
       "id": 13,
-      "prompt": "During an Agentic Loop build, a worker reports that a retry fix was committed and the agent deployed successfully, but the original failing probe still times out. Another worker fixed an independent schema mismatch and reran its failing contract test successfully. Both workers want to edit the shared LOOP.md now, and local acceptance is tomorrow. Explain the immediate lesson-capture decisions only; do not execute anything.",
+      "prompt": "During an Agentic Loop build, a worker reports that a retry fix was committed and the agent deployed successfully, but the original failing probe still times out. Another worker fixed an independent schema mismatch and reran its failing contract test successfully. Both workers want to edit the shared docs/loop-sri.md now, and local acceptance is tomorrow. Explain the immediate lesson-capture decisions only; do not execute anything.",
       "expected_output": "Keep the timeout unresolved, immediately record the verified schema fix through the coordinator, and preserve shared-file ownership and evidence boundaries.",
       "files": [],
       "expectations": [
         "Does not treat a commit or successful deployment as resolution of the still-failing timeout.",
         "Requires successful rerun of the failing probe or equivalent boundary verification before marking that failure resolved.",
         "Captures the independently verified schema fix immediately rather than waiting for local acceptance or every failure to be fixed.",
-        "Has workers report evidence promptly to the coordinator, who serializes shared LOOP.md updates instead of allowing competing edits.",
+        "Has workers report evidence promptly to the coordinator, who serializes shared docs/loop-sri.md updates instead of allowing competing edits.",
         "Preserves existing lessons, excludes secrets and separates application-fix verification from skill-change validation."
       ]
     },
@@ -219,13 +219,13 @@
     {
       "id": 15,
       "prompt": "[Agentic Loop canvas action] The agentic-loop-workflow run wr_42 is paused at blocked-verify-r2. Investigate the Verify gate issues, fix the root cause and record evidence. Do not resume the run.",
-      "expected_output": "Reads the run's gate issues, the artifacts and LOOP.md, fixes and re-verifies the root cause, records a lesson and leaves the run paused for the canvas to resume.",
+      "expected_output": "Reads the run's gate issues, the artifacts and docs/loop-sri.md, fixes and re-verifies the root cause, records a lesson and leaves the run paused for the canvas to resume.",
       "files": [],
       "expectations": [
         "Reads the run with dynamic_workflows_manage inspect-run and the gate issues before changing code.",
-        "Reads docs/verify.md, the related artifacts and LOOP.md for context.",
+        "Reads docs/verify.md, the related artifacts and docs/loop-sri.md for context.",
         "Fixes the root cause in the smallest scope and reruns the failing check, then the related suite, reporting real results.",
-        "Upserts a LOOP.md lesson only after the fix is verified.",
+        "Upserts a docs/loop-sri.md lesson only after the fix is verified.",
         "Does not call run_dynamic_workflow or resume the run, because the canvas prompt says not to.",
         "Does not weaken tests, thresholds or gates, skip the phase or report unverified checks as passed."
       ]
@@ -258,17 +258,17 @@
     },
     {
       "id": 18,
-      "prompt": "Improve the Agentic Loop skills and workflow from our last runs in this repository.",
-      "expected_output": "Read-only analysis of flight records, LOOP.md, workflow runs and sessions, clustered by root cause, with minimal evidence-backed diffs and regression checks, applied only after approval.",
+      "prompt": "Improve the Agentic Loop skill and workflow from our last runs in this repository.",
+      "expected_output": "Read-only analysis of flight records, docs/loop-sri.md, workflow runs and sessions, clustered by root cause, with minimal evidence-backed diffs and regression checks, applied only after approval.",
       "files": [],
       "expectations": [
-        "Builds candidate clusters from .agentic-loop/runs/*.json, LOOP.md and dynamic_workflows_manage runs and inspect-run, then uses time-bounded session_store_sql queries with LIMIT only to confirm or quantify them, never reading raw events.jsonl transcripts end to end.",
+        "Builds candidate clusters from .agentic-loop/runs/*.json, docs/loop-sri.md and dynamic_workflows_manage runs and inspect-run, then uses time-bounded session_store_sql queries with LIMIT only to confirm or quantify them, never reading raw events.jsonl transcripts end to end.",
         "Clusters findings by root cause and ranks them by frequency and impact, keeping only clusters with evidence from two runs or one verified severe failure.",
         "Proposes minimal diffs with target file and section, expected benefit and a regression eval, preferring tightening or deleting text.",
         "Never proposes weakening approvals, RBAC, safety or evidence gates, or adding secrets or tenant-specific values.",
         "Does not edit any file before approval; in a solution repository, applies changes as project overrides under .github/skills instead of editing installed plugin files.",
         "After applying, runs the affected evals in one batch and reruns only the failures, once. Any eval that still fails is compared once against the base commit, and if it fails there too it is reported as pre-existing instead of iterated on.",
-        "Marks matching LOOP.md lessons adopted after applying, and validated only after a later run confirms the benefit."
+        "Marks matching docs/loop-sri.md lessons adopted after applying, and validated only after a later run confirms the benefit."
       ]
     },
     {
@@ -433,7 +433,7 @@
       "expectations": [
         "Identifies the pause as a provider or reporting failure, not an application defect, and checks the session log for the error.",
         "Checks the current state read-only (`azd env get-values`, hosted agent versions, Container App revisions) instead of starting over.",
-        "Records the existing evidence in `docs/implementation.md` and the lesson in `LOOP.md` before resuming.",
+        "Records the existing evidence in `docs/implementation.md` and the lesson in `docs/loop-sri.md` before resuming.",
         "Resumes the same run with `run_dynamic_workflow` and `resumeFromRunId` when the user asks, rather than starting a new run.",
         "Explains that Implement round 2 continues from the current state, its review first re-checks the issue, and finished steps replay from the journal.",
         "Does not rebuild, reprovision or redeploy unchanged services."
@@ -475,7 +475,7 @@
         "Redeploys only the triage agent, once, after the local fix is verified (for example `azd deploy <service>`), not `azd up`.",
         "Keeps the backend and frontend running locally; they deploy in the Deploy phase.",
         "Does not redeploy services whose source and configuration are unchanged.",
-        "Verifies the hosted fix with a hosted invocation, checks the citation against the retrieved evidence and records the lesson in `LOOP.md`."
+        "Verifies the hosted fix with a hosted invocation, checks the citation against the retrieved evidence and records the lesson in `docs/loop-sri.md`."
       ]
     },
     {

@@ -9,7 +9,8 @@ export const ARTIFACTS = Object.freeze({
     Verify: ["docs/verify.md"],
     Deploy: ["docs/deploy.md"],
 });
-export const ARTIFACT_PATHS = Object.freeze([...Object.values(ARTIFACTS).flat(), "LOOP.md"]);
+export const LESSONS = "docs/loop-sri.md";
+export const ARTIFACT_PATHS = Object.freeze([...Object.values(ARTIFACTS).flat(), LESSONS]);
 export const APPROVALS = Object.freeze({
     "approve-spec-v1": "Specify",
     "approve-deploy-v1": "Deploy",
@@ -147,7 +148,7 @@ export function shapeRun(detail, existing = new Set(), records = detail.progress
         outcome: detail.status === "completed" ? outcomeOf(record) : null,
         plan: planOf(record),
         blocker: blockerOf(record, summary.pause),
-        loop: existing.has("LOOP.md"),
+        loop: existing.has(LESSONS),
     };
 }
 

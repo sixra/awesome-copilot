@@ -48,7 +48,7 @@ The workflow pauses for your approval of the spec (unless autonomy is `auto`) an
 
 ## Improve mode
 
-Each build records verified lessons in `LOOP.md`, and each SDD run leaves a flight record. Ask Copilot to **improve the agentic loop** to mine both. Copilot proposes evidence-backed changes to the skill and workflow, each with a regression check, and applies only the changes you approve. Approvals, RBAC, safety and evidence gates are never weakened.
+Each build records verified lessons in `docs/loop-sri.md`, and each SDD run leaves a flight record. Ask Copilot to **improve the agentic loop** to mine both. Copilot proposes evidence-backed changes to the skill and workflow, each with a regression check, and applies only the changes you approve. Approvals, RBAC, safety and evidence gates are never weakened.
 
 ## Requirements
 

@@ -1,6 +1,7 @@
 export const WORKFLOW = "agentic-loop-workflow";
 export const PHASES = Object.freeze(["Specify", "Implement", "Verify", "Deploy"]);
 export const MAX_FIX_LOOPS = 5;
+export const LESSONS = "docs/loop-sri.md";
 
 const KEYS = Object.freeze(["brief", "subscriptionId", "location", "environmentName", "scenarioId", "autonomy", "maxFixLoops", "skipDeploy"]);
 const optionalString = { type: ["string", "null"] };
@@ -10,9 +11,9 @@ export const META = {
     name: WORKFLOW,
     description:
         "Agentic Loop spec-driven delivery for Microsoft Foundry, GitHub and Azure. Runs Specify, Implement, Verify and Deploy in sequence; "
-        + "each phase follows its agentic-loop-<phase> skill in fresh-context subagents and passes an independent evidence gate with bounded fix loops. "
+        + "each phase follows its guide in the agentic-loop skill in fresh-context subagents and passes an independent evidence gate with bounded fix loops. "
         + "Pauses at approve-spec-v1 (unless autonomy is auto), approve-deploy-v1 (always) and blocked-<phase>-r<n>. "
-        + "Writes docs/*.md, LOOP.md and .agentic-loop/runs/<runId>.json. "
+        + `Writes docs/*.md, including lessons in ${LESSONS}, and .agentic-loop/runs/<runId>.json. `
         + "args: { brief: string (required, self-contained), subscriptionId?: GUID, location?: Azure region or 'auto', "
         + "environmentName?: azd environment (2-20 chars), scenarioId?: canvas scenario, autonomy?: 'gated' | 'auto', "
         + "maxFixLoops?: 0-5 (default 2), skipDeploy?: boolean }.",

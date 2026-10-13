@@ -4,7 +4,7 @@ import { WORKFLOW } from "./args.mjs";
 import { MAX_ITEMS } from "./prompts.mjs";
 
 const STATUSES = ["passed", "failed", "blocked"];
-const SHARED = ["azure.yaml", "infra", "docs", ".env", "LOOP.md", ".azure", ".agentic-loop"];
+const SHARED = ["azure.yaml", "infra", "docs", ".env", ".azure", ".agentic-loop"];
 const RESERVED = /^(?:lead|foundation|build|integration|review(?: \d+)?|fix(?: \d+)?)$/i;
 
 export function clean(value, max = 500) {
