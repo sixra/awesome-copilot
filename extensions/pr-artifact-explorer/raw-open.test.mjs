@@ -86,6 +86,9 @@ test("raw view returns exact source, bounded hex, and explains unsupported entri
   const ugly = Buffer.from('{"b":1,\r\n  "a" :[1,2],"é":"ü"}\r\n');
   const bin = Buffer.from(Array.from({ length: 40000 }, (_, i) => (i * 7) % 256));
   const bigText = Buffer.from("line of text\n".repeat(400000));
+  const htmlSource = Buffer.from("<!doctype html>\r\n<script>alert(1)</script><p>é</p>\r\n");
+  const castSource = Buffer.from('{"version":2,"width":80,"height":24}\n[0.1,"o","hi"]\n');
+  const svgSource = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><title>x</title></svg>');
   const fixtures = [
     ["2001", "d/data.json", ugly, {}],
     ["2002", "d/empty.txt", Buffer.alloc(0), {}],
@@ -96,6 +99,9 @@ test("raw view returns exact source, bounded hex, and explains unsupported entri
     ["2007", "d/tiny.png", Buffer.from([0x89, 0x50, 0x4e, 0x47]), {}],
     ["2008", "d/bad-crc.txt", Buffer.alloc(0), { declaredCrc: 0xdeadbeef }],
     ["2009", "d/bad-data.txt", Buffer.from("hidden"), { declaredSize: 0, declaredCrc: 0 }],
+    ["2010", "d/index.html", htmlSource, {}],
+    ["2011", "d/demo.cast", castSource, {}],
+    ["2012", "d/logo.svg", svgSource, {}],
   ];
   for (const [id, name, content, options] of fixtures) {
     await writeFile(join(cache, `${id}.zip`), zipOf(name, content, options));
@@ -125,6 +131,16 @@ test("raw view returns exact source, bounded hex, and explains unsupported entri
     const bad = await raw(id, name);
     assert.ok(bad.status >= 400, `${name} must not become an empty success: ${JSON.stringify(bad.body)}`);
     assert.notEqual(bad.body.mode, "empty");
+  }
+
+  for (const [id, name, source] of [
+    [2010, "d/index.html", htmlSource],
+    [2011, "d/demo.cast", castSource],
+    [2012, "d/logo.svg", svgSource],
+  ]) {
+    const result = await raw(id, name);
+    assert.equal(result.body.mode, "text", name);
+    assert.equal(result.body.content, source.toString("utf8"), `${name} exact source`);
   }
 
   const movie = await raw(2003, "d/movie.webm");

@@ -81,7 +81,7 @@ export async function buildRawView(artifactId, entryPath) {
   }
 
   const kind = kindForPath(entry.name);
-  if (isInlineTextKind(kind)) {
+  if (isRawTextKind(kind, entry.name)) {
     const limit = kind === "trx" ? MAX_TRX_PREVIEW_BYTES : MAX_INLINE_PREVIEW_BYTES;
     if (size <= limit) {
       const { content } = await readCachedEntry(artifactId, entryPath, limit);
@@ -100,6 +100,15 @@ export async function buildRawView(artifactId, entryPath) {
   }
   const prefix = size <= RAW_HEX_PREFIX_BYTES ? await readPrefix(context, size) : await readPrefix(context, RAW_HEX_PREFIX_BYTES);
   return hexResult(base, prefix, size, "Binary content; shown as bytes.");
+}
+
+function isRawTextKind(kind, name) {
+  return (
+    isInlineTextKind(kind) ||
+    kind === "html" ||
+    kind === "asciinema" ||
+    String(name).toLowerCase().endsWith(".svg")
+  );
 }
 
 function hexResult(base, bytes, size, encodingNote) {
