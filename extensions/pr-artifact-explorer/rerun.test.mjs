@@ -63,6 +63,7 @@ function mockGitHub(t, options = {}) {
       return json(200, { login: "tester", avatar_url: null }, { "x-oauth-scopes": "repo" });
     }
     if (target.pathname === "/repos/o/r") {
+      if (options.repoFailure) return options.repoFailure();
       return json(200, { full_name: "o/r", ...(state.permissions ? { permissions: state.permissions } : {}) });
     }
     if (target.pathname === "/repos/o/r/actions/runs/900") return json(200, state.run);
@@ -157,6 +158,33 @@ test("revalidation refuses changed attempts, ineligible runs and wrong scopes wi
   const mismatch = mockGitHub(t, { artifactRunId: 1 });
   await assert.rejects(requestRerun("tok", input()), (e) => e.status === 409);
   assert.equal(mismatch.posts.length, 0);
+});
+
+test("confirmation shows the ORIGINAL actor, separate from the re-run initiator", async (t) => {
+  mockGitHub(t, { run: { actor: { login: "original" }, triggering_actor: { login: "rerunner" } } });
+  const context = await prepareRerun("tok", { repository: "o/r", runId: 900, artifactId: 5 });
+  assert.equal(context.run.actor, "original");
+  assert.equal(context.run.triggeringActor, "rerunner");
+});
+
+test("a failing permission GET surfaces during prep and revalidation with zero POSTs", async (t) => {
+  for (const status of [403, 404, 429]) {
+    const state = mockGitHub(t, { repoFailure: () => json(status, { message: `nope ${status}` }) });
+    await assert.rejects(
+      prepareRerun("tok", { repository: "o/r", runId: 900, artifactId: 5 }),
+      (e) => e instanceof RerunError && e.status === status && e.extra.code === "permission_check_failed",
+    );
+    await assert.rejects(requestRerun("tok", input()), (e) => e.status === status);
+    assert.equal(state.posts.length, 0);
+  }
+  const net = mockGitHub(t, { repoFailure: () => { throw new TypeError("fetch failed"); } });
+  await assert.rejects(requestRerun("tok", input()), (e) => e instanceof RerunError && e.status === 502);
+  assert.equal(net.posts.length, 0);
+
+  const unknown = mockGitHub(t, { permissions: null });
+  const context = await prepareRerun("tok", { repository: "o/r", runId: 900, artifactId: 5 });
+  assert.equal(context.permissionKnown, false);
+  assert.equal(unknown.posts.length, 0);
 });
 
 test("double submit sends exactly one POST", async (t) => {
@@ -257,7 +285,7 @@ test("Chromium dialog: cancel sends no POST, confirm sends one, failure keeps th
   assert.match(text, /attempt 1/);
   assert.match(text, /aaaaaaa/);
   assert.match(text, /newer commits/);
-  assert.match(text, /original commit, ref and triggering actor/);
+  assert.match(text, /original commit, ref and original triggering actor/);
   assert.equal(await page.locator("input[value=failed]").count(), 1);
   await page.click("[data-rerun-cancel]");
   await page.waitForSelector("dialog.rerun-dialog", { state: "detached" });

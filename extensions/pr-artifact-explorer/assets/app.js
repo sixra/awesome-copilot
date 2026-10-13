@@ -3052,7 +3052,7 @@ function rerunDialogHtml(context, accountLabel) {
         <label class="rerun-scope"><input type="radio" name="rerun-scope" value="all" checked> Re-run all jobs</label>
         ${failedOption}
       </fieldset>
-      <p class="color-fg-muted">The re-run reuses the original commit, ref and triggering actor's privileges. Existing artifacts stay until new ones are produced. Re-runs allowed up to 30 days after the original run (${escapeHtml(String(context.rerunsRemaining))} remaining).</p>
+      <p class="color-fg-muted">The re-run reuses the original commit, ref and original triggering actor's privileges${run.actor ? ` (<strong>${escapeHtml(run.actor)}</strong>)` : ""}${run.triggeringActor && run.triggeringActor !== run.actor ? `; previously re-run by ${escapeHtml(run.triggeringActor)}` : ""}. Existing artifacts stay until new ones are produced. Re-runs allowed up to 30 days after the original run (${escapeHtml(String(context.rerunsRemaining))} remaining).</p>
       <p class="rerun-status" role="status" aria-live="polite"></p>
       <div class="rerun-actions">
         <button class="app-button" type="button" data-rerun-cancel>Cancel</button>

@@ -77,8 +77,10 @@ export async function prepareRerun(token, { repository, runId, artifactId = null
   try {
     const repoInfo = await githubRequest(token, base);
     permissions = repoInfo?.permissions && typeof repoInfo.permissions === "object" ? repoInfo.permissions : null;
-  } catch {
-    permissions = null;
+  } catch (error) {
+    if (error instanceof RerunError) throw error;
+    const status = error instanceof GitHubApiError ? error.status : null;
+    throw new RerunError(status ?? 502, `Could not verify repository permissions, so no re-run was sent. ${describeGitHubFailure(error)}`, { code: "permission_check_failed" });
   }
   let pullHeadSha = null;
   if (pullNumber != null) {
@@ -96,7 +98,8 @@ export async function prepareRerun(token, { repository, runId, artifactId = null
     createdAt: raw.created_at,
     headSha: raw.head_sha ?? null,
     headBranch: raw.head_branch ?? null,
-    actor: raw.triggering_actor?.login ?? raw.actor?.login ?? null,
+    actor: raw.actor?.login ?? null,
+    triggeringActor: raw.triggering_actor?.login ?? null,
     url: raw.html_url ?? null,
   };
   return {
