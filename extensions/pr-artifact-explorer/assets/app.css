@@ -528,6 +528,30 @@ select {
   border-bottom: 1px solid var(--app-border);
 }
 
+.breadcrumb-inner {
+  display: flex;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  align-items: center;
+  gap: var(--base-size-8, 8px);
+}
+
+.breadcrumb-trail {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.route-history {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+@media (min-width: 768px) {
+  .route-history { margin-right: var(--base-size-16, 16px); }
+}
+
 .breadcrumbs {
   position: relative;
   display: flex;

@@ -102,7 +102,15 @@ export const HTML = `<!doctype html>
           </a>
         </div>
       </header>
-      <nav id="breadcrumbs" class="breadcrumb-bar" aria-label="Breadcrumb"></nav>
+      <nav id="breadcrumbs" class="breadcrumb-bar" aria-label="Breadcrumb">
+        <div class="breadcrumb-inner">
+          <div id="breadcrumb-trail" class="breadcrumb-trail"></div>
+          <div class="route-history" role="group" aria-label="Artifact Explorer history">
+            <button type="button" class="icon-button" id="route-back" disabled aria-label="Back in Artifact Explorer" title="Back in Artifact Explorer"><span class="octicon icon-arrow-left" aria-hidden="true"></span></button>
+            <button type="button" class="icon-button" id="route-forward" disabled aria-label="Forward in Artifact Explorer" title="Forward in Artifact Explorer"><span class="octicon icon-arrow-right" aria-hidden="true"></span></button>
+          </div>
+        </div>
+      </nav>
       <main id="view" class="container-xl app-main" aria-live="polite"></main>
       <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
     </div>

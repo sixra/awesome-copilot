@@ -1,5 +1,54 @@
 const view = document.getElementById("view");
 const breadcrumbs = document.getElementById("breadcrumbs");
+const breadcrumbTrail = document.getElementById("breadcrumb-trail");
+const routeBack = document.getElementById("route-back");
+const routeForward = document.getElementById("route-forward");
+
+// In-canvas route history: independent of the outer app and embedded sites.
+const NAV_HISTORY_KEY = "pae.routeHistory";
+const NAV_HISTORY_LIMIT = 100;
+const navHistory = (() => {
+  let stack = [];
+  let index = -1;
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(NAV_HISTORY_KEY) || "null");
+    if (saved && Array.isArray(saved.stack) && Number.isInteger(saved.index)) {
+      stack = saved.stack.filter((item) => typeof item === "string" && item.startsWith("#/"));
+      index = stack.length === saved.stack.length ? Math.min(saved.index, stack.length - 1) : stack.length - 1;
+    }
+  } catch {}
+  const sync = () => {
+    try {
+      sessionStorage.setItem(NAV_HISTORY_KEY, JSON.stringify({ stack, index }));
+    } catch {}
+    if (routeBack) routeBack.disabled = index <= 0;
+    if (routeForward) routeForward.disabled = index >= stack.length - 1;
+  };
+  const trackable = (hash) =>
+    typeof hash === "string" && hash.startsWith("#/") && hash.length < 4096 && !hash.startsWith("#/browser");
+  return {
+    record(hash = location.hash) {
+      if (!trackable(hash) || stack[index] === hash) return sync();
+      stack = stack.slice(0, index + 1);
+      stack.push(hash);
+      if (stack.length > NAV_HISTORY_LIMIT) stack = stack.slice(-NAV_HISTORY_LIMIT);
+      index = stack.length - 1;
+      sync();
+    },
+    step(delta) {
+      const next = index + delta;
+      if (next < 0 || next >= stack.length) return;
+      index = next;
+      sync();
+      if (location.hash === stack[index]) void renderRoute();
+      else location.hash = stack[index];
+    },
+    sync,
+  };
+})();
+navHistory.sync();
+routeBack?.addEventListener("click", () => navHistory.step(-1));
+routeForward?.addEventListener("click", () => navHistory.step(1));
 const repositoryForm = document.getElementById("repository-form");
 const repositoryInput = document.getElementById("repository-input");
 const repositoryCombobox = document.getElementById("repository-combobox");
@@ -802,7 +851,7 @@ function setBreadcrumbs(items) {
         </div>
       </li>`
     : "";
-  breadcrumbs.innerHTML = `
+  breadcrumbTrail.innerHTML = `
     <ol class="breadcrumbs${hasOverflow ? " has-overflow" : ""}">
       ${values
         .map((item, index) => {
@@ -2532,7 +2581,10 @@ function replacePullTable(payload, route, { updateHistory = true } = {}) {
     payload.query ?? route.query,
     payload.filters ?? route,
   );
-  if (updateHistory) history.pushState(null, "", hash);
+  if (updateHistory) {
+    history.pushState(null, "", hash);
+    navHistory.record(hash);
+  }
   setBreadcrumbs([
     { label: route.repository, href: hash },
     { label: "Pull requests" },
@@ -4004,6 +4056,7 @@ async function setPreviewMode(mode) {
     "",
     artifactHash(artifact.repository, artifact.pullNumber, artifact.id, artifact.selectedPath, raw),
   );
+  navHistory.record();
   const entry = artifact.analysis.entries.find((item) => item.path === artifact.selectedPath);
   if (entry) await previewArtifactFile(entry, renderSequence);
 }
@@ -4317,6 +4370,7 @@ async function selectArtifactFile(path, updateHash = true) {
         currentArtifact.rawMode === true,
       ),
     );
+    navHistory.record();
   }
   await previewArtifactFile(entry, renderSequence);
 }
@@ -5551,6 +5605,7 @@ view.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("hashchange", () => {
+  navHistory.record();
   void renderRoute();
 });
 
@@ -5599,6 +5654,7 @@ async function initialize() {
       location.hash = pullsHashForRepository(bootstrapState.prefs.repository);
       return;
     }
+    navHistory.record();
     await renderRoute();
   } catch (error) {
     setBreadcrumbs([{ label: "PR Artifact Explorer" }]);
