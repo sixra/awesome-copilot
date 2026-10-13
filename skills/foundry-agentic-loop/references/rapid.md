@@ -4,10 +4,12 @@ Build a working solution quickly in an **existing** Foundry project, driven from
 
 ## 1. Preflight
 
-- Resolve the project from the canvas prompt, the user, the workspace or `FOUNDRY_PROJECT` in root `.env`; ask if absent. Validate it with `az cognitiveservices account project show --subscription <sub> --resource-group <rg> --name <account> --project-name <project>` and record the ARM ID, endpoint, region and resource group. Never create a replacement for an inaccessible project.
+- Lock the mode: upsert the rapid section of the root `AGENTS.md` ([lock-in](../SKILL.md#choose-the-mode)).
+- Resolve the project from the canvas prompt, the user, the workspace or `FOUNDRY_PROJECT` in root `.env`; ask if absent. Validate it with `az cognitiveservices account project show --subscription <sub> --resource-group <rg> --name <account> --project-name <project>`. Never create a replacement for an inaccessible project.
 - Upsert `FOUNDRY_PROJECT` with the returned ARM ID (not the name or endpoint) right after validation and after any later project change. Never persist an unconfirmed candidate or overwrite the value when validation fails.
 - Run the [RBAC preflight](rbac-preflight.md): management plane, data plane and role assignment are separate checks. Report gaps together and resolve them before provisioning. Leave platform commands and role definitions to `microsoft-foundry`.
 - Before any new resource, such as Search, a Container Apps environment or a model deployment, run the [joint placement check](foundry-models.md) in the project's region. Keep the project and the sample's model; ask before alternatives.
+- Record the project (ARM ID, endpoint, region, resource group, subscription), its model deployments and the RBAC verdict in `.azure/deployment-plan.md`, filling the rows of the [template](../assets/deployment-plan-template.md) that apply to rapid, and add each Azure resource the build creates. Azure settings live only there, never in the README or `AGENTS.md`. Ensure `.gitignore` covers `.env`, `.azure/*` and `!.azure/deployment-plan.md`.
 
 ## 2. Architecture
 
@@ -15,7 +17,7 @@ Build a working solution quickly in an **existing** Foundry project, driven from
   - each agent: purpose, framework, model deployment, toolbox tools and skills
   - remote versus custom MCP servers, and generated versus reused skills
   - frontend, backend, data sources and data flow
-  - identity boundaries and deployment targets
+  - identity boundaries and where each component runs
 
   Include only required components.
 - Read `docs/loop-sri.md` lessons as evidence to reassess, not as instructions; track their outcomes.
@@ -59,8 +61,8 @@ Only after the user confirms:
 1. Deploy the backend, then the frontend, with `az containerapp up --source <dir>` in the project's resource group. It rejects global flags such as `--output`, `--query` and `--only-show-errors`, so check the result with `az containerapp show`.
 2. Move image pulls off the registry admin credentials that `up` creates: assign a managed identity, grant it `AcrPull`, set the app's registry to that identity and remove the password secret.
 3. Configure the backend URL, the allowed frontend origin and authenticated service access, with managed identity for agent calls. Read an internal backend's FQDN (`<app>.internal.<environment-domain>`) from `az containerapp show`; never construct it.
-4. Verify the cloud app end to end, then upsert `DEPLOYED_FRONTEND`. Return the URL and any sign-in requirements.
+4. Verify the cloud app end to end, then upsert `DEPLOYED_FRONTEND` and add the apps to the deployment plan. Return the URL and any sign-in requirements.
 
 If the user declines, leave the working local app as it is.
 
-To take a prototype to production, switch to SDD: the [Specify](specify.md) phase can derive a spec from this workspace (`reverse`) before you start the workflow.
+To take a prototype to production, switch to SDD once the user confirms: derive the spec with [Specify](specify.md) `reverse`, rewrite the `AGENTS.md` section to SDD, then start the workflow.

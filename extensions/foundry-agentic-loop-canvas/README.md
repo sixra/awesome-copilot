@@ -9,6 +9,8 @@ The GitHub Copilot App side panel for the `foundry-agentic-loop` plugin. It cove
 | **Rapid prototyping** (default) | Setup, Resources, Build, Explore, Optimize | Build fast in an existing Foundry project from Chat |
 | **SDD** | Setup, Build, Workflow, Explore, Optimize | Selected automatically when the session has `foundry-agentic-loop-workflow` runs, or chosen in the header |
 
+Once a build starts, the Agentic Loop section of the workspace root `AGENTS.md` locks the mode. The header then shows a lock, disables the other mode and offers **Open AGENTS.md**. To switch, ask Copilot in Chat; it confirms first, then rewrites the section.
+
 ## Tabs
 
 | Tab | What it does |
@@ -26,7 +28,7 @@ While Copilot works, an enablement dock rotates 18 short Microsoft Foundry lesso
 
 - Every action that starts a Copilot turn shows the prompt for review before it is sent to Chat.
 - The panel server listens on `127.0.0.1` only. It requires a per-panel token, applies a strict Content Security Policy and accepts only actions validated against their schemas.
-- The canvas reads only `FOUNDRY_PROJECT`, `LOCAL_FRONTEND` and `DEPLOYED_FRONTEND` from `.env`. It accepts only validated Foundry project ARM IDs, and links only to `http` or `https` URLs without credentials.
+- The canvas reads only `FOUNDRY_PROJECT`, `LOCAL_FRONTEND` and `DEPLOYED_FRONTEND` from `.env`. It accepts only validated Foundry project ARM IDs, and links only to `http` or `https` URLs without credentials. From `AGENTS.md` it uses only the Agentic Loop mode marker.
 
 ## Tests
 

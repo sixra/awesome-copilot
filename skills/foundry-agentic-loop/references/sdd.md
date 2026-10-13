@@ -17,7 +17,8 @@ Phases reconcile existing artifacts instead of starting over, so reruns are safe
 
 1. **Preflight in Chat** (read-only): `az account show`, `azd auth login --check-status`, `azd ai agent --help` (azd Foundry extension), `microsoft-foundry` and the bootstrap. Report all gaps at once, and ask before installing or upgrading tools.
 2. **Clarify once.** Ask, with choices, only the questions whose answers change the spec: users, data, tools, UX or compliance. Take the subscription, region and azd environment from the canvas prompt. Otherwise confirm the current az default subscription, leave the region to Specify's placement check, and derive a short environment name such as `claims-triage-dev`.
-3. **Start** with `run_dynamic_workflow`, `name: "foundry-agentic-loop-workflow"`, and these `args`:
+3. **Lock the mode.** Upsert the SDD section of the root `AGENTS.md` ([lock-in](../SKILL.md#choose-the-mode)). The workflow also writes it and refuses a workspace locked to rapid prototyping.
+4. **Start** with `run_dynamic_workflow`, `name: "foundry-agentic-loop-workflow"`, and these `args`:
 
    | Arg | Purpose |
    | --- | --- |
@@ -29,7 +30,7 @@ Phases reconcile existing artifacts instead of starting over, so reruns are safe
    | `skipDeploy` | Stop after Verify |
 
    Pass `limits` only when the user sets them.
-4. Report the run ID and the checkpoints ahead. The run continues in the background, posting phase and gate lines in Chat; the Agentic Loop canvas Workflow tab shows live agents. No input is needed until a checkpoint. Do not poll; the run notifies when it pauses or ends.
+5. Report the run ID and the checkpoints ahead. The run continues in the background, posting phase and gate lines in Chat; the Agentic Loop canvas Workflow tab shows live agents. No input is needed until a checkpoint. Do not poll; the run notifies when it pauses or ends.
 
 ## Checkpoints and recovery
 

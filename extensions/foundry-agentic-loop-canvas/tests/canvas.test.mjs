@@ -234,8 +234,10 @@ test("mode defaults to rapid, follows workflow runs, and an explicit choice wins
     assert.equal(model.mode(true), "sdd");
     await model.setMode("rapid");
     assert.equal(model.mode(true), "rapid");
+    assert.equal(model.mode(true, "sdd"), "sdd", "an AGENTS.md lock wins over an explicit choice");
     await model.setMode(null);
     assert.equal(model.mode(true), "sdd");
+    assert.equal(model.mode(true, "rapid"), "rapid", "an AGENTS.md lock wins over workflow runs");
     await assert.rejects(model.setMode("fast"), /rapid prototyping or SDD/);
 });
 

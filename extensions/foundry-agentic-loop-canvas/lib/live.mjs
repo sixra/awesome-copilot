@@ -11,6 +11,13 @@ export const ARTIFACTS = Object.freeze({
 });
 export const LESSONS = "docs/loop-sri.md";
 export const ARTIFACT_PATHS = Object.freeze([...Object.values(ARTIFACTS).flat(), LESSONS]);
+export const AGENTS = "AGENTS.md";
+export const OPENABLE = Object.freeze([...ARTIFACT_PATHS, AGENTS]);
+// The workflow's lib/agents-md.mjs writes the same marker; its pin test keeps the two in sync.
+const LOCK = /<!--\s*foundry-agentic-loop:begin\s+mode=(rapid|sdd)\s*-->/;
+// Only the Agentic Loop section locks the build mode; any other AGENTS.md content does not.
+export function parseLock(text) { return LOCK.exec(String(text ?? ""))?.[1] ?? null; }
+export const lockMessage = mode => `AGENTS.md locks this workspace to ${mode === "sdd" ? "the SDD workflow" : "rapid prototyping"}. Ask Copilot in Chat to switch; it confirms first, then rewrites the Agentic Loop section.`;
 export const APPROVALS = Object.freeze({
     "approve-spec-v1": "Specify",
     "approve-deploy-v1": "Deploy",
@@ -164,6 +171,7 @@ export class Live {
         this.run = null;
         this.selectedRunId = null;
         this.error = null;
+        this.lock = null;
         this.onNewRun = null;
         this.known = null;
         this.waiters = new Set();
@@ -179,7 +187,8 @@ export class Live {
         };
         listen("user.message", () => this.setBusy(true));
         listen("assistant.turn_start", () => this.setBusy(true));
-        for (const type of ["session.idle", "session.error", "abort"]) listen(type, () => this.setBusy(false));
+        // A finished turn may have written AGENTS.md or an artifact, so refresh as it ends.
+        for (const type of ["session.idle", "session.error", "abort"]) listen(type, () => { this.setBusy(false); this.schedule(); });
         for (const type of ["workflow.run_updated", "workflow.run_started", "workflow.run_settled"]) {
             const off = this.session.on(type, () => this.schedule());
             if (typeof off === "function") this.offs.push(off);
@@ -201,7 +210,7 @@ export class Live {
     snapshot() {
         return {
             version: this.version, busy: this.busy || this.active, busySince: this.busySince,
-            runs: this.runs, run: this.run, selectedRunId: this.run?.runId ?? null, error: this.error,
+            runs: this.runs, run: this.run, selectedRunId: this.run?.runId ?? null, error: this.error, lock: this.lock,
         };
     }
 
@@ -261,13 +270,14 @@ export class Live {
                 try { await this.load(); this.error = null; }
                 catch (error) { this.error = error.message; }
             } while (this.again);
-            const next = JSON.stringify([this.runs, this.run, this.error]);
+            const next = JSON.stringify([this.runs, this.run, this.error, this.lock]);
             if (next !== this.last) { this.last = next; this.bump(); }
         })().finally(() => { this.refreshing = null; });
         return this.refreshing;
     }
 
     async load() {
+        this.lock = await this.readLock();
         const all = await this.session.workflow.listRuns();
         const runs = all.filter(run => run.workflowName === WORKFLOW).sort((a, b) => b.createdAt - a.createdAt);
         if (this.known) {
@@ -283,6 +293,11 @@ export class Live {
         if (!selected) { this.run = null; return; }
         const detail = await this.session.workflow.getRunDetail(selected.runId);
         this.run = shapeRun(detail, await this.existing(), await this.records(selected.runId, detail.progress), await this.flightRecord(selected.runId));
+    }
+
+    async readLock() {
+        try { return parseLock(await readFile(path.join(await this.workspace(), AGENTS), "utf8")); }
+        catch { return null; }
     }
 
     async flightRecord(runId) {

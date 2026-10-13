@@ -9,6 +9,8 @@ A GitHub Copilot dynamic workflow that turns a brief into a verified Microsoft F
 
 It ships with the `foundry-agentic-loop` plugin. The **SDD** mode of the `foundry-agentic-loop` skill starts it, and the Agentic Loop canvas shows its progress.
 
+At setup, it adds the Agentic Loop SDD section to the workspace root `AGENTS.md` unless one exists. The section locks the workspace to SDD and routes short commands such as `deploy`, `status` and `resume` in later prompts. A workspace locked to rapid prototyping stops the run until Copilot converts the prototype to SDD.
+
 ## How a phase runs
 
 Each phase follows its guide in the `foundry-agentic-loop` skill (`references/specify.md`, `implement.md`, `verify.md` or `deploy.md`) in fresh-context subagents, using `microsoft-foundry` for platform operations. Subagents stay inside the workspace, read skills from the paths resolved at setup and delete only Azure resources the run created whose provisioning failed:
@@ -50,7 +52,7 @@ For an unattended run from Specify through Verify, use `autonomy: "auto"` and `s
 
 ## Outputs
 
-- **Workspace:** `docs/spec.md`, `docs/implementation.md`, `docs/verify.md`, `docs/deploy.md`, the lessons in `docs/loop-sri.md` and `.azure/deployment-plan.md`, plus the solution itself.
+- **Workspace:** the `AGENTS.md` lock, `docs/spec.md`, `docs/implementation.md`, `docs/verify.md`, `docs/deploy.md`, the lessons in `docs/loop-sri.md` and `.azure/deployment-plan.md`, which alone holds the Azure settings, plus the solution itself.
 - **Flight record:** `.agentic-loop/runs/<runId>.json`. It holds status, gates, attempts, issues, lessons, checkpoints and endpoints. Improve mode in the `foundry-agentic-loop` skill learns from it.
 - **Result:** `{ status, runId, phases, rounds, endpoints, flightRecord }`, where `status` is `deployed` or `verified`.
 

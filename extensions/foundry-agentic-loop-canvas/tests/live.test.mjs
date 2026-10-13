@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { Live, PHASES, WORKFLOW, blockerOf, briefOf, checkpointInfo, checkpointOf, flightRecordPath, outcomeOf, parseGates, planOf, shapeRun, shapeSummary } from "../lib/live.mjs";
+import { AGENTS, ARTIFACT_PATHS, Live, OPENABLE, PHASES, WORKFLOW, blockerOf, briefOf, checkpointInfo, checkpointOf, flightRecordPath, lockMessage, outcomeOf, parseGates, parseLock, planOf, shapeRun, shapeSummary } from "../lib/live.mjs";
 
 const log = (seq, text) => ({ seq, kind: "log", text, recordedAt: seq * 1000 });
 const summary = (runId, overrides = {}) => ({
@@ -181,7 +181,7 @@ test("busy follows main-agent turns and active runs, ignoring sub-agent events",
     t.after(() => live.stop());
     await live.start();
     const first = live.snapshot();
-    assert.deepEqual(Object.keys(first).sort(), ["busy", "busySince", "error", "run", "runs", "selectedRunId", "version"]);
+    assert.deepEqual(Object.keys(first).sort(), ["busy", "busySince", "error", "lock", "run", "runs", "selectedRunId", "version"]);
     assert.equal(first.busy, false);
     assert.deepEqual(first.runs, [], "other workflows are not shown");
     session.emit("assistant.turn_start", { agentId: "sub-1" });
@@ -194,6 +194,47 @@ test("busy follows main-agent turns and active runs, ignoring sub-agent events",
     session.runs.push(summary("r1"));
     await live.refresh();
     assert.equal(live.snapshot().busy, true, "a running workflow keeps the enablement dock alive");
+});
+
+test("only the Agentic Loop section of AGENTS.md locks the mode", () => {
+    assert.equal(parseLock("# Repo\n\n<!-- foundry-agentic-loop:begin mode=sdd -->\n## Agentic Loop\n<!-- foundry-agentic-loop:end -->\n"), "sdd");
+    assert.equal(parseLock("<!--foundry-agentic-loop:begin   mode=rapid-->"), "rapid");
+    assert.equal(parseLock("# Repo\n\nUse the microsoft-foundry skill. mode=sdd\n"), null, "unrelated AGENTS.md content does not lock");
+    assert.equal(parseLock("<!-- foundry-agentic-loop:begin mode=fast -->"), null);
+    assert.equal(parseLock(null), null);
+    assert.deepEqual(OPENABLE, [...ARTIFACT_PATHS, AGENTS]);
+    assert.match(lockMessage("rapid"), /^AGENTS\.md locks this workspace to rapid prototyping\. .*Chat/);
+    assert.match(lockMessage("sdd"), /the SDD workflow/);
+});
+
+test("the AGENTS.md lock is read on refresh and after each turn, and a change bumps the version", async t => {
+    const getRoot = await workspace(t);
+    const file = path.join(getRoot(), AGENTS);
+    const session = fakeSession();
+    const live = new Live({ session, workspace: getRoot });
+    t.after(() => live.stop());
+    await live.start();
+    assert.equal(live.snapshot().lock, null, "a missing AGENTS.md does not lock");
+    await writeFile(file, "# Repo conventions\n");
+    let version = live.version;
+    await live.refresh();
+    assert.equal(live.snapshot().lock, null);
+    assert.equal(live.version, version, "unrelated AGENTS.md content changes nothing");
+    await writeFile(file, "# Repo conventions\n\n<!-- foundry-agentic-loop:begin mode=rapid -->\n## Agentic Loop: rapid prototyping\n<!-- foundry-agentic-loop:end -->\n");
+    await live.refresh();
+    assert.equal(live.snapshot().lock, "rapid");
+    assert.equal(live.version, version + 1);
+    await writeFile(file, "<!-- foundry-agentic-loop:begin mode=sdd -->\n");
+    version = live.version;
+    const woken = live.wait(version, { timeoutMs: 5_000 });
+    session.emit("session.idle");
+    await woken;
+    assert.equal(live.snapshot().lock, "sdd", "a finished turn refreshes the lock");
+    session.workflow.listRuns = async () => { throw new Error("Workflow store unavailable"); };
+    await rm(file);
+    await live.refresh();
+    assert.equal(live.snapshot().lock, null, "the lock is read even when listing runs fails");
+    assert.equal(live.snapshot().error, "Workflow store unavailable");
 });
 
 test("new runs are selected automatically and reported once", async t => {

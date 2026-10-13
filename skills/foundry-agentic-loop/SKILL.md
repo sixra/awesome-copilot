@@ -17,6 +17,7 @@ Coordinate the solution; use `microsoft-foundry` to execute platform operations.
 
 | Signal | Mode |
 | --- | --- |
+| Root `AGENTS.md` has an Agentic Loop section | Its `mode`; switch to another only when the user confirms, then rewrite the section |
 | Canvas prompt or explicit choice | As stated |
 | Existing Foundry project selected or named; fast prototype; no deployment pipeline needed | **Rapid prototyping** → [rapid.md](references/rapid.md) |
 | Spec, new Foundry project, azd/IaC, CI-ready repo or full Azure deployment | **SDD** → [sdd.md](references/sdd.md) |
@@ -24,6 +25,8 @@ Coordinate the solution; use `microsoft-foundry` to execute platform operations.
 | One named SDD phase | Its guide — [Specify](references/specify.md), [Implement](references/implement.md), [Verify](references/verify.md) or [Deploy](references/deploy.md) — with the [SDD defaults](references/sdd.md#sdd-defaults) |
 
 Otherwise ask once with the choices "Rapid prototyping (existing Foundry project)" and "SDD (new project, deployed with azd)".
+
+**Lock it in.** Before the first workspace write (rapid preflight, or just before the SDD workflow starts), upsert the section from [agents-md-rapid.md](assets/agents-md-rapid.md) or [agents-md-sdd.md](assets/agents-md-sdd.md) into the root `AGENTS.md`: replace everything between its `foundry-agentic-loop` begin and end markers, or append it, keeping other content; then read it back. The section routes short commands such as `deploy` and locks the mode for Chat, the canvas and the workflow. Azure settings go only in `.azure/deployment-plan.md`, never in `AGENTS.md`. Improve mode never writes it.
 
 ## Defaults
 
@@ -60,7 +63,8 @@ Right after a fix is verified — the failing probe or an equivalent boundary ch
 | [sdd.md](references/sdd.md) | Starting, resuming or manually running SDD |
 | [specify.md](references/specify.md), [implement.md](references/implement.md), [verify.md](references/verify.md), [deploy.md](references/deploy.md) | Running that SDD phase (workflow subagents read them too) |
 | [azd-layout.md](references/azd-layout.md) | SDD `azure.yaml` layers, services, hooks and post-deploy grants |
-| [spec-template.md](assets/spec-template.md), [deployment-plan-template.md](assets/deployment-plan-template.md), [devcontainer.json](assets/devcontainer.json) | Specify's templates |
+| [spec-template.md](assets/spec-template.md), [deployment-plan-template.md](assets/deployment-plan-template.md), [devcontainer.json](assets/devcontainer.json) | Specify's templates; rapid also fills the deployment plan |
+| [agents-md-rapid.md](assets/agents-md-rapid.md), [agents-md-sdd.md](assets/agents-md-sdd.md) | Writing the `AGENTS.md` mode lock |
 | [improve.md](references/improve.md) | Improving the skill or the workflow from evidence |
 | [foundry-hosted-agent.md](references/foundry-hosted-agent.md) | Hosted-agent protocol and Python dependencies |
 | [copilot-sdk-foundry.md](references/copilot-sdk-foundry.md) | Copilot SDK provider, auth, telemetry and packaging |

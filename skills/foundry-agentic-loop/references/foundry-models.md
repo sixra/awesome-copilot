@@ -136,7 +136,7 @@ Write the placement decision to `./.azure/deployment-plan.md`:
 | Evidence | Model/version/SKU/capacity, Search SKU, hosted-agent, and preview checks |
 | Variance | Reason deployed location differs, or `none` |
 
-When the deployed location differs from the preferred location, update `./docs/spec.md` (or the root `README.md` in rapid mode) before implementation continues.
+When the deployed location differs from the preferred location, update `./docs/spec.md` (SDD) before implementation continues.
 
 ## How to Set Environment Variables
 

@@ -542,6 +542,45 @@
         "Has Implement prove the token path right after creating the app registrations, before Verify depends on it.",
         "Does not add sign-in to services or flows the brief did not ask to protect."
       ]
+    },
+    {
+      "id": 39,
+      "prompt": "Rapid prototype an HR policy assistant in my existing Foundry project /subscriptions/0000/resourceGroups/rg-hr/providers/Microsoft.CognitiveServices/accounts/hr-ai/projects/hr-proto. The workspace already has an AGENTS.md with team coding conventions.",
+      "expected_output": "Before the first workspace write, appends the rapid Agentic Loop section to the existing AGENTS.md, keeping the team conventions, and records the project, models and RBAC verdict only in .azure/deployment-plan.md.",
+      "files": [],
+      "expectations": [
+        "Appends the rapid section between the `foundry-agentic-loop` begin and end markers with `mode=rapid` and reads it back.",
+        "Keeps the existing team conventions in AGENTS.md unchanged.",
+        "Writes the section before scaffolding or any other workspace write.",
+        "Puts no subscription, resource group, project ID, endpoint or region in AGENTS.md or the README; records them in `.azure/deployment-plan.md`.",
+        "Ensures `.gitignore` covers `.env`, `.azure/*` and `!.azure/deployment-plan.md`."
+      ]
+    },
+    {
+      "id": 40,
+      "prompt": "The root AGENTS.md of this workspace has the Agentic Loop SDD section, and the latest workflow run is paused at approve-deploy-v1. The user types: deploy",
+      "expected_output": "Follows the AGENTS.md SDD section: summarizes the paused run's deployment impact and resumes it once approved, instead of starting a new run; with no paused run it would run the Deploy phase guide, which asks before azd up.",
+      "files": [],
+      "expectations": [
+        "Reads the Agentic Loop section of the root AGENTS.md and treats the workspace as SDD without asking for the mode.",
+        "Checks the latest flight record in `.agentic-loop/runs/` before acting.",
+        "When that run is paused at `approve-deploy-v1`, summarizes resources, cost, security and region impact, then resumes it with `resumeFromRunId` after approval instead of starting a new run.",
+        "Otherwise runs the Deploy phase guide against `.azure/deployment-plan.md`, asking before `azd up`.",
+        "Never reports the deployment as successful without the deployed smoke and E2E evidence."
+      ]
+    },
+    {
+      "id": 41,
+      "prompt": "The root AGENTS.md of this workspace has a mode=rapid Agentic Loop section from an earlier prototype. Start the SDD workflow for this workspace and deploy it to Azure with azd.",
+      "expected_output": "Sees that the root AGENTS.md locks the workspace to rapid prototyping, explains the lock and asks to confirm a switch to SDD before deriving the spec, rewriting the section and starting the workflow.",
+      "files": [],
+      "expectations": [
+        "Detects the `mode=rapid` Agentic Loop section in the root AGENTS.md before any other action.",
+        "Asks the user to confirm switching this workspace from rapid prototyping to SDD instead of starting the workflow straight away.",
+        "After confirmation, derives the spec with Specify `reverse`, rewrites the section to SDD and reads it back before starting the workflow.",
+        "If the user declines, keeps the rapid section and offers rapid's own deploy path.",
+        "Never removes other AGENTS.md content."
+      ]
     }
   ]
 }

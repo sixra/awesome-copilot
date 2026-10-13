@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { AGENTS, BEGIN, FALLBACK_SDD, appendSection, lockedMode } from "../lib/agents-md.mjs";
 import { MAX_FIX_LOOPS, META, PHASES, WORKFLOW, firstLine, validateArgs } from "../lib/args.mjs";
 import { FOUNDATION_SCHEMA, REPORT_SCHEMA, TASKS, buildPrompt, label, retryPrompt } from "../lib/prompts.mjs";
 import { clean, normalize, planWorkstreams, recordFile, reduce, scope } from "../lib/record.mjs";
@@ -480,6 +481,60 @@ test("skills missing on disk are logged and loaded through the skill tool", asyn
     assert.equal(run.state.logs[1], "Skills not found on disk, so subagents load them with the skill tool: foundry-agentic-loop, microsoft-foundry");
     assert.ok(run.state.calls.every(call => call.prompt.includes("(load it with the skill tool)")));
     assert.equal((await run.record()).skills["foundry-agentic-loop"], "skill-tool");
+    assert.equal(await readFile(path.join(cwd, AGENTS), "utf8"), `${FALLBACK_SDD}\n`, "without the skill on disk the minimal SDD section is written");
+});
+
+const SKILL_ASSETS = path.resolve(extensionDir, "..", "..", "skills", "foundry-agentic-loop", "assets");
+
+test("a run adds the SDD section to AGENTS.md once and keeps the rest of the file", async t => {
+    const { cwd, home } = await workspace(t);
+    const file = path.join(cwd, AGENTS);
+    await writeFile(file, "# Team conventions\n\nUse tabs.\n\n\n", "utf8");
+    const first = harness({ cwd, home, args: { brief: BRIEF, autonomy: "auto", skipDeploy: true } });
+    assert.equal((await first.attempt()).status, "completed");
+    const section = (await readFile(path.join(SKILL_ASSETS, "agents-md-sdd.md"), "utf8")).trim();
+    const written = await readFile(file, "utf8");
+    assert.equal(written, `# Team conventions\n\nUse tabs.\n\n${section}\n`);
+    assert.equal(lockedMode(written), "sdd");
+    assert.equal(logMatches(first.state, /^AGENTS\.md: added the Agentic Loop SDD section/).length, 1);
+
+    const second = harness({ cwd, home, args: { brief: BRIEF, autonomy: "auto", skipDeploy: true }, runId: "run-2" });
+    assert.equal((await second.attempt()).status, "completed");
+    assert.equal(await readFile(file, "utf8"), written, "an existing SDD section is kept as is");
+    assert.equal(logMatches(second.state, /^AGENTS\.md:/).length, 0);
+});
+
+test("a workspace that AGENTS.md locks to rapid prototyping refuses to start", async t => {
+    const { cwd, home } = await workspace(t);
+    const file = path.join(cwd, AGENTS);
+    const rapid = `# Notes\n\n${await readFile(path.join(SKILL_ASSETS, "agents-md-rapid.md"), "utf8")}`;
+    await writeFile(file, rapid, "utf8");
+    const run = harness({ cwd, home, args: { brief: BRIEF, autonomy: "auto" } });
+    const result = await run.attempt();
+    assert.equal(result.status, "error");
+    assert.match(result.error.message, /^AGENTS\.md locks this workspace to rapid prototyping\. To switch, ask Copilot to convert the prototype to SDD/);
+    assert.equal(run.state.calls.length, 0);
+    await assert.rejects(run.record(), { code: "ENOENT" }, "no flight record is written");
+    assert.equal(await readFile(file, "utf8"), rapid);
+});
+
+test("the AGENTS.md section templates, parser and writer agree", async () => {
+    for (const mode of ["rapid", "sdd"]) {
+        const text = await readFile(path.join(SKILL_ASSETS, `agents-md-${mode}.md`), "utf8");
+        assert.equal(lockedMode(text), mode);
+        assert.equal(text.match(/foundry-agentic-loop:(begin|end)/g).join(), "foundry-agentic-loop:begin,foundry-agentic-loop:end");
+        assert.match(text, /\| `deploy` \|/);
+        assert.match(text, /Azure settings only in `\.azure\/deployment-plan\.md`, never here/);
+        assert.doesNotMatch(text, /\/subscriptions\/|[0-9a-f]{8}-[0-9a-f]{4}-|https?:\/\//i, "templates carry no Azure values");
+    }
+    assert.equal(lockedMode(FALLBACK_SDD), "sdd");
+    assert.equal(lockedMode("<!--foundry-agentic-loop:begin  mode=rapid-->"), "rapid");
+    for (const text of [null, "", "# Repo instructions\n<!-- microsoft-foundry -->", "<!-- foundry-agentic-loop:begin mode=other -->"]) assert.equal(lockedMode(text), null);
+    assert.equal(appendSection("", "S\n"), "S\n");
+    assert.equal(appendSection("# A\r\nB\r\n\r\n", "<!-- s -->\nline\n"), "# A\r\nB\r\n\r\n<!-- s -->\r\nline\r\n", "CRLF files stay CRLF");
+    const plan = planWorkstreams([{ name: "docs", files: ["AGENTS.md"] }, { name: "web", files: ["src/web"] }]);
+    assert.equal(plan.mode, "single");
+    assert.match(plan.reason, /shared path AGENTS\.md/);
 });
 
 test("validateArgs enforces the documented contract", () => {
@@ -680,7 +735,7 @@ test("canvas contract pin: foundry-agentic-loop-canvas parses what the workflow 
     let source;
     try { source = await readFile(new URL("../../foundry-agentic-loop-canvas/lib/live.mjs", import.meta.url), "utf8"); }
     catch { t.skip("foundry-agentic-loop-canvas is not installed next to this extension"); return; }
-    for (const regex of [CANVAS.gate, CANVAS.blocked, CANVAS.brief]) assert.ok(source.includes(`/${regex.source}/`), `canvas regex changed: ${regex}`);
+    for (const regex of [CANVAS.gate, CANVAS.blocked, CANVAS.brief, BEGIN]) assert.ok(source.includes(`/${regex.source}/`), `canvas regex changed: ${regex}`);
     for (const key of CANVAS.approvals) assert.ok(source.includes(`"${key}"`), `canvas approval ${key} missing`);
     assert.ok(source.includes(`WORKFLOW = "${WORKFLOW}"`));
     assert.ok(source.includes(`PHASES = Object.freeze(${JSON.stringify(PHASES).replace(/,/g, ", ")})`));

@@ -35,6 +35,12 @@ const MODE_HINT = {
     rapid: "Builds fast in a Foundry project you already have.",
     sdd: "A workflow specifies, implements, verifies and deploys, pausing at gates for your decision.",
 };
+// AGENTS.md records the build mode chosen when the loop started; Chat commands and the workflow follow it.
+const LOCK_HINT = {
+    rapid: "Locked by AGENTS.md. To move to SDD, ask Copilot in Chat to convert this prototype.",
+    sdd: "Locked by AGENTS.md. To switch modes, ask Copilot in Chat.",
+};
+const LOCK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
 const BUILD = {
     rapid: {
         title: "Start with an outcome",
@@ -70,6 +76,8 @@ let projectSyncError = false;
 let inventory = null;
 let mode = "rapid";
 let modePending = false;
+let lock = null;
+let modeHintKey = "";
 let started = false;
 let envProjectId = null;
 let subscriptions = [];
@@ -174,12 +182,28 @@ function applyMode(next, preferredTab) {
         button.setAttribute("aria-checked", String(on));
         button.tabIndex = on ? 0 : -1;
     }
-    $("mode-hint").textContent = MODE_HINT[mode];
+    renderModeHint();
     for (const button of document.querySelectorAll("[data-tab]")) button.hidden = !TABS[mode].includes(button.dataset.tab);
     renderBuild();
     renderProjectBar();
     if (changed && started) onModeChanged(preferredTab);
     return changed;
+}
+
+// Re-render only on change so a focused "Open AGENTS.md" button keeps focus across live updates.
+function renderModeHint() {
+    const key = `${lock}:${mode}`;
+    if (key === modeHintKey) return;
+    modeHintKey = key;
+    document.querySelector(".mode").toggleAttribute("data-locked", Boolean(lock));
+    for (const button of document.querySelectorAll(".mode [data-mode]")) {
+        if (lock && button.dataset.mode !== lock) { button.setAttribute("aria-disabled", "true"); button.title = "Locked by AGENTS.md"; }
+        else { button.removeAttribute("aria-disabled"); button.removeAttribute("title"); }
+    }
+    const hint = $("mode-hint");
+    hint.classList.toggle("locked", Boolean(lock));
+    if (!lock) { hint.textContent = MODE_HINT[mode]; return; }
+    hint.innerHTML = `${LOCK_ICON}<span>${escape(LOCK_HINT[lock])}</span><button class="quiet" data-artifact="AGENTS.md">Open AGENTS.md</button>`;
 }
 
 function onModeChanged(preferredTab) {
@@ -194,6 +218,7 @@ function onModeChanged(preferredTab) {
 
 async function chooseMode(next, preferredTab) {
     if (next === mode) return;
+    if (lock && next !== lock) { notice(LOCK_HINT[lock]); return; }
     const previous = mode;
     modePending = true;
     applyMode(next, preferredTab);
@@ -848,8 +873,10 @@ function applyLive(snap, initial = false) {
     const fresh = knownRuns ? snap.runs.find(row => !knownRuns.has(row.runId)) : null;
     knownRuns = new Set(snap.runs.map(row => row.runId));
     const openWorkflow = !initial && Boolean(fresh) && (snap.mode ?? mode) === "sdd" && activeTab !== "workflow";
+    lock = snap.lock ?? null;
     if (!modePending && snap.mode && snap.mode !== mode) applyMode(snap.mode, openWorkflow ? "workflow" : undefined);
     else if (openWorkflow) selectTab("workflow").catch(error => notice(error.message, true));
+    renderModeHint();
     const checkpoint = snap.run?.checkpoint ? `${snap.run.runId}:${snap.run.checkpoint}` : null;
     if (!initial && !openWorkflow && checkpoint && checkpoint !== lastCheckpoint && activeTab !== "workflow") {
         notice(`${snap.run.pause?.phase ?? "The workflow"} needs your decision.`, false, { go: "workflow", label: "Review" });
@@ -1174,8 +1201,10 @@ document.querySelector(".mode").addEventListener("keydown", event => {
     if (event.key === "End") next = buttons.length - 1;
     if (next === undefined) return;
     event.preventDefault();
+    const choice = buttons[next].dataset.mode;
+    if (lock && choice !== lock) { notice(LOCK_HINT[lock]); return; }
     buttons[next].focus();
-    chooseMode(buttons[next].dataset.mode);
+    chooseMode(choice);
 });
 $("project-bar").onclick = () => selectTab(mode === "rapid" ? "resources" : activeProject() ? "explore" : "workflow").catch(error => notice(error.message, true));
 $("refresh").onclick = () => busy($("refresh"), () => loadTab(activeTab, true));
@@ -1254,6 +1283,7 @@ async function start() {
     snapshot = await response.json();
     if (!response.ok) throw new Error(snapshot.error);
     target = { ...target, ...snapshot.state.target };
+    lock = snapshot.live?.lock ?? null;
     applyMode(snapshot.live?.mode ?? snapshot.state.mode);
     if (snapshot.state.draft) {
         $("prompt-text").value = snapshot.state.draft;

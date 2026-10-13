@@ -8,7 +8,7 @@ Specify leaves `docs/` and `.azure/` in the workspace. `azd ai agent init .` wit
 
 1. `mkdir .scaffold && cd .scaffold`, then run `azd ai agent init . -e <env> --no-prompt -m <manifestUrl> --deploy-mode code --runtime python_3_13 --entry-point main.py --agent-name <agent>`. Add `--model <model>` when the spec differs from the sample default.
 2. Move the sample folder (`.scaffold/src/<sample>`) to `src/agents/<agent>`.
-3. Move `azure.yaml`, `AGENTS.md` and `CLAUDE.md` to the root only when absent there; otherwise merge them.
+3. Move `azure.yaml`, `AGENTS.md` and `CLAUDE.md` to the root only when absent there; otherwise merge them, keeping the root `AGENTS.md` Agentic Loop section unchanged.
 4. Copy `.scaffold/.azure/config.json` and `.scaffold/.azure/<env>/` into `.azure/`. Never move or overwrite `.azure/`: it holds `deployment-plan.md`.
 5. Init git-stages its files: run `git rm --cached -r -q --ignore-unmatch .scaffold`, then `rm -rf .scaffold`, and check that `git status --short` lists no `.scaffold` path.
 6. Write `.agentignore` (not `.azdignore`) in every agent folder, listing tests, evaluators, eval config, the Dockerfile, virtual environments and `.env*`, so the code package carries runtime files only.

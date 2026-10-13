@@ -14,6 +14,7 @@ export const META = {
         + "each phase follows its guide in the foundry-agentic-loop skill in fresh-context subagents and passes an independent evidence gate with bounded fix loops. "
         + "Pauses at approve-spec-v1 (unless autonomy is auto), approve-deploy-v1 (always) and blocked-<phase>-r<n>. "
         + `Writes docs/*.md, including lessons in ${LESSONS}, and .agentic-loop/runs/<runId>.json. `
+        + "Adds the Agentic Loop SDD section to AGENTS.md when absent and refuses a workspace that AGENTS.md locks to rapid prototyping. "
         + "args: { brief: string (required, self-contained), subscriptionId?: GUID, location?: Azure region or 'auto', "
         + "environmentName?: azd environment (2-20 chars), scenarioId?: canvas scenario, autonomy?: 'gated' | 'auto', "
         + "maxFixLoops?: 0-5 (default 2), skipDeploy?: boolean }.",

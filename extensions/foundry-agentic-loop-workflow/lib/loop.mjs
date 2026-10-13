@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { lockWorkspace } from "./agents-md.mjs";
 import { PHASES, firstLine, validateArgs } from "./args.mjs";
 import { FOUNDATION_SCHEMA, REPORT_SCHEMA, TASKS, buildPrompt, label, retryPrompt } from "./prompts.mjs";
 import { clean, createRecord, endpoints, missing, normalize, planWorkstreams, recordFile, reduce, union, writeRecord } from "./record.mjs";
@@ -245,6 +246,7 @@ export async function runLoop(ctx, { extensionDir, home = os.homedir(), now = ()
         ctx.log(`Brief: ${firstLine(args.brief)}`);
         const absent = missingSkills(skills);
         if (absent.length) ctx.log(`Skills not found on disk, so subagents load them with the skill tool: ${absent.join(", ")}`);
+        if (await lockWorkspace(cwd, skills.router.dir) === "written") ctx.log("AGENTS.md: added the Agentic Loop SDD section, which locks this workspace to SDD and routes commands such as deploy.");
         await save(ctx, cwd, createRecord({ runId: ctx.runId, args, setup: { skills, startedAt } }));
         return { cwd, skills, startedAt };
     });

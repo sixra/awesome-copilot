@@ -35,13 +35,14 @@ const COMMON = [
     "Never print secrets or .env values; name keys only.",
     "Stay inside the workspace: read the skills these instructions name, but never search other projects on this machine for code or examples.",
     "You run inside foundry-agentic-loop-workflow: never start, resume or pause workflows, and never open canvases.",
+    "Never edit or remove the Agentic Loop section of AGENTS.md (between its foundry-agentic-loop markers), and keep Azure settings in .azure/deployment-plan.md, not AGENTS.md.",
     `A human may have changed the workspace since the last step: re-read the phase artifacts and ${LESSONS} before acting.`,
 ];
 
 // Reviews converge when each one finishes every check, holds the same blocking bar and re-checks what was just fixed.
 const ROLES = {
     lead: { title: "phase lead", rules: [`You own ${LESSONS} in this step: upsert the lessons you verify.`] },
-    worker: { title: "workstream worker", rules: ["Edit only the files you own. Never edit azure.yaml, infra/, docs/, .env or lockfiles, and never change Azure resources; report needed changes as issues."] },
+    worker: { title: "workstream worker", rules: ["Edit only the files you own. Never edit azure.yaml, infra/, docs/, .env, AGENTS.md or lockfiles, and never change Azure resources; report needed changes as issues."] },
     review: {
         title: "independent reviewer",
         rules: [

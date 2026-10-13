@@ -126,7 +126,8 @@ export class Model {
         if (migrated) await this.save();
     }
 
-    mode(hasRuns) { return this.state.mode ?? (hasRuns ? "sdd" : "rapid"); }
+    // An AGENTS.md lock wins over an explicit choice, which wins over the run-based default.
+    mode(hasRuns, lock = null) { return lock ?? this.state.mode ?? (hasRuns ? "sdd" : "rapid"); }
 
     async setMode(mode) {
         if (mode != null && !MODES.includes(mode)) throw new Error("Choose rapid prototyping or SDD mode.");

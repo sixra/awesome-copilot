@@ -7,7 +7,7 @@ import { Model } from "./lib/model.mjs";
 import { startServer } from "./lib/server.mjs";
 import { openFrontend } from "./lib/frontends.mjs";
 import { assertSession, sessionUsage } from "./lib/usage.mjs";
-import { Live, ARTIFACT_PATHS } from "./lib/live.mjs";
+import { Live, OPENABLE, lockMessage } from "./lib/live.mjs";
 import { openArtifact, workingDirectory } from "./lib/artifacts.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -46,7 +46,7 @@ const schemas = {
     workflow_resume: { ...objectSchema({ runId, raiseLimit: { type: "boolean" } }), required: ["runId"] },
     workflow_pause: { ...objectSchema({ runId }), required: ["runId"] },
     workflow_cancel: { ...objectSchema({ runId }), required: ["runId"] },
-    open_artifact: { ...objectSchema({ path: { enum: ARTIFACT_PATHS } }), required: ["path"] },
+    open_artifact: { ...objectSchema({ path: { enum: OPENABLE } }), required: ["path"] },
     refresh_foundry: objectSchema({}),
     prompt: { ...objectSchema({
         kind: { enum: promptKinds },
@@ -71,7 +71,7 @@ function ensureLive() {
 }
 
 function liveSnapshot() {
-    return { ...live.snapshot(), mode: model.mode(live.runs.length > 0), modeOverride: model.state.mode };
+    return { ...live.snapshot(), mode: model.mode(live.runs.length > 0, live.lock), modeOverride: model.state.mode };
 }
 
 function knownRun(id) {
@@ -120,6 +120,8 @@ async function perform(action, input) {
         case "preferences": Object.assign(model.state, input); await model.save(); return model.state;
         case "mode": {
             await ensureLive();
+            await live.refresh();
+            if (live.lock && input.mode !== "auto" && input.mode !== live.lock) throw Object.assign(new Error(lockMessage(live.lock)), { code: "mode_locked" });
             await model.setMode(input.mode === "auto" ? null : input.mode);
             live.bump();
             return liveSnapshot();
@@ -146,8 +148,9 @@ async function perform(action, input) {
         case "open_artifact": return openArtifact(model.session, input.path);
         case "prompt": {
             await ensureLive();
+            await live.refresh();
             const run = input.runId ? knownRun(input.runId) : null;
-            return model.send(input, model.mode(live.runs.length > 0), run?.checkpoint ?? (["error", "halted"].includes(run?.status) ? "failed" : null));
+            return model.send(input, model.mode(live.runs.length > 0, live.lock), run?.checkpoint ?? (["error", "halted"].includes(run?.status) ? "failed" : null));
         }
         default:
             if (!project) throw new Error("Select a Foundry project on Resources first.");
@@ -180,15 +183,15 @@ const descriptions = {
     usage: "Get usage for the bound Copilot session, with its ID, session accounting and runtime model counters.",
     cost: "Query resource-group month-to-date actual Azure spend.",
     preferences: "Save the active tab and the Build draft.",
-    mode: "Show rapid prototyping or SDD workflow views; auto selects SDD when this session has foundry-agentic-loop-workflow runs.",
+    mode: "Show rapid prototyping or SDD workflow views; auto selects SDD when this session has foundry-agentic-loop-workflow runs. An Agentic Loop section in the workspace AGENTS.md locks the mode and rejects a switch away from it.",
     targets: "List enabled Azure subscriptions and the saved SDD deployment target.",
     target: "Save the SDD deployment target: subscription, region (or auto) and azd environment name.",
-    live: "Read busy state, the effective mode and foundry-agentic-loop-workflow runs with phases, gates, agents and artifacts.",
+    live: "Read busy state, the effective mode, the AGENTS.md mode lock and foundry-agentic-loop-workflow runs with phases, gates, agents and artifacts.",
     workflow_select: "Show a specific foundry-agentic-loop-workflow run.",
     workflow_resume: "Resume a paused foundry-agentic-loop-workflow run, for example to approve a spec or deployment checkpoint.",
     workflow_pause: "Pause a running foundry-agentic-loop-workflow run.",
     workflow_cancel: "Cancel a foundry-agentic-loop-workflow run.",
-    open_artifact: "Open an existing workflow artifact such as docs/spec.md in the Editor canvas.",
+    open_artifact: "Open an existing workflow artifact such as docs/spec.md, or the workspace AGENTS.md, in the Editor canvas.",
     refresh_foundry: "Reuse the existing Foundry canvas public refreshWorkspaceState action.",
     prompt: "Send a user-reviewed canvas prompt to Chat; this starts a Copilot turn.",
 };
@@ -214,7 +217,11 @@ const session = await joinSession({
             await ready;
             assertSession(session, ctx.sessionId);
             await ensureLive();
-            if (ctx.input?.mode) await dispatch("mode", { mode: ctx.input.mode });
+            // An AGENTS.md lock wins over the requested mode; the canvas still opens, in the locked mode.
+            if (ctx.input?.mode) {
+                try { await dispatch("mode", { mode: ctx.input.mode }); }
+                catch (error) { if (error.code !== "mode_locked") throw error; }
+            }
             if (ctx.input?.tab) await dispatch("preferences", { tab: ctx.input.tab });
             let entry = servers.get(ctx.instanceId);
             if (!entry) {

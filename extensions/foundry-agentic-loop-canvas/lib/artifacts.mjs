@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
-import { ARTIFACT_PATHS } from "./live.mjs";
+import { AGENTS, OPENABLE } from "./live.mjs";
 
 export async function workingDirectory(session) {
     const { workingDirectory: directory } = await session.rpc.metadata.snapshot();
@@ -16,13 +16,13 @@ export async function repoRoot(directory) {
     }
 }
 
-// Opens a known Agentic Loop artifact in the Editor canvas; arbitrary paths are rejected.
+// Opens a known Agentic Loop artifact or the workspace AGENTS.md in the Editor canvas; arbitrary paths are rejected.
 export async function openArtifact(session, file) {
-    if (!ARTIFACT_PATHS.includes(file)) throw new Error("Choose an Agentic Loop artifact.");
+    if (!OPENABLE.includes(file)) throw new Error("Choose an Agentic Loop artifact.");
     const directory = await workingDirectory(session);
     const absolute = path.join(directory, file);
     try { if (!(await stat(absolute)).isFile()) throw new Error(); }
-    catch { throw new Error(`${file} does not exist yet. It is written by its workflow phase.`); }
+    catch { throw new Error(`${file} does not exist yet. ${file === AGENTS ? "The Agentic Loop writes it when a build starts." : "It is written by its workflow phase."}`); }
     const relative = path.relative(await repoRoot(directory), absolute).split(path.sep).join("/");
     return session.rpc.canvas.open({
         canvasId: "editor",

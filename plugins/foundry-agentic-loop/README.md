@@ -19,6 +19,17 @@ In the GitHub Copilot App, ask Copilot to **open the agentic loop**. The `foundr
 
 Start either mode from Chat or from the canvas. The canvas includes 61 industry scenarios.
 
+## Locked in by AGENTS.md
+
+When a build starts, Copilot adds an Agentic Loop section to the workspace root `AGENTS.md`. It locks the chosen mode for Chat, the canvas and the workflow, and routes short commands in later prompts:
+
+| Mode | Commands |
+| --- | --- |
+| Rapid prototyping | `run`, `test`, `add agent`, `add tool`, `add skill`, `deploy`, `improve`, `convert to SDD` |
+| SDD | `specify`, `implement`, `verify`, `deploy`, `status`, `approve`, `resume`, `build <brief>`, `improve` |
+
+For example, `deploy` in an SDD workspace resumes a run paused for deployment approval, or runs the Deploy phase. Other `AGENTS.md` content is kept. Azure settings, such as the subscription, region, Foundry project and resource names, live only in `.azure/deployment-plan.md`. To switch modes, ask Copilot; it confirms first, then rewrites the section.
+
 ## How SDD works
 
 Each phase follows its guide in the `foundry-agentic-loop` skill, in fresh-context subagents:
