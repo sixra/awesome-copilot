@@ -17,12 +17,14 @@ export const COLUMNS = [
 const HISTORY_LIMIT = 200;
 export const FIRST_PARTY_LABEL = "first party";
 
-// Submissions from first-party organizations skip AI triage and land in Accept. Only cards without
-// an AI review, queued review, or manual bucket are fast-tracked so maintainer choices are kept;
-// dragging a card back to Unreviewed opts it out so it gets a normal AI review.
+// Validated submissions from first-party organizations skip AI triage and land in Accept. Only
+// cards without an AI review, queued review, or manual bucket are fast-tracked so maintainer
+// choices are kept; dragging a card back to Unreviewed opts it out so it gets a normal AI review.
 function applyFirstPartyFastTrack(item) {
     if (
         !item.labels?.includes(FIRST_PARTY_LABEL) ||
+        !item.labels?.includes("ready-for-review") ||
+        item.labels?.includes("awaiting-review") ||
         item.fastTrackDismissed ||
         item.decision ||
         item.review ||
@@ -44,7 +46,13 @@ function applyFirstPartyFastTrack(item) {
 }
 
 function clearFirstPartyFastTrack(item) {
-    if (item.labels?.includes(FIRST_PARTY_LABEL) || !item.review?.fastTracked || item.reviewStatus === "queued") {
+    if (
+        (item.labels?.includes(FIRST_PARTY_LABEL) &&
+            item.labels?.includes("ready-for-review") &&
+            !item.labels?.includes("awaiting-review")) ||
+        !item.review?.fastTracked ||
+        item.reviewStatus === "queued"
+    ) {
         return;
     }
     item.review = null;

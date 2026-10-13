@@ -37,6 +37,43 @@ test("first-party submissions are fast-tracked to accept on refresh", async (t) 
   assert.deepEqual(store.pendingReview().map((item) => item.number).sort(), [2, 3]);
 });
 
+test("first-party submissions are not fast-tracked while intake is pending", async (t) => {
+  const store = await createStore(t);
+  const pendingIssue = issue(1, ["first party", "awaiting-review"]);
+  await store.syncIssues([pendingIssue]);
+
+  const item = store.getItem(1);
+  assert.equal(item.review, null);
+  assert.equal(item.reviewStatus, "unreviewed");
+  assert.equal(effectiveColumn(item), "unreviewed");
+});
+
+test("first-party submissions are not fast-tracked without a ready-for-review label", async (t) => {
+  const store = await createStore(t);
+  const pendingIssue = issue(1, ["first party"]);
+  pendingIssue.labels = pendingIssue.labels.filter((label) => label !== "ready-for-review");
+
+  await store.syncIssues([pendingIssue]);
+
+  const item = store.getItem(1);
+  assert.equal(item.review, null);
+  assert.equal(item.reviewStatus, "unreviewed");
+});
+
+test("an existing first-party fast-track is cleared while intake is pending", async (t) => {
+  const store = await createStore(t);
+  await store.syncIssues([issue(1, ["first party"])]);
+  const pendingIssue = issue(1, ["first party", "awaiting-review"]);
+  pendingIssue.labels = pendingIssue.labels.filter((label) => label !== "ready-for-review");
+
+  await store.syncIssues([pendingIssue]);
+
+  const item = store.getItem(1);
+  assert.equal(item.review, null);
+  assert.equal(item.reviewStatus, "unreviewed");
+  assert.equal(effectiveColumn(item), "unreviewed");
+});
+
 test("fast-track applies when an existing card gains the first party label", async (t) => {
   const store = await createStore(t);
   await store.syncIssues([issue(1)]);

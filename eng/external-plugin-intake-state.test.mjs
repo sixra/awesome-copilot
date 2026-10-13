@@ -2,13 +2,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   applyExternalPluginIntakeEvaluation,
+  markExternalPluginIntakeAwaitingReview,
   syncExternalPluginIntakeLabels,
 } from "./external-plugin-intake-state.mjs";
 
 function mockGitHub(currentLabels) {
   const labels = new Set(currentLabels);
+  const operations = [];
   return {
     labels,
+    operations,
     async paginate() {
       return [...labels].map((name) => ({ name }));
     },
@@ -16,9 +19,11 @@ function mockGitHub(currentLabels) {
       issues: {
         listLabelsOnIssue() {},
         async addLabels({ labels: addedLabels }) {
+          operations.push(["add", addedLabels]);
           for (const name of addedLabels) labels.add(name);
         },
         async removeLabel({ name }) {
+          operations.push(["remove", name]);
           labels.delete(name);
         },
         async listComments() {
@@ -67,4 +72,33 @@ test("state-only label sync preserves ownership labels for maintainer overrides 
   });
 
   assert.deepEqual(github.labels, new Set(["external-plugin", "ready-for-review", "first party"]));
+});
+
+test("marking intake pending removes stale state labels but preserves ownership, canvas, and unrelated labels", async () => {
+  const github = mockGitHub([
+    "external-plugin",
+    "external-plugin-canvas",
+    "first party",
+    "ready-for-review",
+    "requires-submitter-fixes",
+    "rejected",
+    "unrelated",
+  ]);
+
+  await markExternalPluginIntakeAwaitingReview({
+    github,
+    owner: "github",
+    repo: "awesome-copilot",
+    issueNumber: 1,
+  });
+
+  assert.deepEqual(
+    github.labels,
+    new Set(["external-plugin", "external-plugin-canvas", "first party", "awaiting-review", "unrelated"]),
+  );
+  const readyRemoval = github.operations.findIndex(([action, name]) => action === "remove" && name === "ready-for-review");
+  const pendingAddition = github.operations.findIndex(
+    ([action, labels]) => action === "add" && labels.includes("awaiting-review"),
+  );
+  assert.ok(readyRemoval >= 0 && pendingAddition > readyRemoval);
 });

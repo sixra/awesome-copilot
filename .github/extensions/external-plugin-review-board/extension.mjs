@@ -134,8 +134,11 @@ async function postDecision({ number, kind, comment }) {
 
     const status = await gh.getIssueStatus(store.state.repo, number);
     if (status.state !== "OPEN") throw new Error(`#${number} is ${status.state.toLowerCase()}. Refresh the board.`);
-    if (kind === "approve" && !status.labels.includes("ready-for-review")) {
-        throw new Error(`#${number} is no longer labelled ready-for-review, so /approve would be ignored.`);
+    if (
+        kind === "approve" &&
+        (!status.labels.includes("ready-for-review") || status.labels.includes("awaiting-review"))
+    ) {
+        throw new Error(`#${number} is pending intake or is no longer ready-for-review, so /approve would be ignored.`);
     }
 
     const text = stripCommand(comment, kind);

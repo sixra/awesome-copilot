@@ -85,7 +85,8 @@ jobs:
             });
 
             const fallbackName = evaluation.plugin?.name ?? `issue-${context.issue.number}`;
-            const canApprove = labelNames.has('ready-for-review') || labelNames.has('approved');
+            const canApprove = labelNames.has('approved') ||
+              (labelNames.has('ready-for-review') && !labelNames.has('awaiting-review'));
             const canReject = !labelNames.has('approved');
 
             if (parsedCommand.command === 'approve' && !canApprove) {

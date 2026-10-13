@@ -100,6 +100,19 @@ export async function syncExternalPluginIntakeLabels({
   }
 }
 
+export async function markExternalPluginIntakeAwaitingReview({ github, owner, repo, issueNumber }) {
+  for (const name of ["ready-for-review", "requires-submitter-fixes", "rejected"]) {
+    await removeLabel({ github, owner, repo, issueNumber, name });
+  }
+
+  await github.rest.issues.addLabels({
+    owner,
+    repo,
+    issue_number: issueNumber,
+    labels: ["external-plugin", "awaiting-review"],
+  });
+}
+
 export async function upsertExternalPluginIntakeComment({
   github,
   owner,
