@@ -528,6 +528,8 @@ const DOCS_SECTIONS = [
     <p>Wait for the connection to return. If you need a clean canvas restart, open <strong>More → Restart canvas</strong>. Running downloads continue independently; restart is not a substitute for Cancel.</p>
     <h2>A job failed or an artifact is unavailable</h2>
     <p>Check the error, repository access, workflow result, and artifact retention. For a recoverable failed or interrupted job, use Retry. Integrity and disk-space errors need their underlying cause resolved first.</p>
+    <h2>Re-run a workflow</h2>
+    <p>Each artifact row has a <strong>Re-run</strong> button. It opens a confirmation naming the repository, workflow, run number, attempt and commit. Choose all jobs or, for failed runs, failed jobs only. A re-run reuses the original commit, ref and triggering actor, not the pull request's latest head, and GitHub allows it up to 30 days after the original run and at most 50 re-runs. Nothing is sent until you confirm, and existing artifacts are kept until the new run produces replacements. The button only requests the re-run; it does not mean new artifacts are ready. Your token may lack Actions write permission, in which case GitHub's refusal is shown.</p>
     <h2>A screenshot failed</h2>
     <p>Open a reachable address before capturing, and check Chromium availability. See <a href="#/docs/screenshots">Taking screenshots</a> for explicit setup and the difference between fresh and current-state captures.</p>`],
   ["shortcuts", "Keyboard shortcuts", `

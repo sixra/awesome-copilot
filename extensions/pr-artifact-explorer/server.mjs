@@ -53,6 +53,7 @@ import { ExpiringPromiseCache } from "./memory-cache.mjs";
 import { buildRawView } from "./raw.mjs";
 import { ExternalOpenError, openInDefaultBrowser, validateExternalUrl } from "./external-open.mjs";
 import { renderHtml } from "./render.mjs";
+import { RerunError, prepareRerun, requestRerun } from "./rerun.mjs";
 import {
   hasCapabilityToken,
   isCanonicalHost,
@@ -816,6 +817,46 @@ async function handleApi(req, res, entry, url) {
     const { auth } = await resolveAuth(repository);
     const issue = await getIssue(auth.activeToken, repository, issueMatch[1]);
     return sendJson(res, 200, { repository, issue, account: auth.active });
+  }
+
+  if (req.method === "POST" && path === "/api/runs/rerun-context") {
+    const body = await readJsonBody(req);
+    const repository = normalizeRepository(body.repository);
+    const { auth } = await resolveAuth(repository);
+    try {
+      const context = await prepareRerun(auth.activeToken, {
+        repository,
+        runId: body.runId,
+        artifactId: body.artifactId ?? null,
+        pullNumber: body.pullNumber ?? null,
+      });
+      return sendJson(res, 200, { context, account: auth.active });
+    } catch (error) {
+      if (error instanceof RerunError) throw new HttpError(error.status, error.message, error.extra);
+      throw error;
+    }
+  }
+
+  if (req.method === "POST" && path === "/api/runs/rerun") {
+    const body = await readJsonBody(req);
+    if (body.confirmed !== true) throw new HttpError(400, "A re-run requires explicit confirmation.");
+    const repository = normalizeRepository(body.repository);
+    const { auth } = await resolveAuth(repository);
+    if (!body.accountId || body.accountId !== auth.active?.id) {
+      throw new HttpError(409, "The selected GitHub account changed. Review the re-run and confirm again.", { code: "account_changed" });
+    }
+    try {
+      const result = await requestRerun(auth.activeToken, { ...body, repository });
+      pullRequestCache.clear();
+      progressivePullRequestCache.clear();
+      return sendJson(res, 201, { rerun: result, account: auth.active });
+    } catch (error) {
+      if (error instanceof RerunError) {
+        const { context, ...extra } = error.extra ?? {};
+        throw new HttpError(error.status, error.message, { ...extra, ...(context ? { context } : {}) });
+      }
+      throw error;
+    }
   }
 
   if (req.method === "POST" && path === "/api/targets/parse") {

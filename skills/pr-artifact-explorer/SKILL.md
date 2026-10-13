@@ -30,6 +30,8 @@ Use `share { input, preset?, zoom?, width?, height? }` to produce a link, route,
 
 `inspect_artifact { repository, artifactId }` starts a background job. Downloads continue past soft limits; when one is reached the user is prompted for a larger value (`set_limit { kind, value }`; the value must be at least the live progress). Check `job_status`; use `retry_job` after an `interrupted` or `failed` job (a completed ZIP is reused) and `cancel_job` only when asked. Never execute artifact programs or build scripts: artifacts are only inspected or previewed as static sites and files.
 
+Re-running the workflow that produced an artifact is a UI-only, user-confirmed action (the Re-run button on an artifact row). Never attempt it yourself or call its API; if the user wants a fresh artifact, tell them to use that button. It reuses the original commit, ref and actor, is limited to 30 days and 50 re-runs, and only requests a run, not a ready artifact.
+
 ## Browser preview
 
 - `navigate_browser { url, preset?, zoom? }` opens an http(s) URL, including localhost.

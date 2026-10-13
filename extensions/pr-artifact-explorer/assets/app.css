@@ -4194,6 +4194,12 @@ kbd { background: var(--app-bg-muted); border: 1px solid var(--app-border); bord
 }
 .manual-copy-dialog textarea:focus-visible { outline: 2px solid var(--focus-outlineColor, var(--app-accent)); outline-offset: 1px; }
 .manual-copy-dialog form { display: flex; justify-content: end; margin-top: 12px; }
+.rerun-dialog form.rerun-form { display: block; }
+.rerun-scopes { border: 0; margin: 8px 0; padding: 0; }
+.rerun-scopes legend { font-weight: 600; padding: 0; }
+.rerun-scope { display: block; margin: 4px 0; }
+.rerun-warning, .rerun-disabled { color: var(--app-danger-fg, var(--app-fg)); }
+.rerun-actions { display: flex; justify-content: end; gap: 8px; margin-top: 12px; }
 
 @media (max-width: 767px) {
   .app-header { gap: 4px 8px; }

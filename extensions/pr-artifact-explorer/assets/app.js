@@ -3021,9 +3021,128 @@ function artifactRowHtml(artifact, repository, pullNumber, cachedById) {
                 ? `<a class="app-button app-button-small" href="${href}">${icon("eye")} Open</a>`
                 : `<button class="app-button app-button-small" type="button" data-inspect-artifact="${artifact.id}" data-repository="${escapeHtml(repository)}" data-pull-number="${pullNumber}">${icon("download")} Inspect</button>`
         }
+        ${
+          downloading || !artifact.run?.id
+            ? ""
+            : `<button class="app-button app-button-small" type="button" data-rerun-run="${artifact.run.id}" data-artifact-id="${artifact.id}" data-repository="${escapeHtml(repository)}" data-pull-number="${pullNumber}" aria-label="Re-run workflow ${escapeHtml(artifact.run.name)} run ${artifact.run.number}" title="Re-run the workflow that produced this artifact">${icon("sync")} Re-run</button>`
+        }
       </div>
     </div>
     ${showTransferRow ? artifactTransferRowHtml(progress, artifact.id) : ""}`;
+}
+
+let rerunBusy = false;
+
+function rerunDialogHtml(context, accountLabel) {
+  const run = context.run;
+  const sha = run.headSha ? run.headSha.slice(0, 7) : "unknown";
+  const failedOption = context.failedEligible
+    ? `<label class="rerun-scope"><input type="radio" name="rerun-scope" value="failed"> Re-run failed jobs <span class="color-fg-muted">(failed and dependent jobs only)</span></label>`
+    : "";
+  return `
+    <form method="dialog" class="rerun-form">
+      <h2 id="rerun-title">Re-run workflow run?</h2>
+      <p><strong>${escapeHtml(run.name)}</strong> run #${escapeHtml(String(run.number ?? run.id))}, attempt ${escapeHtml(String(run.attempt))}, in <code>${escapeHtml(context.repository)}</code> (run ID ${escapeHtml(String(run.id))}).</p>
+      <p>Commit <code>${escapeHtml(sha)}</code>${run.headBranch ? ` on <code>${escapeHtml(run.headBranch)}</code>` : ""}. Requested as ${escapeHtml(accountLabel)}.</p>
+      ${context.disabledReason ? `<p class="rerun-disabled" role="alert">${escapeHtml(context.disabledReason)}</p>` : ""}
+      ${context.newerHead ? `<p class="rerun-warning" role="alert">This pull request has newer commits. A re-run uses the original commit ${escapeHtml(sha)}, not the latest head.</p>` : ""}
+      ${context.permissionKnown ? "" : `<p class="color-fg-muted">Token permissions cannot be confirmed in advance; GitHub will accept or refuse the request.</p>`}
+      <fieldset class="rerun-scopes" ${context.eligible ? "" : "disabled"}>
+        <legend>Scope</legend>
+        <label class="rerun-scope"><input type="radio" name="rerun-scope" value="all" checked> Re-run all jobs</label>
+        ${failedOption}
+      </fieldset>
+      <p class="color-fg-muted">The re-run reuses the original commit, ref and triggering actor's privileges. Existing artifacts stay until new ones are produced. Re-runs allowed up to 30 days after the original run (${escapeHtml(String(context.rerunsRemaining))} remaining).</p>
+      <p class="rerun-status" role="status" aria-live="polite"></p>
+      <div class="rerun-actions">
+        <button class="app-button" type="button" data-rerun-cancel>Cancel</button>
+        <button class="app-button app-button-primary" type="button" data-rerun-confirm ${context.eligible ? "" : "disabled"}>Re-run</button>
+      </div>
+    </form>`;
+}
+
+async function openRerunDialog(button) {
+  if (rerunBusy || document.querySelector(".rerun-dialog")) return;
+  const repository = button.dataset.repository;
+  const body = {
+    repository,
+    runId: Number(button.dataset.rerunRun),
+    artifactId: Number(button.dataset.artifactId),
+    pullNumber: Number(button.dataset.pullNumber) || null,
+  };
+  rerunBusy = true;
+  button.disabled = true;
+  let payload;
+  try {
+    payload = await api("/api/runs/rerun-context", { method: "POST", body });
+  } catch (error) {
+    showToast(`Re-run unavailable: ${error.message}`, "error");
+    return;
+  } finally {
+    rerunBusy = false;
+    button.disabled = false;
+  }
+  const dialog = document.createElement("dialog");
+  dialog.className = "manual-copy-dialog rerun-dialog";
+  dialog.setAttribute("aria-labelledby", "rerun-title");
+  dialog.innerHTML = rerunDialogHtml(payload.context, payload.account?.login ?? payload.account?.label ?? "the active account");
+  document.body.append(dialog);
+  const status = dialog.querySelector(".rerun-status");
+  const confirm = dialog.querySelector("[data-rerun-confirm]");
+  let submitting = false;
+  const close = () => {
+    dialog.close();
+    dialog.remove();
+    button.focus();
+  };
+  dialog.addEventListener("cancel", (event) => {
+    if (submitting) event.preventDefault();
+    else queueMicrotask(() => dialog.remove());
+  });
+  dialog.querySelector("[data-rerun-cancel]").addEventListener("click", () => {
+    if (!submitting) close();
+  });
+  confirm.addEventListener("click", async () => {
+    if (submitting) return;
+    submitting = true;
+    confirm.disabled = true;
+    status.textContent = "Requesting re-run...";
+    const scope = dialog.querySelector("input[name='rerun-scope']:checked")?.value ?? "all";
+    try {
+      const result = await api("/api/runs/rerun", {
+        method: "POST",
+        body: {
+          ...body,
+          scope,
+          attempt: payload.context.run.attempt,
+          accountId: payload.account?.id,
+          confirmed: true,
+        },
+      });
+      submitting = false;
+      confirm.hidden = true;
+      dialog.querySelector("input[name='rerun-scope']")?.closest("fieldset")?.setAttribute("disabled", "");
+      const cancelButton = dialog.querySelector("[data-rerun-cancel]");
+      cancelButton.textContent = "Close";
+      status.textContent = `${result.rerun.message} `;
+      if (/^https:\/\/github\.com\//.test(result.rerun.url ?? "")) {
+        const link = document.createElement("a");
+        link.href = result.rerun.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = "View workflow run";
+        status.append(link);
+      }
+      cancelButton.focus();
+      void renderRoute({ force: true });
+    } catch (error) {
+      status.textContent = error.message;
+      status.classList.add("rerun-disabled");
+      submitting = false;
+    }
+  });
+  dialog.showModal();
+  dialog.querySelector("[data-rerun-cancel]").focus();
 }
 
 function artifactDownloadPhrase(progress) {
@@ -5547,6 +5666,12 @@ view.addEventListener("click", (event) => {
   if (clearButton) {
     event.preventDefault();
     void clearCache();
+    return;
+  }
+  const rerunButton = event.target.closest("[data-rerun-run]");
+  if (rerunButton) {
+    event.preventDefault();
+    void openRerunDialog(rerunButton);
     return;
   }
   const refreshButton = event.target.closest("[data-refresh-view]");
