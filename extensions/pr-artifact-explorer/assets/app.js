@@ -5821,6 +5821,8 @@ window.addEventListener("hashchange", () => {
 
 async function initialize() {
   try {
+    // Record the landing route before any await so early navigation cannot skip it.
+    if (location.hash && location.hash !== "#/") navHistory.record();
     installPreviewThemeSync();
     bootstrapState = await api("/api/bootstrap");
     repositoryInput.value = bootstrapState.prefs.repository;

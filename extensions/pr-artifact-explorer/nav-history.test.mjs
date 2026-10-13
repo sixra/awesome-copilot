@@ -191,4 +191,21 @@ test("breadcrumb Back/Forward keeps independent in-canvas route history", async 
   s = await state();
   assert.equal(s.stack.length, top);
   assert.deepEqual(errors, []);
+
+  // A fresh landing on #/docs is recorded, so Back returns to it.
+  const fresh = await browser.newPage({ viewport: { width: 1200, height: 800 } });
+  await fresh.goto(`${base}#/docs`);
+  await fresh.evaluate(() => (location.hash = "#/cache"));
+  await fresh.waitForFunction(() => location.hash === "#/cache");
+  await fresh.evaluate(() => (location.hash = "#/accounts"));
+  await fresh.waitForFunction(() => location.hash === "#/accounts");
+  const stack = await fresh.evaluate(
+    () => JSON.parse(sessionStorage.getItem("pae.routeHistory") ?? "{}").stack,
+  );
+  assert.deepEqual(stack, ["#/docs", "#/cache", "#/accounts"]);
+  await fresh.click("#route-back");
+  await fresh.click("#route-back");
+  await fresh.waitForFunction(() => location.hash === "#/docs");
+  assert.equal(await fresh.locator("#route-back").isDisabled(), true);
+  await fresh.close();
 });
