@@ -100,3 +100,16 @@ test("bounded natural-language browser commands", () => {
   assert.throws(() => parseTarget("zoom 9000%"), TargetError);
   assert.throws(() => parseTarget("100x100"), TargetError);
 });
+test("Raw preview mode round-trips through parse, route and share", () => {
+  const r = "#/artifact/example%2Fproject/0/999997?file=compact.json&view=raw";
+  const target = parseTarget(r);
+  assert.equal(target.mode, "raw");
+  assert.equal(target.file, "compact.json");
+  assert.equal(routeFor(target), r);
+  const share = describeShare(target);
+  assert.ok(share.route.includes("view=raw"));
+  assert.equal(parseTarget(share.route).mode, "raw");
+  assert.equal(parseTarget(r.replace("&view=raw", "")).mode, undefined);
+  assert.equal(parseTarget("#/artifact/example%2Fproject/0/999997?view=raw").mode, undefined);
+  assert.equal(parseTarget(r.replace("raw", "bogus")).mode, undefined);
+});

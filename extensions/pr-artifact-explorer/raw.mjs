@@ -75,7 +75,10 @@ export async function buildRawView(artifactId, entryPath) {
   if (!entry.supported) {
     return { ...base, mode: "unsupported", supported: false, reason: unsupportedReason(entry) };
   }
-  if (size === 0) return { ...base, mode: "empty", supported: true, truncated: false, shown: 0 };
+  if (size === 0) {
+    await verifyCachedEntry(context);
+    return { ...base, mode: "empty", supported: true, truncated: false, shown: 0 };
+  }
 
   const kind = kindForPath(entry.name);
   if (isInlineTextKind(kind)) {

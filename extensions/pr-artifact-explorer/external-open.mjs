@@ -30,28 +30,50 @@ export function validateExternalUrl(value) {
   return parsed.href;
 }
 
-export function launcherCommand(url, platform = process.platform) {
-  if (platform === "win32") return { command: "rundll32.exe", args: ["url.dll,FileProtocolHandler", url] };
-  if (platform === "darwin") return { command: "open", args: [url] };
+export function launcherCommand(url, platform = process.platform, env = process.env) {
+  if (platform === "win32") {
+    const root = env.SystemRoot || env.windir || "C:\\Windows";
+    return { command: `${root}\\System32\\rundll32.exe`, args: ["url.dll,FileProtocolHandler", url] };
+  }
+  if (platform === "darwin") return { command: "/usr/bin/open", args: [url] };
   return { command: "xdg-open", args: [url] };
 }
 
-function defaultOpener(url) {
-  const { command, args } = launcherCommand(url);
+const LAUNCH_ACK_MS = 1500;
+
+/** Resolves when the launcher exits 0, or is still running after the ack window; rejects on spawn error or failed exit. */
+export function launchWithAck(url, { spawnFn = spawn, ackMs = LAUNCH_ACK_MS, command: spec = launcherCommand(url) } = {}) {
   return new Promise((resolve, reject) => {
     let child;
     try {
-      child = spawn(command, args, { shell: false, windowsHide: true, detached: true, stdio: "ignore" });
+      child = spawnFn(spec.command, spec.args, { shell: false, windowsHide: true, detached: true, stdio: "ignore" });
     } catch (error) {
       reject(error);
       return;
     }
-    child.once("error", reject);
-    child.once("spawn", () => {
-      child.unref();
-      resolve();
-    });
+    let timer;
+    const finish = (fn, value) => {
+      clearTimeout(timer);
+      child.removeListener("error", onError);
+      child.removeListener("exit", onExit);
+      fn(value);
+    };
+    const onError = (error) => finish(reject, error);
+    const onExit = (code, signal) => {
+      if (code === 0) finish(resolve);
+      else finish(reject, new Error(signal ? `launcher terminated by ${signal}` : `launcher exited with code ${code}`));
+    };
+    child.once("error", onError);
+    child.once("exit", onExit);
+    timer = setTimeout(() => {
+      child.unref?.();
+      finish(resolve);
+    }, ackMs);
   });
+}
+
+function defaultOpener(url) {
+  return launchWithAck(url);
 }
 
 let opener = defaultOpener;

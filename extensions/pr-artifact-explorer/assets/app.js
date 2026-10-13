@@ -416,7 +416,33 @@ function resolvedCanvasTheme() {
     const mode = element?.getAttribute("data-color-mode");
     if (mode === "light" || mode === "dark") return mode;
   }
+  for (const element of [document.documentElement, document.body]) {
+    const scheme = element ? getComputedStyle(element).colorScheme.trim() : "";
+    if (scheme === "light" || scheme === "dark") return scheme;
+  }
   return previewThemeMedia.matches ? "dark" : "light";
+}
+
+const THEME_ATTRIBUTES = ["data-color-mode", "data-theme-tone", "data-dark-theme", "data-light-theme", "data-theme-source", "class", "style"];
+
+/** Calls onChange(theme) only when the resolved theme actually changes (attributes, inherited style, or system preference). */
+function observeCanvasTheme(onChange) {
+  let last = resolvedCanvasTheme();
+  const check = () => {
+    const theme = resolvedCanvasTheme();
+    if (theme === last) return;
+    last = theme;
+    onChange(theme);
+  };
+  const observer = new MutationObserver(check);
+  const options = { attributes: true, attributeFilter: THEME_ATTRIBUTES };
+  observer.observe(document.documentElement, options);
+  observer.observe(document.body, options);
+  previewThemeMedia.addEventListener("change", check);
+  return () => {
+    observer.disconnect();
+    previewThemeMedia.removeEventListener("change", check);
+  };
 }
 
 function syncPreviewTheme() {
@@ -428,21 +454,14 @@ function syncPreviewTheme() {
         { type: "copilot-preview-theme", theme },
         new URL(frame.src).origin,
       );
-    } catch {
-      // The preview may be navigating between artifact pages.
+    } catch (error) {
+      if (frame.contentWindow && frame.src) showToast(`Theme sync failed: ${error instanceof Error ? error.message : error}`, "error");
     }
   }
 }
 
 function installPreviewThemeSync() {
-  const observer = new MutationObserver(syncPreviewTheme);
-  const options = {
-    attributes: true,
-    attributeFilter: ["data-color-mode", "data-theme-tone"],
-  };
-  observer.observe(document.documentElement, options);
-  observer.observe(document.body, options);
-  previewThemeMedia.addEventListener("change", syncPreviewTheme);
+  observeCanvasTheme(syncPreviewTheme);
 }
 
 function relativeTime(value) {
@@ -5047,6 +5066,10 @@ view.addEventListener("click", (event) => {
     event.preventDefault();
     const preview = trxView.closest(".trx-preview");
     const viewName = trxView.dataset.trxView;
+    if (viewName === "raw" && currentArtifact?.selectedPath) {
+      void setPreviewMode("raw");
+      return;
+    }
     reportModule(preview).showView(preview, viewName);
     if (viewName === "structured") {
       preview.querySelector("[data-trx-search-input]")?.focus();

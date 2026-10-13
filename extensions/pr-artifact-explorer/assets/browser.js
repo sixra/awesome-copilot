@@ -1008,10 +1008,13 @@ function renderBrowser(route) {
   frame.addEventListener("load", () => {
     if (frame.hasAttribute("data-theme-aware-preview")) syncPreviewTheme();
   });
-  const themeObserver = new MutationObserver(() => {
-    if (state.controlled && browserState === state) void api("/api/controlled/theme", { method: "POST", body: { theme: resolvedCanvasTheme() } }).then(showControlledFrame).catch(() => {});
+  const stopThemeObserver = observeCanvasTheme((theme) => {
+    if (state.controlled && browserState === state) {
+      void api("/api/controlled/theme", { method: "POST", body: { theme } })
+        .then(showControlledFrame)
+        .catch((error) => showToast(`Theme sync failed: ${error instanceof Error ? error.message : error}`, "error"));
+    }
   });
-  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-color-mode", "data-theme-tone"] });
   $("br-kbd").addEventListener("click", (event) => {
     const hints = $("br-hints");
     hints.hidden = !hints.hidden;
@@ -1025,7 +1028,7 @@ function renderBrowser(route) {
   state.api = { go, refresh, setZoom, screenshot, load, applyLayout, viewport, setControlled };
   browserCleanup = () => {
     window.removeEventListener("resize", onResize);
-    themeObserver.disconnect();
+    stopThemeObserver();
     disposeOptions();
   };
 

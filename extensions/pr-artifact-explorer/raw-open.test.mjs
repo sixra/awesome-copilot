@@ -4,23 +4,55 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { crc32, deflateRawSync } from "node:zlib";
-import { ExternalOpenError, launcherCommand, setExternalOpener, validateExternalUrl } from "./external-open.mjs";
+import { ExternalOpenError, launchWithAck, launcherCommand, setExternalOpener, validateExternalUrl } from "./external-open.mjs";
+import { EventEmitter } from "node:events";
+
+function fakeSpawn(behavior) {
+  return (command, args, options) => {
+    const child = new EventEmitter();
+    child.unref = () => { child.unrefd = true; };
+    child.spawned = { command, args, options };
+    setImmediate(() => behavior(child));
+    return child;
+  };
+}
+
+test("launcher acknowledgement reports nonzero exit, errors, zero exit and long-lived launchers truthfully", async () => {
+  const run = (behavior, ackMs = 200) => launchWithAck("http://a/", { spawnFn: fakeSpawn(behavior), ackMs, command: { command: "x", args: ["http://a/"] } });
+  await assert.rejects(run((c) => c.emit("exit", 1, null)), /code 1/);
+  await assert.rejects(run((c) => c.emit("exit", null, "SIGKILL")), /SIGKILL/);
+  await assert.rejects(run((c) => c.emit("error", new Error("ENOENT"))), /ENOENT/);
+  await run((c) => c.emit("exit", 0, null));
+  let alive;
+  await run((c) => { alive = c; });
+  assert.equal(alive.unrefd, true);
+  assert.equal(alive.listenerCount("exit"), 0);
+  assert.deepEqual(
+    Object.keys(await new Promise((r) => { const s = fakeSpawn((c) => c.emit("exit", 0)); const c = s("x", [], { shell: false, windowsHide: true, detached: true, stdio: "ignore" }); r(c.spawned.options); })).sort(),
+    ["detached", "shell", "stdio", "windowsHide"],
+  );
+  await assert.rejects(
+    (async () => { setExternalOpener((u) => launchWithAck(u, { spawnFn: fakeSpawn((c) => c.emit("exit", 3)), ackMs: 100, command: { command: "x", args: [] } })); try { const { openInDefaultBrowser } = await import("./external-open.mjs"); await openInDefaultBrowser("http://127.0.0.1/"); } finally { setExternalOpener(null); } })(),
+    (error) => error.code === "launch_failed",
+  );
+});
 
 const u16 = (v) => Buffer.from(Uint16Array.of(v).buffer);
 const u32 = (v) => Buffer.from(Uint32Array.of(v).buffer);
 
-function zipOf(name, raw, { deflate = false, flags = 0, method } = {}) {
+function zipOf(name, raw, { deflate = false, flags = 0, method, declaredSize, declaredCrc } = {}) {
   const data = Buffer.from(deflate ? deflateRawSync(raw) : raw);
   const nameBuf = Buffer.from(name);
   const m = method ?? (deflate ? 8 : 0);
-  const crc = crc32(raw);
+  const crc = declaredCrc ?? crc32(raw);
+  const usize = declaredSize ?? raw.length;
   const local = Buffer.concat([
     u32(0x04034b50), u16(20), u16(flags), u16(m), u16(0), u16(0x21),
-    u32(crc), u32(data.length), u32(raw.length), u16(nameBuf.length), u16(0), nameBuf, data,
+    u32(crc), u32(data.length), u32(usize), u16(nameBuf.length), u16(0), nameBuf, data,
   ]);
   const central = Buffer.concat([
     u32(0x02014b50), u16(20), u16(20), u16(flags), u16(m), u16(0), u16(0x21),
-    u32(crc), u32(data.length), u32(raw.length),
+    u32(crc), u32(data.length), u32(usize),
     u16(nameBuf.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(0), nameBuf,
   ]);
   return Buffer.concat([
@@ -62,6 +94,8 @@ test("raw view returns exact source, bounded hex, and explains unsupported entri
     ["2005", "d/secret.txt", Buffer.from("x"), { flags: 1 }],
     ["2006", "d/odd.txt", Buffer.from("abc"), { method: 14 }],
     ["2007", "d/tiny.png", Buffer.from([0x89, 0x50, 0x4e, 0x47]), {}],
+    ["2008", "d/bad-crc.txt", Buffer.alloc(0), { declaredCrc: 0xdeadbeef }],
+    ["2009", "d/bad-data.txt", Buffer.from("hidden"), { declaredSize: 0, declaredCrc: 0 }],
   ];
   for (const [id, name, content, options] of fixtures) {
     await writeFile(join(cache, `${id}.zip`), zipOf(name, content, options));
@@ -87,6 +121,11 @@ test("raw view returns exact source, bounded hex, and explains unsupported entri
   const empty = await raw(2002, "d/empty.txt");
   assert.equal(empty.body.mode, "empty");
   assert.equal(empty.body.size, 0);
+  for (const [id, name] of [[2008, "d/bad-crc.txt"], [2009, "d/bad-data.txt"]]) {
+    const bad = await raw(id, name);
+    assert.ok(bad.status >= 400, `${name} must not become an empty success: ${JSON.stringify(bad.body)}`);
+    assert.notEqual(bad.body.mode, "empty");
+  }
 
   const movie = await raw(2003, "d/movie.webm");
   assert.equal(movie.body.mode, "hex");
@@ -122,8 +161,8 @@ test("external open validates URLs and routes through an injectable launcher", a
   for (const bad of ["", "file:///etc/passwd", "javascript:alert(1)", "http://u:p@example.com/", "http://exa mple.com/", "http://a.com/\n", "ftp://x.com", "not a url"]) {
     assert.throws(() => validateExternalUrl(bad), ExternalOpenError, bad);
   }
-  assert.deepEqual(launcherCommand("http://a/", "win32"), { command: "rundll32.exe", args: ["url.dll,FileProtocolHandler", "http://a/"] });
-  assert.equal(launcherCommand("http://a/", "darwin").command, "open");
+  assert.deepEqual(launcherCommand("http://a/", "win32", { SystemRoot: "C:\\Windows" }), { command: "C:\\Windows\\System32\\rundll32.exe", args: ["url.dll,FileProtocolHandler", "http://a/"] });
+  assert.equal(launcherCommand("http://a/", "darwin").command, "/usr/bin/open");
   assert.equal(launcherCommand("http://a/", "linux").command, "xdg-open");
 
   const home = await mkdtemp(join(tmpdir(), "pae-open-"));

@@ -100,7 +100,10 @@ function fromExplorerPath(route, query) {
   if (match) {
     const target = { kind: "artifact", repository: decodeURIComponent(match[1]), artifactId: Number(match[3]) };
     if (Number(match[2]) > 0) target.pullNumber = Number(match[2]);
-    if (query.get("file")) target.file = query.get("file");
+    if (query.get("file")) {
+      target.file = query.get("file");
+      if (query.get("view") === "raw") target.mode = "raw";
+    }
     return target;
   }
   match = route.match(/^\/pulls\/([^/]+)$/);
@@ -261,7 +264,7 @@ export function routeFor(target) {
     case "issue":
       return `#/issue/${encodeURIComponent(target.repository)}/${target.number}`;
     case "artifact":
-      return `#/artifact/${encodeURIComponent(target.repository)}/${target.pullNumber ?? 0}/${target.artifactId}${target.file ? `?file=${encodeURIComponent(target.file)}` : ""}`;
+      return `#/artifact/${encodeURIComponent(target.repository)}/${target.pullNumber ?? 0}/${target.artifactId}${target.file ? `?file=${encodeURIComponent(target.file)}${target.mode === "raw" ? "&view=raw" : ""}` : ""}`;
     case "url":
       return target.url ? `#/browser?v=${encodeView({ ...target.view, url: target.url })}` : null;
     case "cache":
