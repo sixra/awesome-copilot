@@ -269,8 +269,9 @@
       .slice(0, MAX_RENDERED_RESULTS)
       .map(({ result }) => result);
     const bad = report.counts.error + report.counts.failed;
-    const outcome = bad > 0 ? "failed" : report.total === 0 ? "skipped" : "passed";
-    const outcomeLabel = bad > 0 ? "Failed" : report.total === 0 ? "No tests" : "Passed";
+    const allSkipped = report.total > 0 && report.counts.skipped === report.total;
+    const outcome = bad > 0 ? "failed" : report.total === 0 || allSkipped ? "skipped" : "passed";
+    const outcomeLabel = bad > 0 ? "Failed" : report.total === 0 ? "No tests" : allSkipped ? "Skipped" : "Passed";
     const mismatch = report.declaredTotal !== null && report.declaredTotal !== report.total
       ? `<div class="trx-limit-note">${icon("eye")} The report declares ${report.declaredTotal.toLocaleString()} tests but contains ${report.total.toLocaleString()} test cases. Totals below are counted from the test cases.</div>`
       : "";

@@ -231,4 +231,18 @@ test("JUnit viewer detects, aggregates, escapes and falls back in real Chromium"
   }, `<testsuites><testsuite name="Browser A"><testcase name="one"/><testcase name="two"/></testsuite><testsuite name="Browser B"><testcase name="three"/><testcase name="four"/></testsuite></testsuites>`);
   assert.deepEqual(search[0], [2, "2 of 4 results"]);
   assert.equal(search[1], 2);
+
+  const outcomes = await page.evaluate((reports) => reports.map((xml) => {
+    const out = document.getElementById("out");
+    JunitPreview.render(xml, out, { highlightXml: (s) => s });
+    const el = out.querySelector(".trx-run-outcome");
+    return [el.textContent.trim(), el.className.includes("trx-outcome-skipped")];
+  }), [
+    '<testsuite name="Skipped run" tests="1" skipped="1" time="0"><testcase name="not executed" time="0"><skipped message="not configured"/></testcase></testsuite>',
+    '<testsuite name="Mixed"><testcase name="a"/><testcase name="b"><skipped/></testcase></testsuite>',
+    '<testsuite name="Empty" tests="0"></testsuite>',
+  ]);
+  assert.deepEqual(outcomes[0], ["Skipped", true]);
+  assert.deepEqual(outcomes[1], ["Passed", false]);
+  assert.deepEqual(outcomes[2], ["No tests", true]);
 });
