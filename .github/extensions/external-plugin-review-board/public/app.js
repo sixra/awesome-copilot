@@ -146,7 +146,7 @@ function findItem(number) {
 
 function pendingReviewCount() {
     return board
-        ? board.items.filter((item) => !item.decision && item.reviewStatus !== "reviewed" && item.reviewStatus !== "queued").length
+        ? board.items.filter((item) => !item.decision && !item.pendingDecision && item.reviewStatus !== "reviewed" && item.reviewStatus !== "queued").length
         : 0;
 }
 

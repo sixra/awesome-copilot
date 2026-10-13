@@ -127,6 +127,18 @@ for (const boardName of ["open-pr-board", "external-plugin-review-board"]) {
     });
 }
 
+test("external-plugin-review-board: pending review count excludes posted decisions", async () => {
+    const ui = await createUI("external-plugin-review-board", [
+        { number: 1, reviewStatus: "unreviewed" },
+        { number: 2, reviewStatus: "unreviewed", pendingDecision: { kind: "approve" } },
+        { number: 3, reviewStatus: "reviewed" },
+        { number: 4, reviewStatus: "queued" },
+        { number: 5, decision: { kind: "reject" } },
+    ]);
+
+    assert.equal(ui.context.pendingReviewCount(), 1);
+});
+
 test("PR bulk close requires and posts the staged reason", async () => {
     const ui = await createUI("open-pr-board", [{ number: 1, column: "close", review: { suggestedComment: "Duplicate" } }]);
     await ui.context.bulkAction("close", "close");
