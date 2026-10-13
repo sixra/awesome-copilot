@@ -936,11 +936,40 @@ function loadingView() {
     </div>`;
 }
 
+function pullLoadingView(pullNumber) {
+  view.setAttribute("aria-busy", "true");
+  view.innerHTML = `
+    <div class="pull-loading" data-pull-loading role="status" aria-label="Loading pull request #${Number(pullNumber)}">
+      <div class="page-header">
+        <div class="pull-loading-title"><span class="skeleton" data-skeleton="title"></span></div>
+        <div class="page-actions"><span class="skeleton pull-loading-action" data-skeleton="action"></span></div>
+      </div>
+      <div class="pr-summary">
+        <span class="skeleton pull-loading-badge" data-skeleton="badge"></span>
+        <span class="skeleton pull-loading-subtext" data-skeleton="summary"></span>
+      </div>
+      <section class="Box artifact-list-box" data-skeleton="table">
+        <div class="Box-header toolbar artifact-toolbar"><span class="skeleton pull-loading-toolbar"></span></div>
+        <div class="loading-list">
+          ${Array.from({ length: 4 }, () => `
+            <div class="skeleton-row">
+              <span class="skeleton"></span>
+              <span><span class="skeleton d-block"></span><span class="skeleton short d-block"></span></span>
+              <span class="skeleton"></span>
+            </div>`).join("")}
+        </div>
+      </section>
+      <span class="sr-only">Loading pull request #${Number(pullNumber)}…</span>
+    </div>`;
+}
+
 function renderError(error, title = "Unable to load this view") {
+  view.removeAttribute("aria-busy");
   view.innerHTML = `
     <div class="flash flash-error">
       <strong>${escapeHtml(title)}</strong>
       <div class="mt-1">${escapeHtml(error instanceof Error ? error.message : String(error))}</div>
+      <button class="app-button app-button-small mt-2" type="button" data-refresh-view>${icon("sync")} Retry</button>
     </div>`;
 }
 
@@ -3249,6 +3278,7 @@ function artifactResultLimitMessage(payload) {
 function renderPullPayload(repository, pullNumber, payload, cache) {
   updateAccountFromPayload(payload);
   updateCacheHeader(cache);
+  view.removeAttribute("aria-busy");
   const pull = payload.pullRequest;
   const state = pullState(pull);
   const cachedById = new Map(cache.artifacts.map((item) => [String(item.id), item]));
@@ -3387,13 +3417,17 @@ async function renderPull(route, sequence, { force = false } = {}) {
     return;
   }
 
-  loadingView();
+  const refocus = Boolean(
+    document.activeElement && view.contains(document.activeElement),
+  );
+  pullLoadingView(pullNumber);
   const [payload, cache] = await Promise.all([
     requestPullPayload(requestPath, { force }),
     api("/api/cache"),
   ]);
   if (sequence !== renderSequence) return;
   renderPullPayload(repository, pullNumber, payload, cache);
+  if (refocus) view.querySelector("[data-refresh-view]")?.focus();
 }
 
 function fileIconName(kind) {
@@ -4803,6 +4837,7 @@ async function renderRoute({ force = false } = {}) {
   currentArtifact = null;
   currentPullContext = null;
   const sequence = ++renderSequence;
+  view.removeAttribute("aria-busy");
   const route = parseRoute();
   accountButton.classList.toggle("is-active", route.name === "accounts");
   try {

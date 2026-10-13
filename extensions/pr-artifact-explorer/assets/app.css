@@ -3341,6 +3341,41 @@ select {
   border-radius: var(--app-radius);
 }
 
+.pull-loading-title,
+.pull-loading-title .skeleton {
+  display: block;
+  height: 32px;
+}
+
+.pull-loading-title {
+  width: min(560px, 100%);
+}
+
+.pull-loading-action {
+  display: inline-block;
+  width: 120px;
+  height: 28px;
+}
+
+.pull-loading-badge {
+  display: inline-block;
+  width: 72px;
+  height: 26px;
+  border-radius: 2em;
+}
+
+.pull-loading-subtext {
+  display: inline-block;
+  width: min(360px, 60%);
+  height: 18px;
+}
+
+.pull-loading-toolbar {
+  display: block;
+  width: 160px;
+  height: 20px;
+}
+
 .skeleton.short {
   width: 55%;
   margin-top: var(--base-size-8, 8px);
