@@ -62,8 +62,10 @@
   function seconds(element) {
     const raw = element.getAttribute("time");
     if (raw === null || raw.trim() === "") return null;
-    const value = Number(raw.replaceAll(",", ""));
-    return Number.isFinite(value) && value >= 0 ? value : null;
+    const trimmed = raw.trim();
+    if (!/^(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(trimmed)) return null;
+    const value = Number(trimmed);
+    return Number.isFinite(value) ? value : null;
   }
 
   function sentence(...parts) {
@@ -138,10 +140,13 @@
 
     const counts = { passed: 0, failed: 0, error: 0, skipped: 0 };
     let caseSeconds = 0;
+    let allTimed = results.length > 0;
     for (const result of results) {
       counts[result.category] += 1;
-      caseSeconds += result.seconds ?? 0;
+      if (result.seconds === null) allTimed = false;
+      else caseSeconds += result.seconds;
     }
+    if (!allTimed) caseSeconds = null;
     const declaredTotal = Number(root.getAttribute("tests"));
     let elapsed = seconds(root);
     if (elapsed === null) {
@@ -296,8 +301,8 @@
               ${metric("Skipped", report.counts.skipped, "skipped", "clock")}
             </div>
             <dl class="trx-run-metadata">
-              <div class="trx-meta-item"><dt>Elapsed</dt><dd>${escapeHtml(formatSeconds(report.elapsed))}</dd></div>
-              <div class="trx-meta-item"><dt>Test time</dt><dd>${escapeHtml(formatSeconds(report.caseSeconds))}</dd></div>
+              <div class="trx-meta-item"><dt>Elapsed</dt>              <dd data-junit-elapsed>${escapeHtml(formatSeconds(report.elapsed) || "Not recorded")}</dd></div>
+                            <div class="trx-meta-item"><dt>Test time</dt><dd data-junit-test-time>${escapeHtml(formatSeconds(report.caseSeconds) || "Not recorded")}</dd></div>
             </dl>
             ${mismatch}
           </section>

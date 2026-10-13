@@ -4047,11 +4047,28 @@ async function previewArtifactFile(entry, sequence) {
           </div>
         </div>`;
       const video = preview.querySelector("video");
-      video.addEventListener("error", () => {
+      const ext = (entry.path.match(/\.([a-z0-9]+)$/i)?.[1] ?? "video").toLocaleLowerCase();
+      video.addEventListener("error", async () => {
+        const code = video.error?.code;
+        if (code === 1) return;
+        let detail = `Your browser could not decode this .${ext} file. Support depends on the container and codec (for example H.264, HEVC, VP8/VP9 or AV1); WebM and MP4 are most widely supported and QuickTime MOV often is not. Download it to play it locally.`;
+        if (code === 2 || code === 4) {
+          try {
+            const probe = await fetch(src, { headers: { Range: "bytes=0-0" } });
+            if (!probe.ok) {
+              detail = `The video could not be loaded (HTTP ${probe.status}). The artifact may have failed integrity verification or the connection was interrupted. Retry, or download the artifact.`;
+            } else if (code === 2) {
+              detail = "The network connection was interrupted while loading the video. Retry, or download it to play it locally.";
+            }
+          } catch {
+            detail = "The video could not be loaded because the preview server was unreachable. Retry, or download the artifact.";
+          }
+        }
+        if (!video.isConnected || !preview.contains(video)) return;
         const container = preview.querySelector(".video-preview-error");
-        const ext = (entry.path.match(/\.([a-z0-9]+)$/i)?.[1] ?? "video").toLocaleLowerCase();
-        preview.querySelector("[data-video-error-detail]").textContent =
-          `Your browser could not decode this .${ext} file. Support depends on the container and codec (for example H.264, HEVC, VP8/VP9 or AV1); WebM and MP4 are most widely supported and QuickTime MOV often is not. Download it to play it locally.`;
+        const detailNode = preview.querySelector("[data-video-error-detail]");
+        if (!container || !detailNode) return;
+        detailNode.textContent = detail;
         container.hidden = false;
         video.hidden = true;
       });

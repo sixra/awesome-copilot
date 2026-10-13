@@ -200,4 +200,19 @@ test("JUnit viewer detects, aggregates, escapes and falls back in real Chromium"
     return [...out.querySelectorAll("[data-trx-result]")].filter((r) => !r.hidden).length;
   }, FIXTURES.nested);
   assert.ok(filtered >= 1);
+
+  const timing = await page.evaluate((cases) => cases.map(([xml]) => {
+    const out = document.getElementById("out");
+    JunitPreview.render(xml, out, { highlightXml: (s) => s });
+    return [out.querySelector("[data-junit-elapsed]")?.textContent, out.querySelector("[data-junit-test-time]")?.textContent];
+  }), [
+    ['<testsuite name="a" time="1,25"><testcase name="x"/></testsuite>'],
+    ['<testsuite name="a" time="0"><testcase name="x" time="0"/></testsuite>'],
+    ['<testsuite name="a" time="-1"><testcase name="x" time="abc"/></testsuite>'],
+    ['<testsuite name="a" time="1.5"><testcase name="x" time="1e0"/></testsuite>'],
+  ]);
+  assert.deepEqual(timing[0], ["Not recorded", "Not recorded"]);
+  assert.deepEqual(timing[1], ["0 s", "0 s"]);
+  assert.deepEqual(timing[2], ["Not recorded", "Not recorded"]);
+  assert.deepEqual(timing[3], ["1.5 s", "1 s"]);
 });
