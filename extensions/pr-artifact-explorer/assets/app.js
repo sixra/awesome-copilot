@@ -3946,6 +3946,7 @@ function stepPlayerTextSize(direction) {
 }
 
 let rawRequestToken = 0;
+let previewToken = 0;
 
 const reportViewStates = new Map();
 
@@ -4073,7 +4074,15 @@ async function previewArtifactFile(entry, sequence) {
   const browserAction = document.getElementById("preview-open-browser");
   if (browserAction) browserAction.hidden = true;
   syncPreviewModeControl(entry);
-  if (artifact.rawMode) {
+  const token = ++previewToken;
+  const rawAtStart = artifact.rawMode === true;
+  const superseded = () =>
+    token !== previewToken ||
+    sequence !== renderSequence ||
+    currentArtifact !== artifact ||
+    artifact.selectedPath !== entry.path ||
+    (artifact.rawMode === true) !== rawAtStart;
+  if (rawAtStart) {
     await renderRawPreview(entry, preview, sequence);
     return;
   }
@@ -4092,7 +4101,7 @@ async function previewArtifactFile(entry, sequence) {
       const result = await api(
         `/api/artifacts/${artifact.id}/preview-url?path=${encodeURIComponent(entry.path)}&theme=${theme}`,
       );
-      if (sequence !== renderSequence || currentArtifact?.selectedPath !== entry.path) return;
+      if (superseded()) return;
       // The preview uses a dedicated loopback origin, so storage access remains isolated from the canvas.
       preview.innerHTML = `
         <iframe
@@ -4144,7 +4153,7 @@ async function previewArtifactFile(entry, sequence) {
       const result = await api(
         `/api/artifacts/${artifact.id}/text?path=${encodeURIComponent(entry.path)}`,
       );
-      if (sequence !== renderSequence || currentArtifact?.selectedPath !== entry.path) return;
+      if (superseded()) return;
       if (entryKind === "trx") {
         TrxPreview.render(result.content, preview, { highlightXml });
         restoreReportState(artifact, entry.path, preview);
@@ -4222,6 +4231,7 @@ async function previewArtifactFile(entry, sequence) {
         </div>
       </div>`;
   } catch (error) {
+    if (superseded()) return;
     preview.innerHTML = `
       <div class="flash flash-error w-100">
         <strong>Preview failed</strong>
