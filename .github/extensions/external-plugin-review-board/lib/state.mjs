@@ -140,7 +140,10 @@ export class BoardStore {
             repo: this.state.repo,
             lastRefreshedAt: this.state.lastRefreshedAt,
             columns: COLUMNS,
-            items,
+            items: items.map((item) => ({
+                ...item,
+                reviewEligible: isReadyForApproval(item.labels ?? []),
+            })),
             history: this.state.history.slice(0, 50),
         };
     }
@@ -188,7 +191,12 @@ export class BoardStore {
     }
 
     pendingReview(numbers) {
-        const all = Object.values(this.state.items).filter((item) => !item.decision && item.reviewStatus !== "queued");
+        const all = Object.values(this.state.items).filter(
+            (item) =>
+                isReadyForApproval(item.labels ?? []) &&
+                !item.decision &&
+                item.reviewStatus !== "queued",
+        );
         if (numbers?.length) {
             const wanted = new Set(numbers.map(Number));
             return all.filter((item) => wanted.has(item.number));

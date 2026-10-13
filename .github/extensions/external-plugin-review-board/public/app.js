@@ -151,7 +151,13 @@ function findItem(number) {
 
 function pendingReviewCount() {
     return board
-        ? board.items.filter((item) => !item.decision && item.reviewStatus !== "reviewed" && item.reviewStatus !== "queued").length
+        ? board.items.filter(
+              (item) =>
+                  item.reviewEligible &&
+                  !item.decision &&
+                  item.reviewStatus !== "reviewed" &&
+                  item.reviewStatus !== "queued",
+          ).length
         : 0;
 }
 
@@ -314,7 +320,7 @@ function renderDrawer() {
         .map((column) => h("option", { value: column.id, selected: column.id === item.column }, column.title));
     ui.drawerMove.replaceChildren(...options);
     ui.drawerMove.disabled = Boolean(item.decision);
-    ui.drawerRereview.disabled = Boolean(item.decision) || item.reviewStatus === "queued";
+    ui.drawerRereview.disabled = !item.reviewEligible || Boolean(item.decision) || item.reviewStatus === "queued";
     if (ui.drawerRereview.disabled) hideRereview();
 
     for (const tab of ui.tabs) {

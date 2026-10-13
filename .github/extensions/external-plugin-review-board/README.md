@@ -22,7 +22,7 @@ Open it by asking Copilot to "open the plugin review board" (canvas id `external
   first-party fast-track are unavailable until intake is ready.
 - **First-party fast-track**: cards labelled `first party` (repository owned by a Microsoft/GitHub
   organization) skip AI review and go straight to *Accept* with a suggested `/approve`. Only submissions
-  that passed automated intake reach the board, so hard validation failures are still held back by intake.
+  that passed automated intake can use fast-track or be approved; pending submissions remain visible on the board.
   Fast-track never overrides an existing review or a bucket you chose; drag a card to *Unreviewed* to opt it
   out and have it reviewed normally. Cards show *First party* / *Third party* pills from the intake labels.
 - **Details panel** shows the AI review, the rendered issue body, and all comments.

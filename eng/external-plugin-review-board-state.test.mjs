@@ -73,6 +73,49 @@ test("approval requires ready status and no pending intake label", () => {
   assert.equal(isReadyForApproval(["external-plugin", "rejected"]), false);
 });
 
+test("pending intake cards stay visible but become review-eligible only when ready", () => {
+  const store = new BoardStore("unused", "github/awesome-copilot");
+  const existingReview = { recommendation: "needs-review", rationale: "Keep this review." };
+  const queuedReview = { recommendation: "accept", rationale: "Keep the queued card's prior review." };
+  store.state.items = {
+    1: { number: 1, labels: ["external-plugin", "awaiting-review"], reviewStatus: "unreviewed" },
+    2: {
+      number: 2,
+      labels: ["external-plugin", "requires-submitter-fixes"],
+      reviewStatus: "reviewed",
+      review: existingReview,
+    },
+    3: { number: 3, labels: ["external-plugin", "ready-for-review"], reviewStatus: "unreviewed" },
+    4: {
+      number: 4,
+      labels: ["external-plugin", "awaiting-review"],
+      reviewStatus: "queued",
+      review: queuedReview,
+      queueId: "queued-review",
+    },
+  };
+
+  const pendingSnapshot = store.snapshot();
+  assert.deepEqual(pendingSnapshot.items.map((item) => item.number), [4, 3, 2, 1]);
+  assert.deepEqual(
+    pendingSnapshot.items.filter((item) => item.reviewEligible).map((item) => item.number),
+    [3],
+  );
+  assert.deepEqual(store.pendingReview().map((item) => item.number), [3]);
+  assert.deepEqual(store.pendingReview([1, 2, 3, 4]).map((item) => item.number), [3]);
+
+  store.getItem(1).labels = ["external-plugin", "ready-for-review"];
+  store.getItem(2).labels = ["external-plugin", "ready-for-review"];
+  store.getItem(4).labels = ["external-plugin", "ready-for-review"];
+
+  assert.deepEqual(store.pendingReview().map((item) => item.number), [1, 3]);
+  assert.equal(store.getItem(2).review, existingReview);
+  assert.equal(store.getItem(2).reviewStatus, "reviewed");
+  assert.equal(store.getItem(4).review, queuedReview);
+  assert.equal(store.getItem(4).reviewStatus, "queued");
+  assert.equal(store.getItem(4).queueId, "queued-review");
+});
+
 test("first-party submissions are not fast-tracked without a ready-for-review label", async (t) => {
   const store = await createStore(t);
   const pendingIssue = issue(1, ["first party"]);
