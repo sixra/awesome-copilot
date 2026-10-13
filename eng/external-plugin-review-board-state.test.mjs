@@ -46,6 +46,47 @@ test("fast-track applies when an existing card gains the first party label", asy
   assert.equal(effectiveColumn(store.getItem(1)), "accept");
 });
 
+test("removing the first-party label clears the synthetic fast-track", async (t) => {
+  const store = await createStore(t);
+  await store.syncIssues([issue(1, ["first party"])]);
+
+  await store.syncIssues([issue(1, ["third party"])]);
+
+  const item = store.getItem(1);
+  assert.equal(item.review, null);
+  assert.equal(item.reviewStatus, "unreviewed");
+  assert.equal(effectiveColumn(item), "unreviewed");
+  assert.deepEqual(store.pendingReview().map((pending) => pending.number), [1]);
+});
+
+test("removing the first-party label preserves decisions, manual buckets, and queued re-reviews", async (t) => {
+  const store = await createStore(t);
+  await store.syncIssues([
+    issue(1, ["first party"]),
+    issue(2, ["first party"]),
+    issue(3, ["first party"]),
+  ]);
+  await store.recordDecision(1, { kind: "approve", at: new Date().toISOString() });
+  await store.moveItem(2, "probably-reject");
+  await store.markQueued([3], { rereviewGuidance: "Re-check the submission." });
+  const queued = store.getItem(3);
+  const queueId = queued.queueId;
+  const queuedReview = queued.review;
+
+  await store.syncIssues([issue(1, ["third party"]), issue(2, ["third party"]), issue(3, ["third party"])]);
+
+  assert.equal(store.getItem(1).review, null);
+  assert.equal(store.getItem(1).decision.kind, "approve");
+  assert.equal(effectiveColumn(store.getItem(1)), "actioned");
+  assert.equal(store.getItem(2).review, null);
+  assert.equal(store.getItem(2).manualColumn, "probably-reject");
+  assert.equal(effectiveColumn(store.getItem(2)), "probably-reject");
+  assert.equal(store.getItem(3).reviewStatus, "queued");
+  assert.equal(store.getItem(3).queueId, queueId);
+  assert.equal(store.getItem(3).rereviewGuidance, "Re-check the submission.");
+  assert.deepEqual(store.getItem(3).review, queuedReview);
+});
+
 test("fast-track does not override an existing review or manual bucket", async (t) => {
   const store = await createStore(t);
   await store.syncIssues([issue(1), issue(2)]);

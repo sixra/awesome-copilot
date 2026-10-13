@@ -43,6 +43,14 @@ function applyFirstPartyFastTrack(item) {
     return true;
 }
 
+function clearFirstPartyFastTrack(item) {
+    if (item.labels?.includes(FIRST_PARTY_LABEL) || !item.review?.fastTracked || item.reviewStatus === "queued") {
+        return;
+    }
+    item.review = null;
+    if (!item.decision && !item.manualColumn) item.reviewStatus = "unreviewed";
+}
+
 function newQueueId() {
     return randomBytes(6).toString("base64url");
 }
@@ -151,7 +159,9 @@ export class BoardStore {
                 };
                 added.push(issue.number);
             }
-            if (applyFirstPartyFastTrack(this.state.items[key])) fastTracked.push(issue.number);
+            const item = this.state.items[key];
+            if (applyFirstPartyFastTrack(item)) fastTracked.push(issue.number);
+            else clearFirstPartyFastTrack(item);
         }
         for (const key of Object.keys(this.state.items)) {
             if (!incoming.has(key)) {
