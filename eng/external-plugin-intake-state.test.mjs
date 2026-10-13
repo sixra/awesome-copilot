@@ -35,6 +35,30 @@ function mockGitHub(currentLabels) {
   };
 }
 
+test("a fresh intake evaluation clears the manual override label", async () => {
+  const github = mockGitHub([
+    "external-plugin",
+    "ready-for-review",
+    "first party",
+    "intake-manually-overridden",
+  ]);
+
+  await applyExternalPluginIntakeEvaluation({
+    github,
+    owner: "github",
+    repo: "awesome-copilot",
+    issueNumber: 1,
+    evaluation: {
+      intakeState: "ready-for-review",
+      reviewSignals: { repository: { ownershipLabel: "first party" } },
+      commentMarker: "<!-- external-plugin-intake -->",
+      commentBody: "Intake result",
+    },
+  });
+
+  assert.deepEqual(github.labels, new Set(["external-plugin", "ready-for-review", "first party"]));
+});
+
 for (const state of ["ready-for-review", "requires-submitter-fixes", "awaiting-review", "rejected"]) {
   for (const ownershipLabel of ["first party", "third party", null, undefined]) {
     test(`intake syncs ${ownershipLabel ?? "no ownership label"} in ${state} state`, async () => {

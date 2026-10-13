@@ -412,7 +412,7 @@ function renderDrawer() {
 
     ui.drawerFooter.hidden = Boolean(item.decision);
     updatePreview();
-    ui.approve.disabled = bulkBusy || Boolean(item.pendingDecision);
+    ui.approve.disabled = bulkBusy || !item.reviewEligible || Boolean(item.pendingDecision);
     ui.reject.disabled ||= bulkBusy || Boolean(item.pendingDecision);
     renderTab(item);
 }
@@ -584,6 +584,7 @@ function resetConfirm() {
         ui.approve.disabled = true;
         ui.reject.disabled = true;
     }
+    if (!item?.reviewEligible) ui.approve.disabled = true;
 }
 
 async function decide(kind) {

@@ -27,6 +27,10 @@ export const EXTERNAL_PLUGIN_INTAKE_LABELS = Object.freeze({
     color: "D93F0B",
     description: "Submission has quality-gate findings that submitter must fix before maintainer review",
   },
+  "intake-manually-overridden": {
+    color: "BFD4F2",
+    description: "Submission was manually moved to review without passing automated intake gates",
+  },
   approved: {
     color: "1D76DB",
     description: "Submission was approved by a maintainer",
@@ -43,6 +47,7 @@ const EXTERNAL_PLUGIN_INTAKE_SYNC_LABELS = Object.freeze([
   "awaiting-review",
   "ready-for-review",
   "requires-submitter-fixes",
+  "intake-manually-overridden",
   "rejected",
 ]);
 

@@ -63,6 +63,36 @@ test("first-party submissions are not fast-tracked in other pending intake state
   assert.equal(effectiveColumn(item), "unreviewed");
 });
 
+test("manually overridden first-party submissions are never fast-tracked", async (t) => {
+  const store = await createStore(t);
+  const overriddenIssue = issue(1, ["first party", "intake-manually-overridden"]);
+  await store.syncIssues([overriddenIssue]);
+
+  const item = store.getItem(1);
+  assert.equal(item.review, null);
+  assert.equal(item.reviewStatus, "unreviewed");
+  assert.equal(effectiveColumn(item), "unreviewed");
+
+  await store.syncIssues([issue(1, ["first party", "intake-manually-overridden"])]);
+  assert.equal(store.getItem(1).review, null);
+
+  const validationPassed = await store.syncIssues([issue(1, ["first party"])]);
+  assert.deepEqual(validationPassed.fastTracked, [1]);
+  assert.equal(store.getItem(1).review.fastTracked, true);
+});
+
+test("a manual override clears an existing synthetic first-party fast-track", async (t) => {
+  const store = await createStore(t);
+  await store.syncIssues([issue(1, ["first party"])]);
+
+  const result = await store.syncIssues([issue(1, ["first party", "intake-manually-overridden"])]);
+
+  assert.deepEqual(result.fastTracked, []);
+  assert.equal(store.getItem(1).review, null);
+  assert.equal(store.getItem(1).reviewStatus, "unreviewed");
+  assert.equal(effectiveColumn(store.getItem(1)), "unreviewed");
+});
+
 test("approval requires ready status and no pending intake label", () => {
   assert.equal(isReadyForApproval(["external-plugin", "ready-for-review"]), true);
   assert.equal(isReadyForApproval(["external-plugin", "ready-for-review", "awaiting-review"]), false);

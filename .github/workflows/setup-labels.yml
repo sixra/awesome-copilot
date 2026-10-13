@@ -81,6 +81,10 @@ jobs:
                 color: 'D93F0B',
                 description: 'Submission has quality-gate findings that submitter must fix before maintainer review'
               },
+              'intake-manually-overridden': {
+                color: 'BFD4F2',
+                description: 'Submission was manually moved to review without passing automated intake gates'
+              },
               'approved': {
                 color: '1D76DB',
                 description: 'Submission was approved by a maintainer'

@@ -16,6 +16,7 @@ export const COLUMNS = [
 
 const HISTORY_LIMIT = 200;
 export const FIRST_PARTY_LABEL = "first party";
+const MANUAL_INTAKE_OVERRIDE_LABEL = "intake-manually-overridden";
 const PENDING_INTAKE_LABELS = ["awaiting-review", "requires-submitter-fixes"];
 
 export function isReadyForApproval(labels) {
@@ -30,6 +31,7 @@ function applyFirstPartyFastTrack(item) {
         !item.labels?.includes(FIRST_PARTY_LABEL) ||
         !item.labels?.includes("ready-for-review") ||
         item.labels?.some((label) => PENDING_INTAKE_LABELS.includes(label)) ||
+        item.labels?.includes(MANUAL_INTAKE_OVERRIDE_LABEL) ||
         item.fastTrackDismissed ||
         item.decision ||
         item.review ||
@@ -54,6 +56,7 @@ function clearFirstPartyFastTrack(item) {
     if (
         (item.labels?.includes(FIRST_PARTY_LABEL) &&
             item.labels?.includes("ready-for-review") &&
+            !item.labels?.includes(MANUAL_INTAKE_OVERRIDE_LABEL) &&
             !item.labels?.some((label) => PENDING_INTAKE_LABELS.includes(label))) ||
         !item.review?.fastTracked ||
         item.reviewStatus === "queued"
