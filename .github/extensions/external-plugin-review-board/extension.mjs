@@ -6,7 +6,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
-import { BoardStore, RECOMMENDATIONS } from "./lib/state.mjs";
+import { BoardStore, isReadyForApproval, RECOMMENDATIONS } from "./lib/state.mjs";
 import * as gh from "./lib/github.mjs";
 import { buildReviewPrompt, buildRereviewPrompt, REVIEW_FIELDS_SCHEMA } from "./lib/review-prompt.mjs";
 import { startBoardServer, expectedError } from "./lib/server.mjs";
@@ -49,7 +49,7 @@ async function refresh() {
     refreshInFlight ??= (async () => {
         try {
             await resolvePendingDecisions();
-            const issues = await gh.listReadyIssues(store.state.repo);
+            const issues = await gh.listBoardIssues(store.state.repo);
             detailCache.clear();
             return await store.syncIssues(issues);
         } finally {
@@ -134,10 +134,7 @@ async function postDecision({ number, kind, comment }) {
 
     const status = await gh.getIssueStatus(store.state.repo, number);
     if (status.state !== "OPEN") throw new Error(`#${number} is ${status.state.toLowerCase()}. Refresh the board.`);
-    if (
-        kind === "approve" &&
-        (!status.labels.includes("ready-for-review") || status.labels.includes("awaiting-review"))
-    ) {
+    if (kind === "approve" && !isReadyForApproval(status.labels)) {
         throw new Error(`#${number} is pending intake or is no longer ready-for-review, so /approve would be ignored.`);
     }
 
@@ -241,7 +238,7 @@ session = await joinSession({
                 },
                 {
                     name: "refresh",
-                    description: "Fetch open ready-for-review external plugin issues; adds new ones and removes closed ones.",
+                    description: "Fetch open external plugin submissions in active intake states; adds new ones and removes inactive ones.",
                     handler: wrap(() => refresh()),
                 },
                 {

@@ -1,7 +1,7 @@
 # External Plugin Review Board
 
-A maintainer-only Copilot canvas extension for triaging `external-plugin` submissions that are
-`ready-for-review` in github/awesome-copilot.
+A maintainer-only Copilot canvas extension for triaging active `external-plugin` submissions in
+github/awesome-copilot.
 
 Open it by asking Copilot to "open the plugin review board" (canvas id `external-plugin-review-board`).
 
@@ -16,8 +16,10 @@ Open it by asking Copilot to "open the plugin review board" (canvas id `external
 - **Re-review** (in the details panel) takes optional guidance on what to focus on, then has the agent
   spin up a separate sub-session to re-assess that one submission. The sub-session reports its result
   back and it's recorded on the card along with your guidance.
-- **Refresh** fetches open `external-plugin` + `ready-for-review` issues, adds new ones, and removes any
-  that are closed or no longer ready for review.
+- **Refresh** fetches open `external-plugin` issues in `ready-for-review`, `awaiting-review`, or
+  `requires-submitter-fixes` states. Pending intake cards stay on the board so their AI reviews,
+  manual buckets, queued re-reviews, and fast-track dismissal state are preserved. Approval and
+  first-party fast-track are unavailable until intake is ready.
 - **First-party fast-track**: cards labelled `first party` (repository owned by a Microsoft/GitHub
   organization) skip AI review and go straight to *Accept* with a suggested `/approve`. Only submissions
   that passed automated intake reach the board, so hard validation failures are still held back by intake.

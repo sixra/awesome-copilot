@@ -100,5 +100,5 @@ test("marking intake pending removes stale state labels but preserves ownership,
   const pendingAddition = github.operations.findIndex(
     ([action, labels]) => action === "add" && labels.includes("awaiting-review"),
   );
-  assert.ok(readyRemoval >= 0 && pendingAddition > readyRemoval);
+  assert.ok(pendingAddition >= 0 && readyRemoval > pendingAddition);
 });

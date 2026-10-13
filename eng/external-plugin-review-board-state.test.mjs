@@ -4,7 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { BoardStore, effectiveColumn } from "../.github/extensions/external-plugin-review-board/lib/state.mjs";
+import {
+  BoardStore,
+  effectiveColumn,
+  isReadyForApproval,
+} from "../.github/extensions/external-plugin-review-board/lib/state.mjs";
 
 function issue(number, labels = []) {
   return {
@@ -46,6 +50,27 @@ test("first-party submissions are not fast-tracked while intake is pending", asy
   assert.equal(item.review, null);
   assert.equal(item.reviewStatus, "unreviewed");
   assert.equal(effectiveColumn(item), "unreviewed");
+});
+
+test("first-party submissions are not fast-tracked in other pending intake states", async (t) => {
+  const store = await createStore(t);
+  const pendingIssue = issue(1, ["first party", "requires-submitter-fixes"]);
+  await store.syncIssues([pendingIssue]);
+
+  const item = store.getItem(1);
+  assert.equal(item.review, null);
+  assert.equal(item.reviewStatus, "unreviewed");
+  assert.equal(effectiveColumn(item), "unreviewed");
+});
+
+test("approval requires ready status and no pending intake label", () => {
+  assert.equal(isReadyForApproval(["external-plugin", "ready-for-review"]), true);
+  assert.equal(isReadyForApproval(["external-plugin", "ready-for-review", "awaiting-review"]), false);
+  assert.equal(
+    isReadyForApproval(["external-plugin", "ready-for-review", "requires-submitter-fixes"]),
+    false,
+  );
+  assert.equal(isReadyForApproval(["external-plugin", "rejected"]), false);
 });
 
 test("first-party submissions are not fast-tracked without a ready-for-review label", async (t) => {
@@ -122,6 +147,50 @@ test("removing the first-party label preserves decisions, manual buckets, and qu
   assert.equal(store.getItem(3).queueId, queueId);
   assert.equal(store.getItem(3).rereviewGuidance, "Re-check the submission.");
   assert.deepEqual(store.getItem(3).review, queuedReview);
+});
+
+test("pending intake refreshes preserve review, manual, queued, and fast-track dismissal state", async (t) => {
+  const store = await createStore(t);
+  await store.syncIssues([
+    issue(1),
+    issue(2),
+    issue(3),
+    issue(4, ["first party"]),
+  ]);
+
+  const aiReview = { recommendation: "needs-review", rationale: "Keep this review." };
+  store.getItem(1).review = aiReview;
+  store.getItem(1).reviewStatus = "reviewed";
+  await store.moveItem(2, "probably-reject");
+  await store.markQueued([3], { rereviewGuidance: "Re-check this submission." });
+  await store.moveItem(4, "unreviewed");
+
+  await store.syncIssues([
+    issue(1, ["awaiting-review"]),
+    issue(2, ["requires-submitter-fixes"]),
+    issue(3, ["awaiting-review"]),
+    issue(4, ["first party", "requires-submitter-fixes"]),
+  ]);
+
+  assert.deepEqual(store.getItem(1).review, aiReview);
+  assert.equal(store.getItem(2).manualColumn, "probably-reject");
+  assert.equal(store.getItem(3).reviewStatus, "queued");
+  assert.equal(store.getItem(3).rereviewGuidance, "Re-check this submission.");
+  assert.equal(store.getItem(4).fastTrackDismissed, true);
+
+  const result = await store.syncIssues([
+    issue(1),
+    issue(2),
+    issue(3),
+    issue(4, ["first party"]),
+  ]);
+
+  assert.deepEqual(result.fastTracked, []);
+  assert.deepEqual(store.getItem(1).review, aiReview);
+  assert.equal(store.getItem(2).manualColumn, "probably-reject");
+  assert.equal(store.getItem(3).reviewStatus, "queued");
+  assert.equal(store.getItem(4).fastTrackDismissed, true);
+  assert.equal(store.getItem(4).review, null);
 });
 
 test("fast-track does not override an existing review or manual bucket", async (t) => {
