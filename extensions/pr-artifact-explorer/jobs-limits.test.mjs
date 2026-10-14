@@ -11,6 +11,14 @@ async function policy() {
   return { dir, policy: new LimitPolicy(join(dir, "limits.json")) };
 }
 
+async function cleanup(dir, p) {
+  try {
+    await p.flush();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 test("crossing a soft limit prompts but never stops the job", async () => {
@@ -32,7 +40,7 @@ test("crossing a soft limit prompts but never stops the job", async () => {
     release();
     assert.equal(await job.promise, "done");
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await cleanup(dir, p);
   }
 });
 
@@ -63,7 +71,7 @@ test("submitted limits are checked against live progress atomically", async () =
     release();
     await job.promise;
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await cleanup(dir, p);
   }
 });
 
@@ -83,7 +91,7 @@ test("jobs are idempotent per key, cancellable, and retry increments the attempt
     assert.equal(retry.attempt, 2);
     assert.equal(await retry.promise, "ok");
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await cleanup(dir, p);
   }
 });
 
@@ -99,7 +107,7 @@ test("a failed job reports the error without being treated as cancelled", async 
     assert.equal(snap.status, "failed");
     assert.equal(snap.error, "boom");
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await cleanup(dir, p);
   }
 });
 
@@ -122,7 +130,7 @@ test("finished jobs are capped at completion and active jobs are never trimmed",
     release("done");
     await active.promise;
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await cleanup(dir, p);
   }
 });
 
@@ -135,6 +143,6 @@ test("limits persist across policy instances", async () => {
     await next.load();
     assert.equal(next.get("downloadBytes"), 123456789);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await cleanup(dir, p);
   }
 });
