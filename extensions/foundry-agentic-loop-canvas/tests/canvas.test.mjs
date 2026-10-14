@@ -54,6 +54,30 @@ test("setup checks all tools and requires enabled skills and valid authenticatio
     assert.match(failed.checks.find(row => row.id === "az-auth").error, /Not authenticated/);
 });
 
+test("setup recognizes plugin, user and session extension copies and flags active duplicates", async () => {
+    const azure = new Azure(async (file, args) => file === "az" && args[0] === "version" ? { "azure-cli": "2.88" } : args.includes("get-access-token") ? { expiresOn: "later" } : "Available");
+    const skills = ["foundry-agentic-loop", "microsoft-foundry"].map(name => ({ name, enabled: true, source: "plugin" }));
+    const check = (result, id) => result.checks.find(row => row.id === id);
+    const plugin = [
+        { id: "plugin:foundry-agentic-loop:foundry-agentic-loop-canvas", name: "foundry-agentic-loop:foundry-agentic-loop-canvas", source: "plugin", status: "running" },
+        { id: "plugin:foundry-agentic-loop:foundry-agentic-loop-workflow", name: "foundry-agentic-loop-workflow", source: "plugin", status: "running" },
+    ];
+    const installed = await azure.prerequisites(skills, plugin);
+    assert.equal(installed.ready, true);
+    assert.equal(check(installed, "foundry-agentic-loop-canvas").data, "Running (plugin)");
+    assert.equal(check(installed, "foundry-agentic-loop-workflow").data, "Running (plugin)");
+    const session = await azure.prerequisites(skills, [plugin[0], { id: "session:foundry-agentic-loop-workflow", name: "foundry-agentic-loop-workflow", source: "session", status: "starting" }]);
+    assert.equal(check(session, "foundry-agentic-loop-workflow").data, "Starting (session)");
+    const lookalike = await azure.prerequisites(skills, [{ id: "user:my-foundry-agentic-loop-canvas", name: "my-foundry-agentic-loop-canvas", source: "user", status: "running" }, plugin[1]]);
+    assert.match(check(lookalike, "foundry-agentic-loop-canvas").error, /^Not installed/);
+    const userCopy = { id: "user:foundry-agentic-loop-canvas", name: "foundry-agentic-loop-canvas", source: "user", status: "running" };
+    const disabledPlugin = await azure.prerequisites(skills, [{ ...plugin[0], status: "disabled" }, userCopy, plugin[1]]);
+    assert.equal(check(disabledPlugin, "foundry-agentic-loop-canvas").data, "Running (user)");
+    const duplicate = await azure.prerequisites(skills, [...plugin, userCopy]);
+    assert.equal(duplicate.ready, true);
+    assert.equal(check(duplicate, "foundry-agentic-loop-canvas").data, "Running (plugin). Duplicate copy from user: remove it, then reload");
+});
+
 test("Azure pagination is complete and refuses cross-origin continuations", async () => {
     const url = "https://management.azure.com/test?api-version=1";
     let count = 0;

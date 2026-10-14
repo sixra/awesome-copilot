@@ -8,6 +8,11 @@ const arm = "https://management.azure.com";
 const version = "2025-06-01";
 const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
 export const AZD_MINIMUM = "1.32.0";
+const EXTENSION_RANK = ["running", "starting", "failed", "disabled"];
+const extensionRank = row => {
+    const index = EXTENSION_RANK.indexOf(row.status);
+    return index < 0 ? EXTENSION_RANK.length : index;
+};
 
 const isFile = file => { try { return statSync(file).isFile(); } catch { return false; } };
 // MSVCRT quoting: double backslashes before quotes and at the end, escape quotes, wrap in quotes.
@@ -153,11 +158,16 @@ export class Azure {
         const extension = name => ({
             id: name, label: `${name} extension`, ...(() => {
                 if (!extensions) return { status: "error", error: "Extension discovery is unavailable in this runtime." };
-                const found = extensions.find(row => row.name === name);
+                // IDs are source-qualified (user:<name>, plugin:<plugin>:<name>) and plugin names may carry the plugin prefix, so compare the last segment.
+                const copies = extensions.filter(row => [row.id, row.name].some(value => String(value ?? "").split(":").pop() === name))
+                    .sort((a, b) => extensionRank(a) - extensionRank(b));
+                const [found] = copies;
                 if (!found) return { status: "error", error: "Not installed. Install the foundry-agentic-loop plugin, or install_extension it, then reload." };
                 if (found.status === "disabled") return { status: "error", error: `Disabled (${found.source}). Re-enable it, then continue in a new session: running sessions keep it disabled.` };
                 if (found.status === "failed") return { status: "error", error: `Failed (${found.source}). Check its log, reinstall it if needed, then reload.` };
-                return { status: "ready", data: `${found.status === "starting" ? "Starting" : "Running"} (${found.source})` };
+                // Two active copies register the same canvas and tool names, so open_canvas and tool calls become ambiguous.
+                const duplicates = copies.slice(1).filter(row => extensionRank(row) < 2).map(row => row.source);
+                return { status: "ready", data: `${found.status === "starting" ? "Starting" : "Running"} (${found.source})${duplicates.length ? `. Duplicate copy from ${duplicates.join(", ")}: remove it, then reload` : ""}` };
             })(),
         });
         const checks = await Promise.all([
