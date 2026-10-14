@@ -58,5 +58,5 @@ public class Words {
 - Annotate `@Incoming` methods that do blocking work (JDBC, Panache) with `@Blocking`; otherwise they run on the event loop.
 - Acknowledgement: payload methods are auto-acked on return; use `Message<T>` and `msg.ack()`/`nack()` for control. Add a dead-letter/failure strategy (`failure-strategy=dead-letter-queue`) for production.
 - Different channel names mapped to the same `topic` go through Kafka (verified round trip). The same channel name used for `@Outgoing` and `@Incoming` in one app is an in-memory link and never reaches the broker.
-- Verify in tests with `Awaitility` waiting on a collected list (verified); for broker-free tests use `quarkus-test-vertx`/in-memory connector (`InMemoryConnector`, not verified here).
+- Verify in tests with `Awaitility` waiting on a collected list (verified); for broker-free tests add the test dependency `io.smallrye.reactive:smallrye-reactive-messaging-in-memory` and switch channels with `InMemoryConnector` (see the Quarkus Kafka/messaging guides; not verified here).
 - AMQP: `quarkus-messaging-amqp` (`mp.messaging.*.connector=smallrye-amqp`); the AMQP Dev Service starts an ActiveMQ Artemis broker. Not verified here.
