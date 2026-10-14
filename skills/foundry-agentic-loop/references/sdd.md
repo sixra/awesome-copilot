@@ -31,7 +31,7 @@ Phases reconcile existing artifacts instead of starting over, so reruns are safe
    | `skipDeploy` | Stop after Verify |
 
    Pass `limits` only when the user sets them.
-6. Report the run ID and the checkpoints ahead. The run continues in the background, posting phase and gate lines in Chat; the Agentic Loop canvas Workflow tab shows live agents. No input is needed until a checkpoint. Do not poll; the run notifies when it pauses or ends.
+6. Report the run ID and the checkpoints ahead. The run continues in the background, posting phase and gate lines in Chat; the Agentic Loop canvas Build tab shows live agents. No input is needed until a checkpoint. Do not poll; the run notifies when it pauses or ends.
 
 ## Checkpoints and recovery
 
@@ -46,7 +46,7 @@ A pause posts a `Needs you:` line. Answer it in one message: what paused and why
 | `blocked-<phase>-r<n>` | A gate failed after its fix rounds, a subagent ended twice without a report (usually a provider error), or a decision is needed (permissions, quota, cost, security) | List every issue from that phase and round in the flight record's `phases`, not just the first from the log. Fix and verify each root cause in the artifacts, record the evidence and `docs/loop-sri.md` lessons. Resuming starts round n+1, which continues from the current state; its review first confirms these issues are resolved. |
 
 - Resume with `run_dynamic_workflow` and `resumeFromRunId` only when the user asks. When a canvas prompt says "Do not resume the run", don't: the canvas resumes it.
-- **Liveness.** Workflow subagents don't appear in `list_agents` or `read_agent`, and one Implement step can run for over an hour without a record change. The canvas Workflow tab shows live subagent activity. Never cancel, pause or restart a run to unstick it; only the user decides that.
+- **Liveness.** Workflow subagents don't appear in `list_agents` or `read_agent`, and one Implement step can run for over an hour without a record change. The canvas Build tab shows live subagent activity. Never cancel, pause or restart a run to unstick it; only the user decides that.
 - **Provider errors.** A subagent that ends without a report is retried once with instructions to continue from the current state; a second miss blocks the phase, except for a workstream worker, which integration finishes. Check the session log, then resume.
 - **Effort.** Subagents inherit the session's model and reasoning effort. Prefer medium or high: maximum effort multiplies step time.
 - A run that ends in `error` with `workflow_limit_reached` resumes with only that limit raised, after approval. For other errors, read the run with `dynamic_workflows_manage` (`inspect-run`), fix the cause and start a new run.

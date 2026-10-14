@@ -110,7 +110,24 @@ main { flex: 1 0 auto; width: 100%; max-width: 1120px; margin: 0 auto; padding: 
 .warning { color: var(--warning); background: color-mix(in srgb, var(--warning) 8%, var(--bg)); border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border)); border-radius: 6px; padding: 12px; margin: 14px 0; }
 .command { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); overflow-x: auto; font-size: 12.5px; }
 
-/* Setup */
+/* Start: steps and readiness */
+.step { margin: 0 0 12px; border: 1px solid var(--border); border-radius: 8px; scroll-margin-top: 104px; }
+.step > summary { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; list-style: none; border-radius: 7px; }
+.step > summary::-webkit-details-marker { display: none; }
+.step > summary:hover { background: var(--surface); }
+.step[open] > summary { border-bottom: 1px solid var(--border); border-radius: 7px 7px 0 0; }
+.step-glyph { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; border: 1.5px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 700; line-height: 1; }
+.step-glyph[data-state="ready"] { border-color: var(--success); background: var(--success); color: var(--bg); }
+.step-glyph[data-state="attention"] { border-color: var(--warning); background: var(--warning); color: var(--bg); }
+.step-glyph[data-state="checking"] { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); color: var(--accent); }
+.step-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; flex: 1; min-width: 0; }
+.step-title { font-size: 15px; font-weight: 650; }
+.step-summary { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--muted); }
+.step-chevron { width: 14px; height: 14px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); transition: transform 200ms var(--ease); }
+.step[open] > summary .step-chevron { transform: rotate(90deg); }
+.step-body { padding: 4px 14px 14px; }
+.step-body > :last-child { margin-bottom: 0; }
+.step-head { display: flex; align-items: center; gap: 12px; margin: 28px 0 14px; padding: 0 15px; scroll-margin-top: 104px; }
 .skeleton { display: grid; gap: 10px; padding: 16px 0; }
 .skeleton span { display: block; height: 46px; border-radius: 6px; background: var(--surface); }
 .skeleton span:nth-child(2) { width: 88%; }
@@ -119,15 +136,24 @@ main { flex: 1 0 auto; width: 100%; max-width: 1120px; margin: 0 auto; padding: 
 .check strong { font-weight: 600; }
 .check p { margin: 2px 0 0; overflow-wrap: anywhere; }
 .setup-group { margin-top: 16px; border: 1px solid var(--border); border-radius: 8px; }
-.setup-group summary { padding: 12px; cursor: pointer; font-weight: 600; border-radius: 7px; }
-.setup-group summary:hover { background: var(--surface); }
-.setup-group summary .muted { display: block; margin: 4px 0 0 20px; font-weight: 400; }
+.setup-group > summary { display: flex; align-items: flex-start; gap: 8px; padding: 12px; cursor: pointer; font-weight: 600; border-radius: 7px; list-style: none; }
+.setup-group > summary::-webkit-details-marker { display: none; }
+.setup-group > summary:hover { background: var(--surface); }
+.setup-group .group-label { flex: 1; min-width: 0; }
+.setup-group summary .muted { display: block; margin: 4px 0 0; font-weight: 400; }
+.setup-group > summary .step-chevron { margin-top: 3px; }
+.setup-group[open] > summary .step-chevron { transform: rotate(90deg); }
 .setup-group-checks { padding: 0 12px; border-top: 1px solid var(--border); }
 .setup-group .check:last-child { border-bottom: 0; }
+/* Inside a step the readiness groups are full-bleed rows, not nested cards. */
+.step .setup-group { margin: 0 -14px; border: 0; border-radius: 0; }
+.step .setup-group + .setup-group { border-top: 1px solid var(--border); }
+.step .setup-group > summary { padding: 12px 14px; border-radius: 0; }
+.step .setup-group-checks { padding: 0 14px; border-top: 0; }
 .status-ok { color: var(--success); }
 .status-warn { color: var(--warning); }
 
-/* Resources */
+/* Start: Foundry project */
 .choice { display: flex; gap: 16px; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--border); }
 .choice div { flex: 1; }
 .choice button { flex-shrink: 0; }
@@ -139,13 +165,19 @@ main { flex: 1 0 auto; width: 100%; max-width: 1120px; margin: 0 auto; padding: 
 .context { padding: 16px 0; }
 .context strong { display: block; overflow-wrap: anywhere; }
 
-/* Build */
+/* Start: deployment target, Work IQ and brief */
 .target { margin: 0 0 20px; padding: 12px 16px 14px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
 .target legend { padding: 0 6px; font-size: 13px; font-weight: 650; }
 .target-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 12px; }
 .target-grid label { margin-top: 4px; }
 #target-help { margin: 10px 0 0; font-size: 12px; }
 #target-help.error { color: var(--error); }
+.step .target { margin: 0; padding: 0; border: 0; }
+.workiq { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 4px 10px; margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; }
+.workiq input { width: 18px; height: 18px; margin: 2px 0 0; padding: 0; accent-color: var(--accent); cursor: pointer; }
+.workiq label { margin: 0; cursor: pointer; }
+.workiq p { margin: 2px 0 0; }
+.workiq button { align-self: center; }
 .guided { background: var(--surface); padding: 18px; border-radius: 8px; display: flex; gap: 16px; align-items: center; justify-content: space-between; }
 .guided p { color: var(--muted); margin-bottom: 0; font-size: 13px; }
 .guided-actions { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
@@ -164,7 +196,7 @@ main { flex: 1 0 auto; width: 100%; max-width: 1120px; margin: 0 auto; padding: 
 #prompt-review { margin: 24px 0; border-top: 1px solid var(--border); padding-top: 18px; }
 #cancel-prompt { min-height: 44px; padding: 10px 16px; color: var(--accent); border-color: var(--accent); background: var(--surface); font-weight: 600; }
 #cancel-prompt:hover { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
-/* Workflow */
+/* Build: rapid milestones and SDD workflow phases */
 .picker { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .picker label { margin: 0; font-size: 12px; color: var(--muted); font-weight: 600; }
 .picker select { flex: 1; width: auto; min-width: 0; padding: 6px 8px; font-size: 12px; }
@@ -236,7 +268,11 @@ main { flex: 1 0 auto; width: 100%; max-width: 1120px; margin: 0 auto; padding: 
 .agent:is([data-status="failed"], [data-status="error"]) .dot { background: var(--error); }
 .agent.more { color: var(--muted); }
 .artifacts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-[data-artifact] { min-height: 30px; padding: 3px 10px; font: 12px var(--mono); }
+[data-artifact], .artifacts [data-frontend] { min-height: 30px; padding: 3px 10px; font: 12px var(--mono); }
+.artifacts [data-frontend] { max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+#rapid-commands .section-heading { margin-top: 24px; }
+#build-commands-hint { margin-top: 18px; }
+#build-commands-hint code { padding: 1px 5px; border-radius: 4px; background: var(--surface); font-size: 12px; }
 .callout [data-artifact] { font: inherit; font-size: 13px; min-height: 36px; padding: 8px 12px; }
 .log-box { border: 1px solid var(--border); border-radius: 8px; }
 .log-box summary { padding: 10px 12px; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 7px; }
@@ -340,7 +376,7 @@ body.is-busy .dock { display: block; }
 @media (prefers-reduced-motion: no-preference) {
     body.is-busy .loop-flow { animation: loop-flow 1.8s linear infinite; }
     .phase[data-view="active"] .phase-icon::after { animation: spin 1s linear infinite; }
-    .pill[data-tone="accent"]::before, .callout[data-tone="accent"] h3::before, .agent:is([data-status="running"], [data-status="active"]) .dot, .mark[data-tone="accent"] { animation: pulse 1.6s ease-in-out infinite; }
+    .pill[data-tone="accent"]::before, .callout[data-tone="accent"] h3::before, .agent:is([data-status="running"], [data-status="active"]) .dot, .mark[data-tone="accent"], .step-glyph[data-state="checking"] { animation: pulse 1.6s ease-in-out infinite; }
     .skeleton span { animation: pulse 1.4s ease-in-out infinite; }
     .skeleton span:nth-child(2) { animation-delay: .15s; }
     .skeleton span:nth-child(3) { animation-delay: .3s; }
@@ -357,6 +393,8 @@ body.is-busy .dock { display: block; }
 @media (max-width: 560px) {
     .target-grid { grid-template-columns: 1fr; }
     .guided { flex-direction: column; align-items: flex-start; }
+    .workiq { grid-template-columns: auto minmax(0, 1fr); }
+    .workiq button { grid-column: 2; justify-self: start; }
     #how { width: 36px; padding: 0; justify-content: center; }
     #how .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .scenarios { grid-template-columns: 1fr; gap: 0; }
@@ -374,6 +412,12 @@ body.is-busy .dock { display: block; }
     nav { padding: 0 4px; }
     nav button { padding: 12px 5px; font-size: 12px; }
     .filters { grid-template-columns: 1fr; gap: 0; }
+    .step > summary { gap: 10px; padding: 12px; }
+    .step-body { padding: 4px 12px 12px; }
+    .step .setup-group { margin: 0 -12px; }
+    .step .setup-group > summary { padding: 12px; }
+    .step .setup-group-checks { padding: 0 12px; }
+    .step-head { padding: 0 13px; }
     .mode button { min-height: 48px; padding: 6px 10px; }
     .dock-bar { padding-left: 14px; }
     .dock-card { padding: 2px 14px 12px; }

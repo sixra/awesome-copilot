@@ -16,7 +16,7 @@ function setMark(id, text, label = "", tone = "") {
     else { mark.removeAttribute("role"); mark.removeAttribute("aria-label"); }
 }
 
-const TABS = { rapid: ["setup", "resources", "build", "explore", "optimize"], sdd: ["setup", "build", "workflow", "explore", "optimize"] };
+const TABS = ["start", "build", "explore", "optimize"];
 const PHASES = ["Specify", "Implement", "Verify", "Deploy"];
 const LESSONS = "docs/loop-sri.md";
 const PHASE_COPY = {
@@ -41,29 +41,32 @@ const LOCK_HINT = {
     sdd: "Locked by AGENTS.md. To switch modes, ask Copilot in Chat.",
 };
 const LOCK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
-const BUILD = {
+const START = {
     rapid: {
         title: "Start with an outcome",
-        intro: "Describe what you need or pick an industry scenario. Copilot builds a working agentic solution in your Foundry project.",
+        intro: "Confirm readiness, choose a Foundry project and describe the outcome. Copilot builds a working agentic solution in that project.",
         guided: "Answer a few focused questions about agents, data, tools and the user experience.",
         send: "Send to Chat",
-        hint: "Opens in Chat with your selected project. Copilot asks before creating or changing resources.",
+        hint: "Opens in Chat with your selected project. Copilot asks before creating or changing resources. Track milestones on the Build tab.",
     },
     sdd: {
         title: "Specify what to deliver",
-        intro: "Start from a brief or a scenario. The workflow writes a spec for your approval, builds it in a new Foundry project, verifies it and deploys it to Azure.",
+        intro: "Confirm readiness, set the deployment target and describe the outcome. The workflow writes a spec for your approval, builds it in a new Foundry project, verifies it and deploys it to Azure.",
         guided: "Copilot asks only the questions that shape the spec, then starts the workflow.",
         send: "Start SDD workflow",
-        hint: "Copilot runs preflight in Chat, then starts the workflow. Follow every phase on the Workflow tab.",
+        hint: "Copilot runs preflight in Chat, then starts the workflow. Follow every phase on the Build tab.",
     },
 };
+// Short commands from the Agentic Loop section of AGENTS.md; typing one in Chat runs that step.
+const COMMANDS = { rapid: ["run", "test", "add agent", "deploy", "improve"], sdd: ["status", "approve", "deploy", "improve"] };
+const TRACK = { go: "build", label: "Track progress" };
 const TARGET_HELP = "The workflow creates a resource group and a Foundry project here. Nothing deploys until you approve it.";
 
 let snapshot;
 let projects = [];
 let resourceSubscription = "";
 let selected = null;
-let activeTab = "setup";
+let activeTab = "start";
 let selectionRevision = 0;
 let discovering = false;
 let usageLoading = false;
@@ -89,6 +92,11 @@ let liveVersion = -1;
 let liveReceivedAt = Date.now();
 let knownRuns = null;
 let lastCheckpoint = null;
+let setupLoading = null;
+let setupDone = false;
+let setupReady = false;
+let workIq = null;
+let whereSelected = false;
 const regions = {};
 const collapsedInventory = new Set(["resources"]);
 const inventoryGroups = {
@@ -161,7 +169,7 @@ function failure(container, error) {
     container.innerHTML = `<p class="error">${escape(error.message)} Refresh to retry.</p>`;
 }
 
-// SDD only trusts the project the workflow wrote to FOUNDRY_PROJECT; rapid uses the Resources selection.
+// SDD only trusts the project the workflow wrote to FOUNDRY_PROJECT; rapid uses the project chosen on Start.
 function activeProject() {
     if (mode !== "sdd") return selected;
     return selected && envProjectId && selected.id.toLowerCase() === envProjectId.toLowerCase() ? selected : null;
@@ -177,11 +185,11 @@ function renderProjectBar() {
         $("project-name").textContent = selected?.name ?? "Choose a project";
     }
     for (const button of document.querySelectorAll("[data-requires-project]")) button.disabled = !project;
-    $("build-project-hint").hidden = mode !== "rapid" || Boolean(selected);
+    $("brief-project-hint").hidden = mode !== "rapid" || Boolean(selected);
     $("optimize-project-hint").hidden = Boolean(project);
     $("optimize-project-hint").textContent = mode === "sdd"
         ? "The SDD workflow creates your Foundry project during Implement. Project actions unlock once it exists."
-        : "Select a project on Resources to enable project actions.";
+        : "Select a project on Start to enable project actions.";
 }
 
 function applyMode(next, preferredTab) {
@@ -195,7 +203,13 @@ function applyMode(next, preferredTab) {
         button.tabIndex = on ? 0 : -1;
     }
     renderModeHint();
-    for (const button of document.querySelectorAll("[data-tab]")) button.hidden = !TABS[mode].includes(button.dataset.tab);
+    if (changed) {
+        whereSelected = whereReady();
+        $("step-where").open = !whereSelected;
+    }
+    $("rapid-progress").hidden = mode !== "rapid";
+    $("sdd-progress").hidden = mode !== "sdd";
+    renderStart();
     renderBuild();
     renderProjectBar();
     if (changed && started) onModeChanged(preferredTab);
@@ -221,8 +235,7 @@ function renderModeHint() {
 function onModeChanged(preferredTab) {
     loaded.delete("explore");
     loaded.delete("optimize");
-    const tab = preferredTab ?? (TABS[mode].includes(activeTab) ? null : "build");
-    if (tab) selectTab(tab).catch(error => notice(error.message, true));
+    if (preferredTab) selectTab(preferredTab).catch(error => notice(error.message, true));
     else if (["explore", "optimize"].includes(activeTab)) loadTab(activeTab).catch(error => notice(error.message, true));
     if (mode === "sdd") loadTargets();
     if (mode === "rapid" && !projects.length && !discovering && !projectSyncError) discover();
@@ -245,15 +258,116 @@ async function chooseMode(next, preferredTab) {
     }
 }
 
-function renderBuild() {
-    const copy = BUILD[mode];
-    $("build-title").textContent = copy.title;
-    $("build-intro").textContent = copy.intro;
+function renderStart() {
+    const copy = START[mode];
+    $("start-title").textContent = copy.title;
+    $("start-intro").textContent = copy.intro;
     $("guided-text").textContent = copy.guided;
     $("send-prompt").textContent = copy.send;
     $("send-hint").textContent = copy.hint;
+    $("where-rapid").hidden = mode !== "rapid";
     $("target").hidden = mode !== "sdd";
     renderTargetSummary();
+    renderWhere();
+    renderStartMark();
+}
+
+const capitalize = text => text.charAt(0).toUpperCase() + text.slice(1);
+
+function stepGlyph(id, state, text) {
+    const glyph = $(id);
+    glyph.dataset.state = state;
+    glyph.textContent = text;
+}
+
+// Collapsing a step first moves focus from its body to its summary, so keyboard focus never lands on a hidden control.
+function setStepOpen(id, open) {
+    const step = $(id);
+    if (step.open === open) return;
+    if (!open && step.querySelector(".step-body").contains(document.activeElement)) step.querySelector("summary").focus({ preventScroll: true });
+    step.open = open;
+}
+
+function whereReady() { return Boolean(mode === "sdd" ? target.subscriptionId : selected); }
+
+// Step 2 is the Foundry project in rapid mode and the deployment target in SDD. A restored choice collapses the step; one the user just picked stays in view.
+function renderWhere(picked = false) {
+    const sdd = mode === "sdd";
+    const has = whereReady();
+    $("where-title").textContent = sdd ? "Deployment target" : "Foundry project";
+    $("where-summary").textContent = sdd ? capitalize(targetSummary())
+        : selected ? `${selected.name} · ${selected.resourceGroup}` : discovering ? "Discovering projects…" : "Choose a project";
+    stepGlyph("where-glyph", has ? "ready" : "", has ? "✓" : "2");
+    if (has === whereSelected) return;
+    whereSelected = has;
+    if (!has) $("step-where").open = true;
+    else if (!picked) setStepOpen("step-where", false);
+}
+
+function renderStartMark() {
+    if (setupReady && (mode === "sdd" || selected)) setMark("start-mark", "✓", "Ready to build", "success");
+    else if (setupDone && !setupReady) setMark("start-mark", "!", "Readiness needs attention", "warning");
+    else setMark("start-mark", "");
+}
+
+function renderBuild() {
+    renderBuildMark();
+    if (mode === "rapid") renderRapidProgress();
+    const hint = $("build-commands-hint");
+    hint.hidden = lock !== mode;
+    if (!hint.hidden) hint.innerHTML = `Type a short command in Chat to run a step: ${COMMANDS[mode].map(name => `<code>${escape(name)}</code>`).join(", ")}.`;
+}
+
+function renderBuildMark() {
+    const mark = $("build-mark");
+    mark.removeAttribute("title");
+    if (mode === "sdd") {
+        const run = live?.run;
+        const [text, tone, label] = !run ? ["", "", ""]
+            : run.status === "paused" ? ["!", "warning", run.checkpoint ? "Needs you" : "Paused"]
+                : isLive(run) ? ["●", "accent", "Running"]
+                    : run.status === "completed" ? ["✓", "success", "Completed"]
+                        : run.status === "error" || run.status === "halted" ? ["✕", "error", STATUS[run.status][0]] : ["", "", STATUS[run.status]?.[0] ?? run.status];
+        setMark("build-mark", text, label, tone);
+    } else if (lock === "rapid" && live?.busy) setMark("build-mark", "●", "Copilot is working", "accent");
+    else if (frontendState?.configured) {
+        setMark("build-mark", "✓", "Frontend configured", "success");
+        mark.title = "Based on LOCAL_FRONTEND or DEPLOYED_FRONTEND in workspace .env; not a health check.";
+    } else setMark("build-mark", "");
+}
+
+// Rapid milestones come from workspace evidence: the AGENTS.md lock, FOUNDRY_PROJECT and the frontend URLs in .env.
+function renderRapidProgress() {
+    const locked = lock === "rapid";
+    const linked = envProjectId && !frontendState?.foundryProject?.error ? envProjectId : null;
+    const projectName = linked && (selected?.id.toLowerCase() === linked.toLowerCase() ? selected.name : linked.split("/").at(-1));
+    const url = key => frontendState?.frontends.find(row => row.key === key && row.configured && !row.error)?.url ?? null;
+    const local = url("local");
+    const deployed = url("deployed");
+    const working = locked && Boolean(live?.busy);
+    $("rapid-start").hidden = locked;
+    $("rapid-commands").hidden = !locked;
+    const open = (key, value, label) => `<button data-frontend="${key}" data-key="frontend:${key}" aria-label="Open ${label} in the integrated browser">${escape(value.replace(/^https?:\/\//, ""))}</button>`;
+    const steps = [
+        { title: "Loop started", done: locked, todo: "Send a brief from Start. Copilot locks rapid prototyping in AGENTS.md and adds short commands.", detail: "AGENTS.md locks rapid prototyping and lists the short commands.", extra: '<button data-artifact="AGENTS.md" data-key="artifact:agents">AGENTS.md</button>' },
+        { title: "Project linked", done: Boolean(projectName), todo: "Copilot validates your Foundry project and its access, then records it in .env and .azure/deployment-plan.md.", detail: `${projectName}, recorded in .env and the deployment plan.`, extra: '<button data-artifact=".azure/deployment-plan.md" data-key="artifact:plan">deployment-plan.md</button>' },
+        { title: "Running locally", done: Boolean(local), todo: "Copilot proves a minimal slice in a hosted checkpoint, expands it, then runs the end-to-end tests locally.", detail: "The app runs on this machine.", extra: local ? open("local", local, "the local app") : "" },
+        { title: "Deployed to Azure", done: Boolean(deployed), optional: true, todo: "Optional. After local acceptance, Copilot asks before deploying the app to Azure Container Apps.", detail: "The app runs in Azure Container Apps.", extra: deployed ? open("deployed", deployed, "the deployed app") : "" },
+    ];
+    const next = steps.findIndex(step => !step.done && !step.optional);
+    const current = steps.findIndex(step => !step.done);
+    region("rapid", $("rapid-steps"), [locked, working, projectName, local, deployed], () => steps.map((step, index) => {
+        const [view, glyph, label] = step.done ? ["completed", "✓", "Done"]
+            : index === next ? (working ? ["active", "", "In progress"] : ["pending", "", "Next"])
+                : ["pending", "", step.optional ? "Optional" : "Not started"];
+        return `<li class="phase" data-view="${view}"${index === current ? ' aria-current="step"' : ""}>
+        <span class="phase-icon" aria-hidden="true">${glyph}</span>
+        <div class="phase-body">
+            <div class="phase-head"><h3>${escape(step.title)}</h3><span class="phase-state">${label}</span></div>
+            <p class="muted">${escape(step.done ? step.detail : step.todo)}</p>
+            ${step.done && step.extra ? `<div class="artifacts">${step.extra}</div>` : ""}
+        </div></li>`;
+    }).join(""));
 }
 
 function regionLabel(location) {
@@ -274,7 +388,7 @@ function renderTargetSummary() {
     $("review-target").textContent = mode === "sdd" ? `Deploys to ${targetSummary()}` : "";
 }
 
-function applyTarget(value) {
+function applyTarget(value, picked = false) {
     target = { ...target, ...value };
     const location = target.location || "auto";
     if (![...$("target-location").options].some(option => option.value === location)) $("target-location").add(new Option(location, location));
@@ -282,6 +396,7 @@ function applyTarget(value) {
     if (document.activeElement !== $("target-env")) $("target-env").value = target.environmentName ?? "";
     $("target-subscription").value = subscriptions.some(row => row.id === target.subscriptionId) ? target.subscriptionId : "";
     renderTargetSummary();
+    renderWhere(picked);
 }
 
 function loadTargets(force = false) {
@@ -301,7 +416,7 @@ function loadTargets(force = false) {
 
 async function saveTarget(input) {
     try {
-        applyTarget(await api("target", input));
+        applyTarget(await api("target", input), true);
         $("target-help").textContent = TARGET_HELP;
         $("target-help").classList.remove("error");
     } catch (error) { notice(error.message, true); }
@@ -342,38 +457,43 @@ async function frontends(retry = false) {
         if (signature === frontendsSignature) return;
         frontendsSignature = signature;
         frontendState = result;
-        setMark("build-mark", result.configured ? "✓" : "", "Frontend configured");
-        $("build-mark").title = "Based on LOCAL_FRONTEND or DEPLOYED_FRONTEND in workspace .env; not a health check.";
+        renderBuild();
         const configured = result.frontends.filter(row => row.configured);
         $("frontend-links").innerHTML = configured.map(row => `<div class="inventory-row"><strong>${escape(row.label)}</strong>${row.error
             ? `<p class="error">${escape(row.error)}</p>`
             : `<span class="frontend-url">${escape(row.url)}</span><div class="actions"><button data-frontend="${escape(row.key)}" aria-label="Open ${escape(row.label)} in integrated browser">Open in integrated browser</button><a href="${escape(row.url)}" target="_blank" rel="noopener noreferrer" aria-label="Open ${escape(row.label)} in external browser">Open in external browser ↗</a></div>`}</div>`).join("") ||
             `<p class="muted">${mode === "sdd" ? "No frontend yet. The workflow records it during Implement and Deploy." : "No frontend configured. Finish the build first."}</p>`;
         if (live) renderWorkflow(live);
-        if (changed && mode === "rapid" && result.frontends.some(row => row.key === "local" && row.configured) && activeTab !== "explore") {
+        if (changed && mode === "rapid" && result.frontends.some(row => row.key === "local" && row.configured) && !["explore", "build"].includes(activeTab)) {
             await selectTab("explore").catch(error => notice(`Could not finish switching to Explore: ${error.message}`, true));
         }
     } catch (error) {
         projectSyncError = true;
         envError(`Could not read project configuration: ${error.message} Current selection kept. Refresh to retry.`);
         frontendsSignature = undefined;
-        setMark("build-mark", "");
-        $("build-mark").title = error.message;
         failure($("frontend-links"), error);
     } finally { frontendsLoading = false; }
 }
 
 const SKELETON = '<div class="skeleton"><span></span><span></span><span></span><p class="visually-hidden">Checking skills, extensions, tools and Azure sign-in…</p></div>';
 
-async function setup() {
+// Concurrent callers share one readiness check.
+function setup() {
+    setupLoading ??= checkReadiness().finally(() => { setupLoading = null; });
+    return setupLoading;
+}
+
+async function checkReadiness() {
     const toolsOpen = $("setup-tools")?.open ?? false;
-    const skillsOpen = $("setup-skills")?.open ?? true;
+    const skillsOpen = $("setup-skills")?.open ?? false;
     $("setup-actions").hidden = true;
     $("checks").innerHTML = SKELETON;
-    setMark("setup-mark", "");
+    stepGlyph("ready-glyph", "checking", "1");
+    $("ready-summary").textContent = "Checking skills, extensions, tools and Azure sign-in…";
     try {
         const result = await api("setup");
-        setMark("setup-mark", result.ready ? "✓" : "", "Ready");
+        setupDone = true;
+        setupReady = result.ready && !result.discoveryError;
         const toolIds = new Set(["az", "azd", "azd-ai", "az-auth", "azd-auth"]);
         const tools = result.checks.filter(check => toolIds.has(check.id));
         const skills = result.checks.filter(check => !toolIds.has(check.id));
@@ -382,11 +502,11 @@ async function setup() {
             if (!checks.length) return "";
             const count = checks.filter(check => check.status === "ready").length;
             const ready = count === checks.length;
-            return `<details id="${id}" class="setup-group"${open || !ready ? " open" : ""}><summary><span class="${ready ? "status-ok" : "status-warn"}" aria-hidden="true">${ready ? "✓" : "!"}</span> ${title} <span class="muted">${count}/${checks.length} ready${ready ? "" : ` · ${checks.length - count} need attention`}</span></summary><div class="setup-group-checks">${checks.map(renderCheck).join("")}</div></details>`;
+            return `<details id="${id}" class="setup-group"${open || !ready ? " open" : ""}><summary><span class="${ready ? "status-ok" : "status-warn"}" aria-hidden="true">${ready ? "✓" : "!"}</span><span class="group-label">${title} <span class="muted">${count}/${checks.length} ready${ready ? "" : ` · ${checks.length - count} need attention`}</span></span><svg class="step-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></summary><div class="setup-group-checks">${checks.map(renderCheck).join("")}</div></details>`;
         };
         $("checks").innerHTML = renderGroup("setup-skills", "Skills and extensions", skills, skillsOpen) +
             renderGroup("setup-tools", "Azure tools and sign-in", tools, toolsOpen) +
-            (result.discoveryError ? `<p class="error">${escape(result.discoveryError)} Refresh to retry skill discovery before installing skills.</p>` : "") +
+            (result.discoveryError ? `<p class="error">${escape(result.discoveryError)} Check again to retry skill discovery before installing skills.</p>` : "") +
             `<p class="muted">Checked ${escape(new Date(result.checkedAt).toLocaleTimeString())}</p>`;
         const missingPlugin = result.discoveryError ? [] : skills.filter(check => check.status !== "ready");
         const missingTools = tools.filter(check => ["az", "azd", "azd-ai"].includes(check.id) && check.status !== "ready");
@@ -402,16 +522,46 @@ async function setup() {
         }
         $("setup-actions").hidden = !missingPlugin.length && !missingTools.length && !missingAuth.length;
         const pending = result.checks.filter(check => check.status !== "ready").length;
+        stepGlyph("ready-glyph", setupReady ? "ready" : "attention", setupReady ? "✓" : "!");
+        $("ready-summary").textContent = result.discoveryError ? "Skill discovery failed. Check again."
+            : setupReady ? "All set: skills, extensions, CLIs and Azure sign-in" : `${pending} of ${result.checks.length} checks need attention`;
+        setStepOpen("step-ready", !setupReady);
+        renderWorkIq(result.workiq ?? { status: "missing" });
         if (result.discoveryError) announce(`Skill discovery failed: ${result.discoveryError}`, true);
-        else announce(pending ? `Setup checked: ${pending} of ${result.checks.length} checks need attention.` : "Setup checked: everything is ready.");
+        else announce(pending ? `Readiness checked: ${pending} of ${result.checks.length} checks need attention.` : "Readiness checked: everything is ready.");
     } catch (error) {
-        setMark("setup-mark", "");
+        setupDone = true;
+        setupReady = false;
+        stepGlyph("ready-glyph", "attention", "!");
+        $("ready-summary").textContent = "Couldn't check readiness";
+        setStepOpen("step-ready", true);
         failure($("checks"), error);
-        announce(`Setup check failed: ${error.message}`, true);
+        renderWorkIq({ status: "error", error: error.message });
+        announce(`Readiness check failed: ${error.message}`, true);
     }
+    renderStartMark();
 }
 
-function updateProject(project) {
+// Work IQ is optional context: its state never blocks building, and Copilot continues without it.
+function renderWorkIq(result = workIq) {
+    workIq = result;
+    let text;
+    let action = null;
+    if (!result) text = "Checking Work IQ…";
+    else if (result.status === "ready" && result.data.enabled && !result.data.error) {
+        const state = result.data.live;
+        text = `${state === "connected" ? "Connected." : state ? `Configured (${state}).` : "Configured."} Copilot pulls relevant Microsoft 365 meetings, email and documents into the brief and confirms them with you.`;
+    } else if (result.status === "ready" && !result.data.enabled) { text = "Work IQ is installed but turned off."; action = "Fix in Chat"; }
+    else if (result.status === "ready") { text = `Work IQ can't connect: ${result.data.error}`; action = "Fix in Chat"; }
+    else if (result.status === "missing") { text = "Not set up. Work IQ brings Microsoft 365 meetings, email and documents into the brief."; action = "Set up Work IQ"; }
+    else { text = `Couldn't check Work IQ: ${result.error}`; action = "Set up Work IQ"; }
+    if (action && $("workiq-toggle").checked) text += ` Copilot continues without it until it's ${action === "Fix in Chat" ? "fixed" : "set up"}.`;
+    $("workiq-status").textContent = text;
+    $("workiq-setup").hidden = !action;
+    if (action) $("workiq-setup").textContent = action;
+}
+
+function updateProject(project, picked = false) {
     if (selected?.id !== project?.id) {
         inventory = null;
         $("inventory-toolbar").hidden = true;
@@ -426,10 +576,12 @@ function updateProject(project) {
     }
     selected = project;
     selectionRevision++;
-    setMark("resources-mark", project ? "✓" : "", "Project selected");
     loaded.delete("explore");
     loaded.delete("optimize");
     renderProjectBar();
+    renderWhere(picked);
+    renderStartMark();
+    renderBuild();
     $("resource-context").innerHTML = project ? `<div class="context"><span class="muted">Resource group · ${escape(project.location)}</span><strong>${escape(project.resourceGroup)}</strong><p class="muted">This resource group will also host additional resources such as Application Insights and Container Apps.</p></div>` : "";
     renderProjects();
 }
@@ -469,6 +621,7 @@ async function discover(subscriptionId) {
     if (discovering) return;
     discovering = true;
     $("subscription").disabled = true;
+    renderWhere();
     $("projects").innerHTML = '<p class="loading">Discovering Foundry projects…</p>';
     try {
         const result = await api("discover", subscriptionId ? { subscriptionId } : {});
@@ -487,7 +640,7 @@ async function discover(subscriptionId) {
             announce(`Could not discover Foundry projects: ${error.message}`, true);
             $("monitoring").innerHTML = "";
         }
-    } finally { discovering = false; $("subscription").disabled = false; }
+    } finally { discovering = false; $("subscription").disabled = false; renderWhere(); }
 }
 
 // The industry filter groups by sector, the text before ":" (for example "Government: Ops and infra").
@@ -516,7 +669,7 @@ function openReview(title, text, returnButton) {
     $("cancel-prompt").lastChild.textContent = returnButton?.dataset.scenario ? " Back to scenarios" : " Back";
     setScenarioReview(true);
     api("preferences", { draft: text }).catch(error => notice(error.message, true));
-    window.scrollTo({ top: 0, behavior: "instant" });
+    $("brief-step").scrollIntoView({ block: "start", behavior: "instant" });
 }
 
 function reviewScenario(id) {
@@ -528,13 +681,13 @@ function reviewScenario(id) {
 function setScenarioReview(visible) {
     $("scenario-browser").hidden = visible;
     $("prompt-review").hidden = !visible;
-    document.querySelector("#build .guided").hidden = visible;
+    document.querySelector("#start .guided").hidden = visible;
     renderTargetSummary();
 }
 
 function returnToScenarios() {
     setScenarioReview(false);
-    if (activeTab === "build") {
+    if (activeTab === "start") {
         const back = scenarioReturn?.button?.isConnected ? scenarioReturn.button : $("scenario-search");
         back.focus({ preventScroll: true });
         window.scrollTo({ top: scenarioReturn?.scrollY ?? 0, behavior: "instant" });
@@ -584,7 +737,7 @@ function renderInventory() {
 
 const noProject = what => mode === "sdd"
     ? `<p class="muted">The SDD workflow creates your Foundry project during Implement. ${what} appear here once it exists.</p>`
-    : `<p class="muted">Select a project on Resources to ${what === "Azure charges" ? "query Azure spend" : "explore its resources"}.</p>`;
+    : `<p class="muted">Select a project on Start to ${what === "Azure charges" ? "query Azure spend" : "explore its resources"}.</p>`;
 
 async function explore() {
     const revision = selectionRevision;
@@ -801,7 +954,7 @@ function calloutHtml(run) {
     if (run.status === "paused") {
         return box("warning", `Paused during ${escape(phase)}`, run.canResume
             ? `<p>Resume continues from the last completed step.</p><div class="actions"><button class="primary" data-wf="resume" data-key="resume">Resume</button>${cancel}</div>`
-            : `<p>This run cannot be resumed. Start a new run from Build.</p><div class="actions"><button data-go="build">Start a new run</button></div>`);
+            : `<p>This run cannot be resumed. Start a new run from the Start tab.</p><div class="actions"><button data-go="start">Start a new run</button></div>`);
     }
     if (run.status === "completed") {
         const deployed = frontendState?.frontends.find(row => row.key === "deployed" && row.configured && !row.error);
@@ -821,14 +974,14 @@ function calloutHtml(run) {
         if (run.canResume && raisable(run.failure)) {
             const [, format] = LIMIT_TEXT[run.failure.kind];
             return box(tone, title, `<p>${escape(message)}</p>
-                <div class="actions"><button class="primary" data-wf="raise" data-key="raise">Resume with ${escape(format(run.failure.suggestedValue))}</button>${improve}<button data-go="build" data-key="new">Start a new run</button></div>`);
+                <div class="actions"><button class="primary" data-wf="raise" data-key="raise">Resume with ${escape(format(run.failure.suggestedValue))}</button>${improve}<button data-go="start" data-key="new">Start a new run</button></div>`);
         }
         return box(tone, title, `<p>${escape(message)}</p>
             <details class="guidance"><summary>Add guidance for the fix</summary><label for="wf-feedback" class="visually-hidden">Guidance for the fix</label><textarea id="wf-feedback" data-key="feedback" rows="3" maxlength="8000" placeholder="Optional: point Copilot at the cause, a region with quota or an acceptable trade-off."></textarea></details>
-            <div class="actions"><button class="primary" data-wf="fix" data-key="fix">Fix in Chat</button>${run.canResume ? '<button data-wf="resume" data-key="resume">Resume</button>' : ""}${improve}<button data-go="build" data-key="new">Start a new run</button></div>
+            <div class="actions"><button class="primary" data-wf="fix" data-key="fix">Fix in Chat</button>${run.canResume ? '<button data-wf="resume" data-key="resume">Resume</button>' : ""}${improve}<button data-go="start" data-key="new">Start a new run</button></div>
             ${run.canResume ? '<p class="muted">Fixing in Chat leaves the run stopped. Resume when Copilot reports the fix.</p>' : ""}`);
     }
-    return box("muted", "Run cancelled", `<p>Nothing else runs for this workflow. Artifacts written so far stay in your workspace.</p><div class="actions"><button data-go="build" data-key="new">Start a new run</button></div>`);
+    return box("muted", "Run cancelled", `<p>Nothing else runs for this workflow. Artifacts written so far stay in your workspace.</p><div class="actions"><button data-go="start" data-key="new">Start a new run</button></div>`);
 }
 
 function renderWorkflow(snap) {
@@ -889,16 +1042,6 @@ function tick() {
     if (isLive(run)) document.querySelectorAll("#wf-phases [data-since]").forEach(node => { node.textContent = duration(Date.now() - Number(node.dataset.since)); });
 }
 
-function renderWorkflowMark(snap) {
-    const run = snap.run;
-    const [text, tone, label] = !run ? ["", "", ""]
-        : run.status === "paused" ? ["!", "warning", run.checkpoint ? "Needs you" : "Paused"]
-            : isLive(run) ? ["●", "accent", "Running"]
-                : run.status === "completed" ? ["✓", "success", "Completed"]
-                    : run.status === "error" || run.status === "halted" ? ["✕", "error", STATUS[run.status][0]] : ["", "", STATUS[run.status]?.[0] ?? run.status];
-    setMark("workflow-mark", text, label, tone);
-}
-
 function applyLive(snap, initial = false) {
     if (!snap || typeof snap.version !== "number" || snap.version < liveVersion) return;
     liveVersion = snap.version;
@@ -906,19 +1049,19 @@ function applyLive(snap, initial = false) {
     live = snap;
     const fresh = knownRuns ? snap.runs.find(row => !knownRuns.has(row.runId)) : null;
     knownRuns = new Set(snap.runs.map(row => row.runId));
-    const openWorkflow = !initial && Boolean(fresh) && (snap.mode ?? mode) === "sdd" && activeTab !== "workflow";
+    const openBuild = !initial && Boolean(fresh) && (snap.mode ?? mode) === "sdd" && activeTab !== "build";
     lock = snap.lock ?? null;
-    if (!modePending && snap.mode && snap.mode !== mode) applyMode(snap.mode, openWorkflow ? "workflow" : undefined);
-    else if (openWorkflow) selectTab("workflow").catch(error => notice(error.message, true));
+    if (!modePending && snap.mode && snap.mode !== mode) applyMode(snap.mode, openBuild ? "build" : undefined);
+    else if (openBuild) selectTab("build").catch(error => notice(error.message, true));
     renderModeHint();
     const checkpoint = snap.run?.checkpoint ? `${snap.run.runId}:${snap.run.checkpoint}` : null;
-    if (!initial && !openWorkflow && checkpoint && checkpoint !== lastCheckpoint && activeTab !== "workflow") {
-        notice(`${snap.run.pause?.phase ?? "The workflow"} needs your decision.`, false, { go: "workflow", label: "Review" });
+    if (!initial && !openBuild && checkpoint && checkpoint !== lastCheckpoint && activeTab !== "build") {
+        notice(`${snap.run.pause?.phase ?? "The workflow"} needs your decision.`, false, { go: "build", label: "Review" });
     }
     lastCheckpoint = checkpoint;
     document.body.classList.toggle("is-busy", Boolean(snap.busy));
-    renderWorkflowMark(snap);
     renderWorkflow(snap);
+    renderBuild();
     updateDock();
 }
 
@@ -1127,23 +1270,21 @@ window.addEventListener("message", event => {
 });
 
 async function loadTab(tab, force = false) {
-    if (["build", "explore", "workflow"].includes(tab) || force) await frontends(force);
-    if (tab === "workflow") { applyLive(await api("live")); return; }
-    if (tab === "build" && force && mode === "sdd") await loadTargets(true);
+    if (["build", "explore"].includes(tab) || force) await frontends(force);
+    if (tab === "build") { applyLive(await api("live")); return; }
+    if (tab === "start" && force && mode === "sdd") await loadTargets(true);
     if (loaded.has(tab) && !force) {
         if (tab === "optimize") await usage();
         return;
     }
     loaded.add(tab);
-    if (tab === "setup") await setup();
-    if (tab === "resources" && (force || !projects.length)) await discover();
+    if (tab === "start") await Promise.all([setup(), mode === "rapid" && (force || !projects.length) ? discover() : null]);
     if (tab === "explore") await explore();
     if (tab === "optimize") await costs();
 }
 
 async function selectTab(tab) {
-    if (tab === "workflow" && mode !== "sdd") return chooseMode("sdd", "workflow");
-    if (!TABS[mode].includes(tab)) tab = "build";
+    if (!TABS.includes(tab)) tab = "start";
     activeTab = tab;
     for (const button of document.querySelectorAll("[data-tab]")) {
         const current = button.dataset.tab === tab;
@@ -1157,9 +1298,10 @@ async function selectTab(tab) {
 }
 
 const SENT = {
-    plugin: "Sent to Chat. Copilot installs what is missing with your approval; refresh Setup afterwards.",
+    plugin: "Sent to Chat. Copilot installs what is missing with your approval; check readiness again on Start afterwards.",
     devpack: "Sent to Chat. Copilot checks your tools and asks before installing anything.",
-    auth: "Sent to Chat. Complete sign-in there, then refresh Setup.",
+    auth: "Sent to Chat. Complete sign-in there, then check readiness again on Start.",
+    workiq: "Sent to Chat. Copilot checks Work IQ and asks before installing anything; check readiness again on Start afterwards.",
     quickstart: "Sent to Chat. Copilot plans the project and asks before creating it.",
     landingZone: "Sent to Chat. Copilot plans the landing zone with you.",
     insights: "Sent to Chat. Copilot connects Application Insights with your approval.",
@@ -1168,7 +1310,11 @@ const SENT = {
     evaluations: "Sent to Chat. Copilot confirms the agent, data and thresholds first.",
     insightsScan: "Sent to Chat. Copilot confirms scope before starting the scan.",
     improve: "Sent to Chat. Copilot analyzes past runs and proposes changes for your review.",
-    deploy: "Sent to Chat. Copilot runs the deploy preflight and asks for approval before azd up.",
+    deploy: { rapid: "Sent to Chat. Copilot redeploys changed agents, then asks before deploying the app.", sdd: "Sent to Chat. Copilot runs the deploy preflight and asks for approval before azd up." },
+    guided: { rapid: "Sent to Chat. Answer Copilot's questions there.", sdd: "Sent to Chat. Copilot asks a few questions, then starts the workflow." },
+    run: "Sent to Chat. Copilot starts the dev servers and reports their URLs.",
+    test: "Sent to Chat. Copilot runs the local tests and asks before changing code.",
+    convert: "Sent to Chat. Copilot confirms with you before switching to SDD.",
 };
 
 document.addEventListener("click", event => {
@@ -1201,15 +1347,14 @@ document.addEventListener("click", event => {
         return;
     }
     if (button.dataset.project) {
-        busy(button, async () => { updateProject(await api("select", { projectId: button.dataset.project })); await monitoring(); });
+        busy(button, async () => { updateProject(await api("select", { projectId: button.dataset.project }), true); await monitoring(); });
         return;
     }
     if (button.dataset.prompt) busy(button, async () => {
         const kind = button.dataset.prompt;
         await api("prompt", { kind, ...(button.dataset.run ? { runId: button.dataset.run } : {}) });
-        notice(kind === "guided"
-            ? mode === "sdd" ? "Sent to Chat. Copilot asks a few questions, then starts the workflow." : "Sent to Chat. Answer Copilot's questions there."
-            : SENT[kind] ?? "Sent to Chat. Continue there.");
+        const sent = SENT[kind];
+        notice((typeof sent === "object" ? sent[mode] : sent) ?? "Sent to Chat. Continue there.", false, kind === "guided" ? TRACK : null);
     });
 });
 
@@ -1240,7 +1385,27 @@ document.querySelector(".mode").addEventListener("keydown", event => {
     buttons[next].focus();
     chooseMode(choice);
 });
-$("project-bar").onclick = () => selectTab(mode === "rapid" ? "resources" : activeProject() ? "explore" : "workflow").catch(error => notice(error.message, true));
+$("project-bar").onclick = () => {
+    if (mode === "sdd") { selectTab(activeProject() ? "explore" : "build").catch(error => notice(error.message, true)); return; }
+    $("step-where").open = true;
+    const switching = selectTab("start");
+    $("step-where").scrollIntoView({ block: "start", behavior: "instant" });
+    $("step-where").querySelector("summary").focus({ preventScroll: true });
+    switching.catch(error => notice(error.message, true));
+};
+$("recheck").onclick = () => busy($("recheck"), async () => {
+    await setup();
+    if (!$("step-ready").open && (!document.activeElement || document.activeElement === document.body)) $("step-ready").querySelector("summary").focus({ preventScroll: true });
+});
+$("workiq-toggle").onchange = () => {
+    const on = $("workiq-toggle").checked;
+    renderWorkIq();
+    api("preferences", { workiq: on }).catch(error => {
+        $("workiq-toggle").checked = !on;
+        renderWorkIq();
+        notice(error.message, true);
+    });
+};
 $("refresh").onclick = () => busy($("refresh"), () => loadTab(activeTab, true));
 $("refresh-foundry").onclick = () => busy($("refresh-foundry"), async () => {
     await api("refresh_foundry");
@@ -1307,9 +1472,8 @@ $("send-prompt").onclick = () => busy($("send-prompt"), async () => {
     await api("prompt", { kind: "custom", text });
     await api("preferences", { draft: "" });
     returnToScenarios();
-    notice(mode === "sdd"
-        ? "Sent to Chat. Copilot runs preflight, then starts the workflow. Follow it on the Workflow tab."
-        : activeProject() ? `Sent to Chat with ${activeProject().name}. Continue there.` : "Sent to Chat. Copilot asks which Foundry project to use.");
+    notice(mode === "sdd" ? "Sent to Chat. Copilot runs preflight, then starts the workflow."
+        : activeProject() ? `Sent to Chat with ${activeProject().name}. Continue there.` : "Sent to Chat. Copilot asks which Foundry project to use.", false, TRACK);
 });
 
 async function start() {
@@ -1319,6 +1483,8 @@ async function start() {
     target = { ...target, ...snapshot.state.target };
     lock = snapshot.live?.lock ?? null;
     applyMode(snapshot.live?.mode ?? snapshot.state.mode);
+    $("workiq-toggle").checked = snapshot.state.workiq === true;
+    renderWorkIq(null);
     if (snapshot.state.draft) {
         $("prompt-text").value = snapshot.state.draft;
         setScenarioReview(true);
@@ -1331,23 +1497,22 @@ async function start() {
     if (snapshot.live) applyLive(snapshot.live, true);
     const run = snapshot.live?.run;
     const saved = snapshot.state.tab;
-    const initialTab = mode === "sdd" && run && ["running", "pending", "paused"].includes(run.status) ? "workflow"
-        : saved ? (TABS[mode].includes(saved) ? saved : "build") : "setup";
+    const initialTab = mode === "sdd" && run && ["running", "pending", "paused"].includes(run.status) ? "build"
+        : TABS.includes(saved) ? saved : "start";
     // Always run readiness and project discovery on open, including restored tabs.
-    loaded.add("setup");
-    if (mode === "rapid") loaded.add("resources");
+    loaded.add("start");
     const initial = Promise.all([setup(), (async () => {
         await frontends();
         if (mode === "rapid" && !projects.length && !projectSyncError) await discover();
     })()]);
     const deferred = ["explore", "optimize"].includes(initialTab);
-    await selectTab(deferred ? "setup" : initialTab);
+    await selectTab(deferred ? "start" : initialTab);
     liveLoop();
     loadEnablement();
     if (mode === "sdd") loadTargets();
     await initial;
     started = true;
-    if (deferred || !TABS[mode].includes(activeTab)) await selectTab(deferred ? initialTab : "build");
+    if (deferred) await selectTab(initialTab);
     setInterval(() => { if (activeTab === "optimize" && !document.hidden) usage(); }, 15_000);
     setInterval(() => { if (!document.hidden) frontends(); }, 5_000);
     setInterval(() => { tick(); updateDockStatus(); }, 1000);

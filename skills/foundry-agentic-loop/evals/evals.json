@@ -442,13 +442,13 @@
     {
       "id": 31,
       "prompt": "Our SDD workflow run has shown `running` in Implement for 95 minutes. `list_agents` shows no background agents, the flight record hasn't changed and the credit total is the same as an hour ago. It looks stalled. Should we cancel and restart it?",
-      "expected_output": "Explains why these signals don't show a stall, checks live activity in the canvas Workflow tab and the workspace, and leaves cancellation to the user without cancelling, pausing or restarting.",
+      "expected_output": "Explains why these signals don't show a stall, checks live activity in the canvas Build tab and the workspace, and leaves cancellation to the user without cancelling, pausing or restarting.",
       "files": [],
       "expectations": [
         "Does not cancel, pause, restart or resume the run, or start a new one.",
         "Explains that workflow subagents don't appear in `list_agents` or `read_agent`.",
         "Explains that the flight record and credit totals change only when a step ends, and that one Implement step can run for over an hour.",
-        "Checks live activity in the canvas Workflow tab and recent workspace or Azure changes.",
+        "Checks live activity in the canvas Build tab and recent workspace or Azure changes.",
         "Reports the evidence and leaves any cancellation to the user."
       ]
     },

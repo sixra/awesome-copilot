@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { request } from "node:http";
 import { Azure, projectIdentity, trustedEndpoint, foundryPortalUrl, azurePortalUrl } from "../lib/azure.mjs";
-import { Model, links, promptFor, validTarget } from "../lib/model.mjs";
+import { Model, TABS, links, promptFor, validTarget, workIqStatus } from "../lib/model.mjs";
 import { readBody, startServer } from "../lib/server.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -227,15 +227,17 @@ test("Optimize sends one Chat prompt per action and surfaces missing context or 
     await assert.rejects(model.send({ kind: "optimizer" }), /Chat unavailable/);
 });
 
-test("saved settings migrate: Cost becomes Optimize, retired keys go, invalid mode and target reset", async t => {
+test("saved settings migrate: retired tabs map to the shared tabs, retired keys go, invalid values reset", async t => {
     const directory = await mkdtemp(path.join(tmpdir(), "foundry-agentic-loop-migration-"));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const storage = path.join(directory, "settings.json");
-    for (const tab of ["cost", "explore"]) {
-        await writeFile(storage, JSON.stringify({ tab, scope: "user", projectId: id, draft: "Keep my draft", estimate: { inputMillions: 5 }, mode: "turbo", target: { location: "East US" } }));
+    assert.deepEqual(TABS, ["start", "build", "explore", "optimize"]);
+    for (const [tab, expected] of [["setup", "start"], ["resources", "start"], ["workflow", "build"], ["cost", "optimize"], ["explore", "explore"], ["unknown", "start"]]) {
+        await writeFile(storage, JSON.stringify({ tab, scope: "user", projectId: id, draft: "Keep my draft", estimate: { inputMillions: 5 }, mode: "turbo", target: { location: "East US" }, workiq: "yes" }));
         const model = new Model({ storage });
         await model.load();
-        assert.equal(model.state.tab, tab === "cost" ? "optimize" : tab);
+        assert.equal(model.state.tab, expected, tab);
+        assert.equal(model.state.workiq, false, "only a boolean opts in to Work IQ");
         assert.equal(model.state.projectId, id);
         assert.equal(model.state.draft, "Keep my draft");
         assert(!Object.hasOwn(model.state, "estimate"));
@@ -247,6 +249,11 @@ test("saved settings migrate: Cost becomes Optimize, retired keys go, invalid mo
         await restored.load();
         assert.deepEqual(restored.state, model.state);
     }
+    await writeFile(storage, JSON.stringify({ tab: "build", workiq: true }));
+    const kept = new Model({ storage });
+    await kept.load();
+    assert.equal(kept.state.tab, "build");
+    assert.equal(kept.state.workiq, true);
 });
 
 test("mode defaults to rapid, follows workflow runs, and an explicit choice wins until cleared", async t => {
@@ -334,7 +341,49 @@ test("change requests target the paused checkpoint and never resume the run", ()
     const ship = promptFor("deploy", { runId, project });
     assert(ship.includes(`foundry-agentic-loop-workflow run ${runId} verified`) && ship.includes("ask for my approval before azd up"));
     assert(!ship.includes(id), "deploy uses the workflow's own Azure target");
-    assert.throws(() => promptFor("deploy"), /valid prompt/);
+    assert.throws(() => promptFor("deploy", { mode: "sdd" }), /valid prompt/, "SDD deploys only a verified run");
+    const quick = promptFor("deploy", { project });
+    assert(quick.includes("for the `deploy` short command in the Agentic Loop section of the root AGENTS.md") && quick.includes("ask for my approval before deploying the app"));
+    assert(!quick.includes(id), "short commands read the project from the workspace");
+});
+
+test("rapid short commands route through AGENTS.md and are rapid-only", () => {
+    for (const kind of ["run", "test", "convert"]) {
+        const prompt = promptFor(kind, { project });
+        assert(prompt.startsWith("[Agentic Loop canvas action]\nUse the foundry-agentic-loop skill in rapid prototyping mode for the `"), kind);
+        assert(prompt.includes("short command in the Agentic Loop section of the root AGENTS.md"), kind);
+        assert(!prompt.includes(id), `${kind} reads the project from the workspace`);
+        assert.throws(() => promptFor(kind, { mode: "sdd" }), /valid prompt/, kind);
+    }
+    assert(promptFor("run").includes("upsert the verified LOCAL_FRONTEND in .env"));
+    assert(promptFor("test").includes("ask before changing code"));
+    assert(promptFor("convert").includes("`convert to SDD` short command") && promptFor("convert").includes("confirm the switch with me first"));
+});
+
+test("Work IQ context is added only to briefs, and only when enabled", () => {
+    const marker = "use the Work IQ MCP server (workiq)";
+    const scenario = { id: "retail-returns", industry: "Retail", prompt: "Build a returns assistant." };
+    const target = { subscriptionId: project.subscriptionId };
+    const briefs = [["custom", { text: "Build a claims agent." }], ["scenario", { scenario }], ["guided", {}],
+        ["custom", { text: "Build a claims agent.", mode: "sdd", target }], ["guided", { mode: "sdd", target }], ["sdd", { text: "Build a claims agent.", mode: "sdd", target }]];
+    for (const [kind, options] of briefs) {
+        const grounded = promptFor(kind, { ...options, project, workiq: true });
+        assert(grounded.includes(marker) && grounded.includes("Never copy confidential content"), `${kind} ${options.mode ?? "rapid"}`);
+        assert(!promptFor(kind, { ...options, project }).includes("Work IQ"), `${kind} ${options.mode ?? "rapid"} without Work IQ`);
+    }
+    for (const kind of ["improve", "deploy", "run", "plugin", "optimizer"]) assert(!promptFor(kind, { project, workiq: true }).includes(marker), kind);
+    const setup = promptFor("workiq", { project });
+    assert(setup.includes(links.workiq) && setup.includes("make sure it is enabled") && setup.includes("admin consent"));
+    assert(!setup.includes(id), "Work IQ setup is not project-scoped");
+});
+
+test("Work IQ status prefers an enabled server and reports missing or unreadable configuration", () => {
+    assert.deepEqual(workIqStatus({ status: "error", error: "listConfigured is not a function" }), { status: "error", error: "listConfigured is not a function" });
+    assert.deepEqual(workIqStatus({ status: "ready", data: {} }), { status: "missing" });
+    assert.deepEqual(workIqStatus({ status: "ready", data: { servers: [{ name: "github", enabled: true }] } }), { status: "missing" });
+    const servers = [{ name: "workiq", enabled: false }, { name: "m365", sourcePlugin: "workiq", enabled: true, live: { status: "connected" } }];
+    assert.deepEqual(workIqStatus({ status: "ready", data: { servers } }), { status: "ready", data: { name: "m365", enabled: true, live: "connected", error: null } });
+    assert.deepEqual(workIqStatus({ status: "ready", data: { servers: servers.slice(0, 1) } }), { status: "ready", data: { name: "workiq", enabled: false, live: null, error: null } });
 });
 
 test("local inspection requests verify the selected agent and include its project and latest version", async () => {
@@ -425,6 +474,10 @@ test("project choice persists across panel instances and reloads; prompts use se
     await reloaded.send({ kind: "optimizer" });
     assert(sent[1].prompt.includes(links.optimizer));
     assert(sent[1].prompt.includes(second.id));
+    assert(!sent[0].prompt.includes("Work IQ"));
+    reloaded.state.workiq = true;
+    await reloaded.send({ kind: "custom", text: "Build a claims agent." });
+    assert(sent[2].prompt.includes("use the Work IQ MCP server (workiq)"), "send passes the saved Work IQ preference");
     await assert.rejects(reloaded.select("not-discovered"), /available/);
     await assert.rejects(reloaded.discover("not-accessible"), /accessible/);
     assert.equal(reloaded.project.id, second.id, "a failed refresh keeps the current list and selection");
@@ -440,7 +493,13 @@ test("rechecking setup reloads newly installed skills and surfaces discovery fai
             list: async () => { assert(reloaded); return { skills: [{ name: "foundry-agentic-loop" }, { name: "microsoft-foundry" }] }; },
         } } },
     });
-    assert.equal((await model.setup()).ready, true);
+    const first = await model.setup();
+    assert.equal(first.ready, true);
+    assert.equal(first.workiq.status, "error", "without mcp.listConfigured Work IQ is unknown but never blocks readiness");
+    model.session.rpc.mcp = { listConfigured: async () => ({ servers: [{ name: "workiq", enabled: true, live: { status: "connected" } }] }) };
+    const withWorkIq = await model.setup();
+    assert.equal(withWorkIq.ready, true);
+    assert.deepEqual(withWorkIq.workiq, { status: "ready", data: { name: "workiq", enabled: true, live: "connected", error: null } });
     model.session.rpc.skills.reload = async () => ({ errors: ["Skill definition is invalid"], warnings: [] });
     const failed = await model.setup();
     assert.equal(failed.ready, false);

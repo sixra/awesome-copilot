@@ -228,7 +228,7 @@ test("failed gate: bounded fix loop, blocked checkpoint, next round on resume", 
         "Verify · fix 1 passed: Verify · fix 1 done. Next: review 2.",
         "Verify · review 2 found 1 issue: E2E test test_claim_upload fails with HTTP 500",
     ], "the last review names no automatic fix once fixes are exhausted");
-    assert.equal(run.state.logs.at(-1), 'Needs you: Verify still fails its gate after 1 automatic fix (E2E test test_claim_upload fails with HTTP 500). Ask Copilot to fix it, or use "Fix in Chat" on the Workflow tab of the Agentic Loop canvas, then resume to retry Verify.');
+    assert.equal(run.state.logs.at(-1), 'Needs you: Verify still fails its gate after 1 automatic fix (E2E test test_claim_upload fails with HTTP 500). Ask Copilot to fix it, or use "Fix in Chat" on the Build tab of the Agentic Loop canvas, then resume to retry Verify.');
     let record = await run.record();
     assert.equal(record.status, "blocked");
     assert.equal(record.pending, "blocked-verify-r1");

@@ -64,7 +64,7 @@ Each build records verified lessons in `docs/loop-sri.md`, and each SDD run leav
 ## Requirements
 
 - GitHub Copilot App for the canvas. The workflow also runs from the Copilot CLI with `copilot workflow run foundry-agentic-loop-workflow`
-- An Azure subscription, the Azure CLI and the Azure Developer CLI with its Foundry (`azure.ai.*`) extensions. The canvas Setup tab helps install missing tools with Foundry DevPack, and the skill asks before installing or upgrading anything
+- An Azure subscription, the Azure CLI and the Azure Developer CLI with its Foundry (`azure.ai.*`) extensions. The canvas Start tab helps install missing tools with Foundry DevPack, and the skill asks before installing or upgrading anything
 - Python 3.13, Node.js and Git
 
 Both modes create billable Azure resources, such as model deployments, hosted agents, Container Apps and monitoring, plus Azure AI Search when grounding needs it. Copilot confirms billable changes before making them. To remove an SDD environment, ask Copilot to tear it down. After you approve, it runs `azd down --purge` and deletes the Entra app registrations the build created, which live outside the resource group.

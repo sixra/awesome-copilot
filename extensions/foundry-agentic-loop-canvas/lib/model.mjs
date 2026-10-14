@@ -12,13 +12,28 @@ export const links = {
     evaluations: "https://learn.microsoft.com/en-us/azure/foundry/observability/how-to/evaluate-agent?tabs=python",
     insightsScan: "https://learn.microsoft.com/en-us/azure/foundry/observability/how-to/agent-insights",
     extensions: "https://github.com/github/awesome-copilot/tree/main/extensions",
+    workiq: "https://github.com/microsoft/work-iq",
 };
 
 export const MODES = Object.freeze(["rapid", "sdd"]);
+export const TABS = Object.freeze(["start", "build", "explore", "optimize"]);
+const RETIRED_TABS = { setup: "start", resources: "start", workflow: "build", cost: "optimize" };
 const ENV_RETRY = 30_000;
 const ENV_RETRY_MAX = 300_000;
 const projectKinds = ["insights", "foundry", "inspect", "optimizer", "evaluations", "insightsScan"];
-const unscoped = ["quickstart", "landingZone", "plugin", "devpack", "auth", "sdd", "changes", "improve", "deploy"];
+const unscoped = ["quickstart", "landingZone", "plugin", "devpack", "auth", "workiq", "sdd", "changes", "improve", "deploy", "run", "test", "convert"];
+const briefKinds = ["guided", "scenario", "custom", "sdd"];
+const WORKIQ_CONTEXT = "Work IQ context: before asking clarifying questions, use the Work IQ MCP server (workiq) to find Microsoft 365 context relevant to this brief, such as meetings, emails, documents and people. Fold only the requirements that matter into the brief, citing each by source type (for example, a design review meeting), and confirm them with me. Never copy confidential content, personal data or secrets into the workspace. If Work IQ is unavailable or needs consent, say so and continue without it.";
+const shortCommand = name => `Use the foundry-agentic-loop skill in rapid prototyping mode for the \`${name}\` short command in the Agentic Loop section of the root AGENTS.md:`;
+
+// Work IQ is optional context, so its state never affects readiness. Configured, enabled servers win over disabled ones.
+export function workIqStatus(result) {
+    if (result.status === "error") return { status: "error", error: result.error };
+    const matches = (result.data?.servers ?? []).filter(row => /workiq|work-iq/i.test(`${row.name} ${row.sourcePlugin ?? ""}`));
+    const server = matches.find(row => row.enabled) ?? matches[0];
+    if (!server) return { status: "missing" };
+    return { status: "ready", data: { name: server.name, enabled: server.enabled, live: server.live?.status ?? null, error: server.live?.error ?? null } };
+}
 
 export function validTarget(target = {}) {
     const result = { subscriptionId: null, location: "auto", environmentName: "" };
@@ -62,7 +77,7 @@ function changeRequest(runId, checkpoint, feedback) {
     }
 }
 
-export function promptFor(kind, { project, scenario, text, agent, mode = "rapid", target, subscriptions, runId, checkpoint } = {}) {
+export function promptFor(kind, { project, scenario, text, agent, mode = "rapid", target, subscriptions, runId, checkpoint, workiq = false } = {}) {
     if (!MODES.includes(mode)) throw new Error("Choose rapid prototyping or SDD mode.");
     if (runId != null && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(runId)) throw new Error("Invalid workflow run.");
     const context = project && !unscoped.includes(kind) && !(mode === "sdd" && ["guided", "scenario", "custom"].includes(kind))
@@ -77,6 +92,7 @@ export function promptFor(kind, { project, scenario, text, agent, mode = "rapid"
         plugin: `Install or enable the missing Agentic Loop prerequisites. Check copilot plugin list and install only what is missing: copilot plugin install foundry-agentic-loop@awesome-copilot (skill, canvas and workflow) and copilot plugin install azure@awesome-copilot (Azure skills, including microsoft-foundry). If the marketplace is unknown, run copilot plugin marketplace add github/awesome-copilot first. Then reload skills and extensions and confirm the foundry-agentic-loop skill, foundry-agentic-loop-canvas and foundry-agentic-loop-workflow are available. If a plugin extension is still missing, install it with install_extension from ${links.extensions}/<name> at user scope; if one is listed as disabled, re-enable it as the foundry-agentic-loop skill bootstrap describes. Tell me if a new session is required.`,
         devpack: `Guide me through installing missing or outdated az, azd (${AZD_MINIMUM} or later), and azd ai tools using Foundry DevPack: ${links.devpack}. Check my OS and installed tools first. DevPack may not include Azure CLI; if az is still missing, use Microsoft's Azure CLI installation instructions. Ask before installing anything.`,
         auth: "Check Azure CLI and Azure Developer CLI availability and current sign-in. Authenticate only installed CLIs that need it, using az login or azd auth login as appropriate. Confirm the intended tenant and subscription; do not expose tokens.",
+        workiq: `Set up the Work IQ MCP server (${links.workiq}) so the Agentic Loop can use Microsoft 365 context when building. Check copilot plugin list and the configured MCP servers first; if workiq is already configured, make sure it is enabled and confirm it connects. Otherwise ask before installing: add the marketplace with copilot plugin marketplace add microsoft/work-iq if it is unknown, run copilot plugin install workiq@work-iq, reload and confirm the workiq MCP server is configured. Work IQ is in preview and may need Microsoft 365 tenant admin consent on first use; if consent is missing, say who must grant it. Tell me if a new session is required.`,
         quickstart: `Guide me through creating a Microsoft Foundry project using ${links.quickstart}. Clarify subscription, region, resource group and names, check permissions, estimate cost, and ask for approval before provisioning. Configure Application Insights for the project.`,
         landingZone: `Guide me through a production-ready enterprise AI deployment using Azure AI Landing Zones: ${links.landingZone}. Clarify governance, networking, identity, subscriptions, region and cost before provisioning.`,
         insights: "Create or reuse an Azure Application Insights resource and connect it to this Foundry project. Verify the project connection, managed-identity permissions and telemetry configuration. Ask before creating billable resources.",
@@ -88,7 +104,11 @@ export function promptFor(kind, { project, scenario, text, agent, mode = "rapid"
         sdd,
         changes: kind === "changes" && runId ? changeRequest(runId, checkpoint, text?.trim()) : null,
         improve: `Use the foundry-agentic-loop skill in improve mode. Analyze ${runId ? `foundry-agentic-loop-workflow run ${runId} and ` : ""}recent Agentic Loop evidence: .agentic-loop/runs flight records, ${LESSONS} lessons, workflow run history and session history. Find recurring failures, slow phases and manual fixes, propose the smallest evidence-backed changes to the foundry-agentic-loop skill and workflow, check them against the skill evals, and ask before applying them.`,
-        deploy: runId ? `Use the foundry-agentic-loop skill in SDD mode to deploy the solution that foundry-agentic-loop-workflow run ${runId} verified without deploying. Follow its Deploy phase guide (references/deploy.md) in Chat: run its preflight, summarize the resources, region, cost and security impact from .azure/deployment-plan.md and docs/verify.md, and ask for my approval before azd up. Pass its gate, write docs/deploy.md and add lessons to ${LESSONS}.` : null,
+        deploy: runId ? `Use the foundry-agentic-loop skill in SDD mode to deploy the solution that foundry-agentic-loop-workflow run ${runId} verified without deploying. Follow its Deploy phase guide (references/deploy.md) in Chat: run its preflight, summarize the resources, region, cost and security impact from .azure/deployment-plan.md and docs/verify.md, and ask for my approval before azd up. Pass its gate, write docs/deploy.md and add lessons to ${LESSONS}.`
+            : mode === "rapid" ? `${shortCommand("deploy")} redeploy the changed agents and MCP servers and rerun their probes. Then summarize the app target, cost and security impact from .azure/deployment-plan.md and ask for my approval before deploying the app.` : null,
+        run: mode === "rapid" ? `${shortCommand("run")} start the backend and frontend dev servers, detached when available, verify that both respond, report their URLs and upsert the verified LOCAL_FRONTEND in .env.` : null,
+        test: mode === "rapid" ? `${shortCommand("test")} run the local acceptance, contract and E2E tests against the contract in the root README.md. Report the results and the root cause of each failure, and ask before changing code.` : null,
+        convert: mode === "rapid" ? `${shortCommand("convert to SDD")} confirm the switch with me first. Then derive docs/spec.md from this workspace with Specify reverse, switch the Agentic Loop section of AGENTS.md to SDD and start the foundry-agentic-loop-workflow from the derived spec.` : null,
         foundry: "Open the existing Microsoft Foundry Canvas in its Manage view for my use. Reuse its public canvas API, then synchronize the selected project using set_canvas_selected_foundry_project with the verified project ID and endpoint below. Resolve the tenant from the selected subscription before synchronization, especially when switching directories. Do not create or deploy anything. Keep this Agentic Loop panel available.",
         inspect: agent ? `Launch Agent Inspector locally for this existing Foundry agent using microsoft-foundry. Verify the project and agent version below. Use the deployed endpoint if supported; if local source is required, locate this agent's matching source and explain any missing prerequisites. Do not substitute another workspace agent, scaffold or redeploy. Verify Inspector is responding and open it in the integrated browser. Ask before installing missing tools or sending test prompts that may incur usage charges.\nAgent name: ${JSON.stringify(agent.name)}\nAgent version: ${agent.version == null ? "Resolve the latest version; none was returned by discovery." : JSON.stringify(agent.version)}` : null,
         optimizer: `Use the microsoft-foundry skill to help me improve an existing agent with Foundry Agent Optimizer: ${links.optimizer}. Confirm the target agent and baseline version/configuration in the selected project; ask if ambiguous. Check preview availability and whether this is a prompt or hosted agent. For hosted agents, inspect optimizer readiness before proposing the required integration. Reuse representative evaluation data and available evaluator/optimization model deployments; agree on quality criteria, optimization targets and a bounded run budget. Protect against tool side effects with test endpoints or approved mocks. Ask before billable runs, new resources, or applying/promoting a candidate and redeploying. Compare candidates against the baseline and report evidence, trade-offs and available measured usage; do not silently replace the running agent.`,
@@ -97,7 +117,8 @@ export function promptFor(kind, { project, scenario, text, agent, mode = "rapid"
     };
     if (typeof prompts[kind] !== "string" || !prompts[kind].trim()) throw new Error("Choose a valid prompt.");
     if (projectKinds.includes(kind) && !project) throw new Error("Select a Foundry project first.");
-    return `[Agentic Loop canvas action]\n${prompts[kind]}${context}`;
+    const grounding = workiq && briefKinds.includes(kind) ? `\n\n${WORKIQ_CONTEXT}` : "";
+    return `[Agentic Loop canvas action]\n${prompts[kind]}${grounding}${context}`;
 }
 
 export class Model {
@@ -106,7 +127,7 @@ export class Model {
         this.session = session;
         this.scenarios = scenarios;
         this.storage = storage;
-        this.state = { tab: "setup", subscriptionId: null, projectId: null, draft: "", mode: null, target: validTarget() };
+        this.state = { tab: "start", subscriptionId: null, projectId: null, draft: "", mode: null, target: validTarget(), workiq: false };
         this.projects = [];
         this.subscriptions = [];
         this.projectWarnings = [];
@@ -121,7 +142,9 @@ export class Model {
         try { Object.assign(this.state, JSON.parse(await readFile(this.storage, "utf8"))); }
         catch (error) { if (error.code !== "ENOENT") throw error; }
         let migrated = false;
-        if (this.state.tab === "cost") { this.state.tab = "optimize"; migrated = true; }
+        if (Object.hasOwn(RETIRED_TABS, this.state.tab)) { this.state.tab = RETIRED_TABS[this.state.tab]; migrated = true; }
+        else if (!TABS.includes(this.state.tab)) { this.state.tab = "start"; migrated = true; }
+        if (typeof this.state.workiq !== "boolean") { this.state.workiq = false; migrated = true; }
         for (const key of ["estimate", "scope"]) if (Object.hasOwn(this.state, key)) { delete this.state[key]; migrated = true; }
         if (this.state.mode != null && !MODES.includes(this.state.mode)) { this.state.mode = null; migrated = true; }
         try { this.state.target = validTarget(this.state.target ?? {}); }
@@ -167,16 +190,19 @@ export class Model {
     get project() { return this.projects.find(project => project.id === this.state.projectId) ?? null; }
 
     async setup() {
-        const [result, extensions] = await Promise.all([outcome(async () => {
+        const [result, extensions, servers] = await Promise.all([outcome(async () => {
             const diagnostics = await this.session.rpc.skills.reload();
             if (diagnostics.errors.length) throw new Error(diagnostics.errors.join("; "));
             return this.session.rpc.skills.list();
-        }), outcome(() => this.session.rpc.extensions.list())]);
+        }), outcome(() => this.session.rpc.extensions.list()),
+        // listConfigured reads configuration only; mcp.list could start servers.
+        outcome(() => this.session.rpc.mcp.listConfigured())]);
         const setup = await this.azure.prerequisites(result.data?.skills ?? [], extensions.data?.extensions ?? null);
         if (result.status === "error") {
             setup.ready = false;
             setup.discoveryError = result.error;
         }
+        setup.workiq = workIqStatus(servers);
         return setup;
     }
 
@@ -246,7 +272,7 @@ export class Model {
         if (input.scenarioId && !scenario) throw new Error("Unknown scenario.");
         const prompt = promptFor(input.kind, {
             project: this.project, scenario, text: input.text, mode, runId: input.runId, checkpoint,
-            target: this.state.target, subscriptions: this.subscriptions,
+            target: this.state.target, subscriptions: this.subscriptions, workiq: this.state.workiq === true,
         });
         const messageId = await this.session.send({ prompt });
         return { messageId, prompt };

@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
 import { Azure } from "./lib/azure.mjs";
-import { Model } from "./lib/model.mjs";
+import { Model, TABS } from "./lib/model.mjs";
 import { startServer } from "./lib/server.mjs";
 import { openFrontend } from "./lib/frontends.mjs";
 import { assertSession, sessionUsage } from "./lib/usage.mjs";
@@ -14,8 +14,8 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const scenarios = JSON.parse(await readFile(path.join(root, "assets", "scenarios.json"), "utf8"));
 const images = path.join(root, "assets", "images");
 const servers = new Map();
-const tabs = ["setup", "resources", "build", "workflow", "explore", "optimize"];
-const promptKinds = ["plugin", "devpack", "auth", "quickstart", "landingZone", "insights", "guided", "scenario", "custom", "sdd", "changes", "improve", "deploy", "foundry", "optimizer", "evaluations", "insightsScan"];
+const tabs = [...TABS];
+const promptKinds = ["plugin", "devpack", "auth", "workiq", "quickstart", "landingZone", "insights", "guided", "scenario", "custom", "sdd", "changes", "improve", "deploy", "run", "test", "convert", "foundry", "optimizer", "evaluations", "insightsScan"];
 let model;
 let live;
 let liveStarted;
@@ -37,7 +37,7 @@ const schemas = {
     open_frontend: { ...objectSchema({ frontend: { enum: ["local", "deployed"] } }), required: ["frontend"] },
     usage: objectSchema({}),
     cost: objectSchema({}),
-    preferences: objectSchema({ tab: { enum: tabs }, draft: { type: "string", maxLength: 16000 } }),
+    preferences: objectSchema({ tab: { enum: tabs }, draft: { type: "string", maxLength: 16000 }, workiq: { type: "boolean" } }),
     mode: { ...objectSchema({ mode: { enum: ["rapid", "sdd", "auto"] } }), required: ["mode"] },
     targets: objectSchema({}),
     target: objectSchema({ subscriptionId: { type: "string", maxLength: 36 }, location: { type: "string", maxLength: 32 }, environmentName: { type: "string", maxLength: 40 } }),
@@ -76,7 +76,7 @@ function liveSnapshot() {
 
 function knownRun(id) {
     const run = live.runs.find(row => row.runId === id);
-    if (!run) throw new Error("This workflow run is no longer available. Refresh the Workflow tab.");
+    if (!run) throw new Error("This workflow run is no longer available. Refresh the Build tab.");
     return run;
 }
 
@@ -153,7 +153,7 @@ async function perform(action, input) {
             return model.send(input, model.mode(live.runs.length > 0, live.lock), run?.checkpoint ?? (["error", "halted"].includes(run?.status) ? "failed" : null));
         }
         default:
-            if (!project) throw new Error("Select a Foundry project on Resources first.");
+            if (!project) throw new Error("Select a Foundry project on Start first.");
             if (action === "monitoring") return model.azure.monitoring(project);
             if (action === "explore") return model.azure.explore(project);
             if (action === "cost") return model.azure.cost(project);
@@ -172,7 +172,7 @@ function dispatch(action, input = {}) {
 }
 
 const descriptions = {
-    setup: "Check the foundry-agentic-loop and microsoft-foundry plugins, the canvas and workflow extensions, CLI tools and Azure authentication.",
+    setup: "Check the foundry-agentic-loop and microsoft-foundry plugins, the canvas and workflow extensions, CLI tools and Azure authentication, and whether the optional Work IQ MCP server is configured.",
     discover: "Discover accessible Foundry projects and default to the first available.",
     select: "Select a discovered project and persist it for this session.",
     monitoring: "Check the selected project's Application Insights connections.",
@@ -182,7 +182,7 @@ const descriptions = {
     open_frontend: "Open a configured frontend in the integrated browser, rereading its URL from .env.",
     usage: "Get usage for the bound Copilot session, with its ID, session accounting and runtime model counters.",
     cost: "Query resource-group month-to-date actual Azure spend.",
-    preferences: "Save the active tab and the Build draft.",
+    preferences: "Save the active tab, the Start brief draft and whether briefs ask Copilot to use Work IQ context.",
     mode: "Show rapid prototyping or SDD workflow views; auto selects SDD when this session has foundry-agentic-loop-workflow runs. An Agentic Loop section in the workspace AGENTS.md locks the mode and rejects a switch away from it.",
     targets: "List enabled Azure subscriptions and the saved SDD deployment target.",
     target: "Save the SDD deployment target: subscription, region (or auto) and azd environment name.",
@@ -193,7 +193,7 @@ const descriptions = {
     workflow_cancel: "Cancel a foundry-agentic-loop-workflow run.",
     open_artifact: "Open an existing workflow artifact such as docs/spec.md, or the workspace AGENTS.md, in the Editor canvas.",
     refresh_foundry: "Reuse the existing Foundry canvas public refreshWorkspaceState action.",
-    prompt: "Send a canvas prompt to Chat; this starts a Copilot turn. In the panel only the Build brief (kind custom) is reviewed and edited by the user before sending; changes adds the user's feedback to a fixed change request, and the other kinds send a fixed prompt for their step directly.",
+    prompt: "Send a canvas prompt to Chat; this starts a Copilot turn. In the panel only the Start brief (kind custom) is reviewed and edited by the user before sending; changes adds the user's feedback to a fixed change request, and the other kinds send a fixed prompt for their step directly. With Work IQ context on, brief prompts ask Copilot to use the Work IQ MCP server first.",
 };
 
 const session = await joinSession({

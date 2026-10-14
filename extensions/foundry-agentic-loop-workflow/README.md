@@ -33,7 +33,7 @@ The gate passes only on the reviewer's verdict.
 
 Each pause posts a `Needs you:` line in Chat that names the decision. The flight record lists every gate issue, and the canvas shows them. Resume with `run_dynamic_workflow` and `resumeFromRunId`, or from the canvas. Completed steps, including every subagent report, replay from the journal, so resuming never repeats finished work.
 
-Workflow subagents don't appear in `list_agents` or `read_agent`. The flight record is saved when the run starts, at the first step that runs after a resume, at each gate, checkpoint and Deploy skip, at the result and on failure, so a quiet hour inside one Implement step is normal. A cancelled run keeps its last saved status, so the run status from `dynamic_workflows_manage` (`runs` or `inspect-run`) is authoritative. The canvas Workflow tab shows live subagent activity.
+Workflow subagents don't appear in `list_agents` or `read_agent`. The flight record is saved when the run starts, at the first step that runs after a resume, at each gate, checkpoint and Deploy skip, at the result and on failure, so a quiet hour inside one Implement step is normal. A cancelled run keeps its last saved status, so the run status from `dynamic_workflows_manage` (`runs` or `inspect-run`) is authoritative. The canvas Build tab shows live subagent activity.
 
 ## Arguments
 

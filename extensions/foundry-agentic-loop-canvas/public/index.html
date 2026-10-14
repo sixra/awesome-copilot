@@ -30,10 +30,8 @@
 <button id="project-bar" class="project-bar"><span><span id="project-label" class="muted">Microsoft Foundry project</span><strong id="project-name">Choose a project</strong></span><span class="chevron" aria-hidden="true">⌄</span></button>
 <div class="sticky-bar">
 <nav role="tablist" aria-label="Solution workspace">
-    <button role="tab" id="tab-setup" aria-controls="setup" aria-selected="true" data-tab="setup">Setup <span id="setup-mark" class="mark"></span></button>
-    <button role="tab" id="tab-resources" aria-controls="resources" aria-selected="false" tabindex="-1" data-tab="resources">Resources <span id="resources-mark" class="mark"></span></button>
+    <button role="tab" id="tab-start" aria-controls="start" aria-selected="true" data-tab="start">Start <span id="start-mark" class="mark"></span></button>
     <button role="tab" id="tab-build" aria-controls="build" aria-selected="false" tabindex="-1" data-tab="build">Build <span id="build-mark" class="mark"></span></button>
-    <button role="tab" id="tab-workflow" aria-controls="workflow" aria-selected="false" tabindex="-1" data-tab="workflow" hidden>Workflow <span id="workflow-mark" class="mark"></span></button>
     <button role="tab" id="tab-explore" aria-controls="explore" aria-selected="false" tabindex="-1" data-tab="explore">Explore</button>
     <button role="tab" id="tab-optimize" aria-controls="optimize" aria-selected="false" tabindex="-1" data-tab="optimize">Optimize</button>
 </nav>
@@ -41,60 +39,74 @@
 <p id="project-env-error" class="error banner" hidden></p>
 </div>
 <main>
-    <section id="setup" role="tabpanel" aria-labelledby="tab-setup">
-        <h2>Ready to build?</h2><p class="intro">Install once. Then carry a complete solution from intent to production.</p>
-        <div id="checks"><div class="skeleton"><span></span><span></span><span></span><p class="visually-hidden">Checking skills, extensions, tools and Azure sign-in…</p></div></div>
-        <div id="setup-actions" hidden>
-            <div id="setup-plugin-help" hidden>
-                <div class="section-heading"><h3>Install the Agentic Loop plugin</h3></div>
-                <p id="setup-missing-plugin" class="muted"></p>
-                <p>One plugin brings the skills, this panel and the SDD workflow. The microsoft-foundry skill comes with the Azure skills plugin.</p>
-                <pre class="command"><code>copilot plugin install foundry-agentic-loop@awesome-copilot
+    <section id="start" role="tabpanel" aria-labelledby="tab-start">
+        <h2 id="start-title">Start with an outcome</h2><p id="start-intro" class="intro"></p>
+        <details id="step-ready" class="step" open>
+            <summary><span id="ready-glyph" class="step-glyph" data-state="checking" aria-hidden="true">1</span><span class="step-label"><span class="step-title">Readiness</span><span id="ready-summary" class="step-summary">Checking skills, extensions, tools and Azure sign-in…</span></span><svg class="step-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></summary>
+            <div class="step-body">
+                <div id="checks"><div class="skeleton"><span></span><span></span><span></span><p class="visually-hidden">Checking skills, extensions, tools and Azure sign-in…</p></div></div>
+                <div id="setup-actions" hidden>
+                    <div id="setup-plugin-help" hidden>
+                        <div class="section-heading"><h3>Install the Agentic Loop plugin</h3></div>
+                        <p id="setup-missing-plugin" class="muted"></p>
+                        <p>One plugin brings the skills, this panel and the SDD workflow. The microsoft-foundry skill comes with the Azure skills plugin.</p>
+                        <pre class="command"><code>copilot plugin install foundry-agentic-loop@awesome-copilot
 copilot plugin install azure@awesome-copilot</code></pre>
-                <div class="actions"><button data-prompt="plugin">Set up in Chat</button></div>
+                        <div class="actions"><button data-prompt="plugin">Set up in Chat</button></div>
+                    </div>
+                    <div id="setup-cli-help" hidden>
+                        <div class="section-heading"><h3>Check command-line tools</h3></div>
+                        <p id="setup-missing-tools" class="muted"></p>
+                        <p>Foundry DevPack sets up azd and the Foundry extensions. If Azure CLI is still missing, the guide installs it separately.</p>
+                        <div class="actions"><button data-prompt="devpack">Guide me through setup</button><a href="https://learn.microsoft.com/azure/foundry/how-to/develop/install-cli-sdk?tabs=macos%2Cpython%2Cazd-ai#install-foundry-devpack" target="_blank" rel="noopener noreferrer">DevPack guide ↗</a></div>
+                    </div>
+                    <div id="setup-auth-help" hidden>
+                        <div class="section-heading"><h3>Sign in to Azure</h3></div>
+                        <p id="setup-missing-auth" class="muted"></p>
+                        <div class="actions"><button data-prompt="auth">Sign in with Azure</button></div>
+                    </div>
+                    <p class="muted">Installs and sign-in happen with your approval in Chat. Check again after completing them.</p>
+                </div>
+                <div class="actions"><button id="recheck">Check again</button></div>
             </div>
-            <div id="setup-cli-help" hidden>
-                <div class="section-heading"><h3>Check command-line tools</h3></div>
-                <p id="setup-missing-tools" class="muted"></p>
-                <p>Foundry DevPack sets up azd and the Foundry extensions. If Azure CLI is still missing, the guide installs it separately.</p>
-                <div class="actions"><button data-prompt="devpack">Guide me through setup</button><a href="https://learn.microsoft.com/azure/foundry/how-to/develop/install-cli-sdk?tabs=macos%2Cpython%2Cazd-ai#install-foundry-devpack" target="_blank" rel="noopener noreferrer">DevPack guide ↗</a></div>
+        </details>
+        <details id="step-where" class="step" open>
+            <summary><span id="where-glyph" class="step-glyph" aria-hidden="true">2</span><span class="step-label"><span id="where-title" class="step-title">Foundry project</span><span id="where-summary" class="step-summary"></span></span><svg class="step-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></summary>
+            <div class="step-body">
+                <div id="where-rapid">
+                    <p class="muted">Copilot builds in this project. Its resource group brings the rest of your solution together.</p>
+                    <label for="subscription">Azure subscription</label><select id="subscription"><option value="">Discovering subscriptions…</option></select>
+                    <label for="project-search">Find a project</label><input id="project-search" type="search" placeholder="Search project or resource group">
+                    <div id="projects" class="project-list"></div>
+                    <div id="resource-context"></div><div id="monitoring"></div>
+                    <div class="section-heading"><h3>Start with new resources</h3></div>
+                    <div class="choice"><div><h4>Foundry quickstart</h4><p>A focused starting point for development.</p></div><button data-prompt="quickstart">Create in Chat</button></div>
+                    <div class="choice"><div><h4>AI Landing Zone</h4><p>Enterprise networking, identity and governance for production.</p></div><button data-prompt="landingZone">Plan in Chat</button></div>
+                    <p class="muted">Discovery is read-only. Creating resources requires approval in Chat.</p>
+                </div>
+                <fieldset id="target" class="target" hidden>
+                    <legend class="visually-hidden">Deployment target</legend>
+                    <div class="target-grid">
+                        <div><label for="target-subscription">Subscription</label><select id="target-subscription"><option value="">Confirm in Chat</option></select></div>
+                        <div><label for="target-location">Region</label><select id="target-location">
+                            <option value="auto">Let Copilot recommend</option>
+                            <option value="eastus2">East US 2</option><option value="eastus">East US</option><option value="northcentralus">North Central US</option>
+                            <option value="westus3">West US 3</option><option value="swedencentral">Sweden Central</option><option value="francecentral">France Central</option>
+                            <option value="uksouth">UK South</option><option value="australiaeast">Australia East</option><option value="japaneast">Japan East</option>
+                        </select></div>
+                        <div><label for="target-env">azd environment</label><input id="target-env" maxlength="20" spellcheck="false" autocomplete="off" placeholder="From the solution name" aria-describedby="target-help"></div>
+                    </div>
+                    <p id="target-help" class="muted">The workflow creates a resource group and a Foundry project here. Nothing deploys until you approve it.</p>
+                </fieldset>
             </div>
-            <div id="setup-auth-help" hidden>
-                <div class="section-heading"><h3>Sign in to Azure</h3></div>
-                <p id="setup-missing-auth" class="muted"></p>
-                <div class="actions"><button data-prompt="auth">Sign in with Azure</button></div>
-            </div>
-            <p class="muted">Installs and sign-in happen with your approval in Chat. Refresh after completing them.</p>
+        </details>
+        <div id="brief-step" class="step-head"><span class="step-glyph" aria-hidden="true">3</span><span class="step-title">Describe the outcome</span></div>
+        <p id="brief-project-hint" class="warning" hidden>No Foundry project selected. Choose one above, or Copilot asks which project to use.</p>
+        <div class="workiq">
+            <input id="workiq-toggle" type="checkbox" aria-describedby="workiq-status">
+            <div><label for="workiq-toggle">Use Work IQ context</label><p id="workiq-status" class="muted">Checking Work IQ…</p></div>
+            <button id="workiq-setup" data-prompt="workiq" hidden>Set up Work IQ</button>
         </div>
-    </section>
-    <section id="resources" role="tabpanel" aria-labelledby="tab-resources" hidden>
-        <h2>Your deployment home</h2><p class="intro">Choose a Foundry project. Its resource group brings the rest of your solution together.</p>
-        <label for="subscription">Azure subscription</label><select id="subscription"><option value="">Discovering subscriptions…</option></select>
-        <label for="project-search">Find a project</label><input id="project-search" type="search" placeholder="Search project or resource group">
-        <div id="projects" class="project-list"></div>
-        <div id="resource-context"></div><div id="monitoring"></div>
-        <div class="section-heading"><h3>Start with new resources</h3></div>
-        <div class="choice"><div><h4>Foundry quickstart</h4><p>A focused starting point for development.</p></div><button data-prompt="quickstart">Create in Chat</button></div>
-        <div class="choice"><div><h4>AI Landing Zone</h4><p>Enterprise networking, identity and governance for production.</p></div><button data-prompt="landingZone">Plan in Chat</button></div>
-        <p class="muted">Discovery is read-only. Creating resources requires approval in Chat.</p>
-    </section>
-    <section id="build" role="tabpanel" aria-labelledby="tab-build" hidden>
-        <h2 id="build-title">Start with an outcome</h2><p id="build-intro" class="intro"></p>
-        <p id="build-project-hint" class="warning" hidden>No Foundry project selected. Choose one on Resources, or Copilot asks which project to use.</p>
-        <fieldset id="target" class="target" hidden>
-            <legend>Deployment target</legend>
-            <div class="target-grid">
-                <div><label for="target-subscription">Subscription</label><select id="target-subscription"><option value="">Confirm in Chat</option></select></div>
-                <div><label for="target-location">Region</label><select id="target-location">
-                    <option value="auto">Let Copilot recommend</option>
-                    <option value="eastus2">East US 2</option><option value="eastus">East US</option><option value="northcentralus">North Central US</option>
-                    <option value="westus3">West US 3</option><option value="swedencentral">Sweden Central</option><option value="francecentral">France Central</option>
-                    <option value="uksouth">UK South</option><option value="australiaeast">Australia East</option><option value="japaneast">Japan East</option>
-                </select></div>
-                <div><label for="target-env">azd environment</label><input id="target-env" maxlength="20" spellcheck="false" autocomplete="off" placeholder="From the solution name" aria-describedby="target-help"></div>
-            </div>
-            <p id="target-help" class="muted">The workflow creates a resource group and a Foundry project here. Nothing deploys until you approve it.</p>
-        </fieldset>
         <div class="guided">
             <div><h3>Shape it with Copilot</h3><p id="guided-text">Answer a few focused questions about agents, data, tools and the user experience.</p></div>
             <div class="guided-actions"><button class="primary" data-prompt="guided">Guide me</button><button id="own-brief">Write a brief</button></div>
@@ -120,30 +132,43 @@ copilot plugin install azure@awesome-copilot</code></pre>
             <p id="send-hint" class="muted"></p>
         </div>
     </section>
-    <section id="workflow" role="tabpanel" aria-labelledby="tab-workflow" hidden>
-        <div id="wf-empty">
-            <h2>Spec-driven development, phase by phase</h2>
-            <p class="intro">Start an SDD workflow from Build. This tab follows it live: each phase, its agents, the evidence it writes and the gate it must pass.</p>
-            <ol class="phases preview">
-                <li class="phase" data-view="pending"><span class="phase-icon" aria-hidden="true"></span><div class="phase-body"><div class="phase-head"><h3>Specify</h3></div><p class="muted">EARS acceptance criteria, a frozen contract, workstreams and a deployment plan, checked by an independent reviewer.</p><p class="gate-note">Gate · you approve the spec and plan</p></div></li>
-                <li class="phase" data-view="pending"><span class="phase-icon" aria-hidden="true"></span><div class="phase-body"><div class="phase-head"><h3>Implement</h3></div><p class="muted">azd provisions the Foundry project and a hosted checkpoint proves the integration before agents, tools and app are built in parallel.</p><p class="gate-note">Gate · provisioned, checkpoint proven, tests pass</p></div></li>
-                <li class="phase" data-view="pending"><span class="phase-icon" aria-hidden="true"></span><div class="phase-body"><div class="phase-head"><h3>Verify</h3></div><p class="muted">Every acceptance criterion tested end to end, plus hosted invocations, traces and agent evaluations, with bounded fix loops.</p><p class="gate-note">Gate · criteria, evaluations and traces pass, or you decide</p></div></li>
-                <li class="phase" data-view="pending"><span class="phase-icon" aria-hidden="true"></span><div class="phase-body"><div class="phase-head"><h3>Deploy</h3></div><p class="muted">azd up ships agents and apps with keyless auth and monitoring, then reruns the end-to-end tests against the deployed endpoints.</p><p class="gate-note">Gate · you approve before azd up</p></div></li>
-            </ol>
-            <div class="actions"><button class="primary" data-go="build">Choose a brief</button></div>
-        </div>
-        <div id="wf-run" hidden>
-            <div id="wf-picker-row" class="picker" hidden><label for="wf-picker">Run</label><select id="wf-picker"></select></div>
-            <div class="run-head">
-                <h2 id="wf-brief"></h2>
-                <span id="wf-status" class="pill"></span>
+    <section id="build" role="tabpanel" aria-labelledby="tab-build" hidden>
+        <div id="rapid-progress">
+            <h2>Your prototype, step by step</h2>
+            <p class="intro">Copilot builds in Chat. This tab tracks the milestones it records in your workspace.</p>
+            <ol id="rapid-steps" class="phases" aria-label="Prototype milestones"></ol>
+            <div id="rapid-start" class="actions"><button class="primary" data-go="start">Choose a brief</button></div>
+            <div id="rapid-commands" hidden>
+                <div class="section-heading"><h3>Keep the loop going</h3></div>
+                <div class="actions"><button data-prompt="run">Run locally</button><button data-prompt="test">Run tests</button><button data-prompt="deploy">Deploy</button><button data-prompt="convert">Convert to SDD</button></div>
             </div>
-            <p id="wf-meta" class="run-meta"></p>
-            <div id="wf-callout"></div>
-            <ol id="wf-phases" class="phases" aria-label="Workflow phases"></ol>
-            <details id="wf-log-box" class="log-box"><summary>Activity log <span id="wf-log-count" class="muted"></span></summary><ol id="wf-log" class="log"></ol></details>
-            <p id="wf-error" class="error" hidden></p>
         </div>
+        <div id="sdd-progress" hidden>
+            <div id="wf-empty">
+                <h2>Spec-driven development, phase by phase</h2>
+                <p class="intro">Choose a brief on Start to launch the workflow. This tab follows it live: each phase, its agents, the evidence it writes and the gate it must pass.</p>
+                <ol class="phases preview">
+                    <li class="phase" data-view="pending"><span class="phase-icon" aria-hidden="true"></span><div class="phase-body"><div class="phase-head"><h3>Specify</h3></div><p class="muted">EARS acceptance criteria, a frozen contract, workstreams and a deployment plan, checked by an independent reviewer.</p><p class="gate-note">Gate · you approve the spec and plan</p></div></li>
+                    <li class="phase" data-view="pending"><span class="phase-icon" aria-hidden="true"></span><div class="phase-body"><div class="phase-head"><h3>Implement</h3></div><p class="muted">azd provisions the Foundry project and a hosted checkpoint proves the integration before agents, tools and app are built in parallel.</p><p class="gate-note">Gate · provisioned, checkpoint proven, tests pass</p></div></li>
+                    <li class="phase" data-view="pending"><span class="phase-icon" aria-hidden="true"></span><div class="phase-body"><div class="phase-head"><h3>Verify</h3></div><p class="muted">Every acceptance criterion tested end to end, plus hosted invocations, traces and agent evaluations, with bounded fix loops.</p><p class="gate-note">Gate · criteria, evaluations and traces pass, or you decide</p></div></li>
+                    <li class="phase" data-view="pending"><span class="phase-icon" aria-hidden="true"></span><div class="phase-body"><div class="phase-head"><h3>Deploy</h3></div><p class="muted">azd up ships agents and apps with keyless auth and monitoring, then reruns the end-to-end tests against the deployed endpoints.</p><p class="gate-note">Gate · you approve before azd up</p></div></li>
+                </ol>
+                <div class="actions"><button class="primary" data-go="start">Choose a brief</button></div>
+            </div>
+            <div id="wf-run" hidden>
+                <div id="wf-picker-row" class="picker" hidden><label for="wf-picker">Run</label><select id="wf-picker"></select></div>
+                <div class="run-head">
+                    <h2 id="wf-brief"></h2>
+                    <span id="wf-status" class="pill"></span>
+                </div>
+                <p id="wf-meta" class="run-meta"></p>
+                <div id="wf-callout"></div>
+                <ol id="wf-phases" class="phases" aria-label="Workflow phases"></ol>
+                <details id="wf-log-box" class="log-box"><summary>Activity log <span id="wf-log-count" class="muted"></span></summary><ol id="wf-log" class="log"></ol></details>
+                <p id="wf-error" class="error" hidden></p>
+            </div>
+        </div>
+        <p id="build-commands-hint" class="muted" hidden></p>
     </section>
     <section id="explore" role="tabpanel" aria-labelledby="tab-explore" hidden>
         <h2>Explore your solution</h2><p class="intro">See what is deployed, then continue the loop: observe, evaluate, improve.</p>

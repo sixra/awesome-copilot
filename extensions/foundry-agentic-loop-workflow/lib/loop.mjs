@@ -44,13 +44,13 @@ export function nextStep({ role, report }, { onPass = "", fixes = 0, maxFixLoops
 export function checkpointLines(key, { phase, round, status, issues = [], fixes = 0 } = {}) {
     if (key === "approve-spec-v1") {
         return {
-            wait: 'Needs you: approve the spec. Review docs/spec.md and .azure/deployment-plan.md, then choose "Approve spec and continue" in the Agentic Loop canvas (Workflow tab) or tell Copilot "approve the spec". Nothing is provisioned until you approve.',
+            wait: 'Needs you: approve the spec. Review docs/spec.md and .azure/deployment-plan.md, then choose "Approve spec and continue" in the Agentic Loop canvas (Build tab) or tell Copilot "approve the spec". Nothing is provisioned until you approve.',
             resume: "Spec approved. Continuing with Implement.",
         };
     }
     if (key === "approve-deploy-v1") {
         return {
-            wait: 'Needs you: approve deployment. Review docs/verify.md and .azure/deployment-plan.md, then choose "Approve deployment" in the Agentic Loop canvas (Workflow tab) or tell Copilot "approve deployment". azd up adds billable Azure resources.',
+            wait: 'Needs you: approve deployment. Review docs/verify.md and .azure/deployment-plan.md, then choose "Approve deployment" in the Agentic Loop canvas (Build tab) or tell Copilot "approve deployment". azd up adds billable Azure resources.',
             resume: "Deployment approved. Running Deploy.",
         };
     }
@@ -58,7 +58,7 @@ export function checkpointLines(key, { phase, round, status, issues = [], fixes 
     const first = issues.length ? clean(issues[0], 140) : "";
     const cause = issues.length > 1 ? ` (${issues.length} issues; first: ${first})` : first ? ` (${first})` : "";
     return {
-        wait: `Needs you: ${why}${cause}. Ask Copilot to fix ${issues.length > 1 ? "them" : "it"}, or use "Fix in Chat" on the Workflow tab of the Agentic Loop canvas, then resume to retry ${phase}.`,
+        wait: `Needs you: ${why}${cause}. Ask Copilot to fix ${issues.length > 1 ? "them" : "it"}, or use "Fix in Chat" on the Build tab of the Agentic Loop canvas, then resume to retry ${phase}.`,
         resume: `Resumed: retrying ${phase} as round ${round + 1}.`,
     };
 }

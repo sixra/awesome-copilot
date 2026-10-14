@@ -257,7 +257,7 @@ export class Live {
     }
 
     select(runId) {
-        if (!this.runs.some(run => run.runId === runId)) throw new Error("This workflow run is no longer available. Refresh the Workflow tab.");
+        if (!this.runs.some(run => run.runId === runId)) throw new Error("This workflow run is no longer available. Refresh the Build tab.");
         this.selectedRunId = runId;
         return this.refresh().then(() => this.snapshot());
     }
