@@ -25,3 +25,8 @@ Fetch the page for the **target** version before editing; prefer it over this sk
 - `org.openrewrite.java.migrate.UpgradeToJava17`: <https://docs.openrewrite.org/recipes/java/migrate/upgradetojava17>
 - `org.openrewrite.java.migrate.UpgradeToJava21`: <https://docs.openrewrite.org/recipes/java/migrate/upgradetojava21>
 - `org.openrewrite.java.migrate.UpgradeToJava25`: <https://docs.openrewrite.org/recipes/java/migrate/upgradetojava25>
+
+## Related tooling
+
+- For large automated upgrades, build-fix loops and CVE validation, the external Microsoft plugin `modernize-java` (<https://github.com/microsoft/modernize-java>, listed in this repository's `plugins/external.json`) can be used alongside this skill.
+- This skill provides lightweight JDK and framework upgrade guidance plus the javax to jakarta safeguards; it does not require that plugin.
