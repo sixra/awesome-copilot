@@ -13,273 +13,136 @@
 
         <section class="slide cover">
             <div class="cover-body">
-                <svg class="hero-loop" viewBox="0 0 32 32" aria-hidden="true"><path class="track" pathLength="100" d="M16 16c-3-4-5-6-8-6a6 6 0 0 0 0 12c3 0 5-2 8-6s5-6 8-6a6 6 0 0 1 0 12c-3 0-5-2-8-6Z"/><path class="flow" pathLength="100" d="M16 16c-3-4-5-6-8-6a6 6 0 0 0 0 12c3 0 5-2 8-6s5-6 8-6a6 6 0 0 1 0 12c-3 0-5-2-8-6Z"/></svg>
-                <h1>Agentic Loop</h1>
-                <p class="lede">From an idea to a deployed agentic solution on Microsoft Foundry, built with GitHub Copilot.</p>
-                <ul class="chips" aria-label="Built on">
-                    <li>GitHub Copilot App</li><li>Microsoft Foundry</li><li>Azure</li>
-                </ul>
+                <svg class="hero-loop" viewBox="0.8 8.8 30.4 14.4" aria-hidden="true">
+                    <path class="track" pathLength="100" d="M16 16c-3-4-5-6-8-6a6 6 0 0 0 0 12c3 0 5-2 8-6s5-6 8-6a6 6 0 0 1 0 12c-3 0-5-2-8-6Z"/>
+                    <path class="flow" pathLength="100" d="M16 16c-3-4-5-6-8-6a6 6 0 0 0 0 12c3 0 5-2 8-6s5-6 8-6a6 6 0 0 1 0 12c-3 0-5-2-8-6Z"/>
+                    <circle class="idea" cx="2" cy="16" r=".7"/>
+                    <circle class="context" cx="16" cy="16" r=".7"/>
+                    <circle class="real" cx="30" cy="16" r=".7"/>
+                </svg>
+                <div class="cover-copy">
+                    <h1>Agentic Loop</h1>
+                    <p class="lede">Turn an idea into an agentic solution on Microsoft Foundry, built with GitHub Copilot.</p>
+                    <p class="seal"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="badge" d="M12 2 14.2 4 17 3.3 17.9 6.1 20.7 7 20 9.9 22 12 20 14.2 20.7 17 17.9 17.9 17 20.7 14.2 20 12 22 9.9 20 7 20.7 6.1 17.9 3.3 17 4 14.2 2 12 4 9.9 3.3 7 6.1 6.1 7 3.3 9.9 4Z"/><path class="tick" d="m8.4 12.3 2.5 2.5 4.8-5.1"/></svg><span>Embeds the Foundry best practices collected by Microsoft Global Black Belt teams.</span></p>
+                    <ul class="chips" aria-label="Works with">
+                        <li>GitHub Copilot App</li><li>Microsoft Foundry</li><li>Work IQ</li><li>Azure</li>
+                    </ul>
+                </div>
             </div>
             <p class="hint">Press <kbd>→</kbd> or <kbd>Space</kbd> to begin</p>
         </section>
 
         <section class="slide">
-            <h2>Agentic software factories run on a harness</h2>
-            <p class="lede">Spec Kit, Kiro, BMAD and Agentic DevOps converge on the same practices. Agentic Loop builds them in, so the model is not the only thing you rely on.</p>
-            <ol class="principles">
-                <li><strong>Artifacts over chat</strong><span>Specs, plans and progress live in your repo, not in a context window.</span></li>
-                <li><strong>Specialized agents</strong><span>Each phase has its own role, context and definition of done.</span></li>
-                <li><strong>Verification is a loop</strong><span>Tests, reviews and evaluations repeat until the gate passes or you decide.</span></li>
-                <li><strong>People at the gates</strong><span>You approve the spec and the deployment. Agents do the work in between.</span></li>
-                <li><strong>Guides and sensors</strong><span>Skills steer agents before they act; tests and evaluators check them after.</span></li>
-            </ol>
-            <p class="sources">Sources:
-                <a href="https://github.com/github/spec-kit" target="_blank" rel="noopener noreferrer">GitHub Spec Kit</a> ·
-                <a href="https://kiro.dev/docs/specs/" target="_blank" rel="noopener noreferrer">Kiro specs</a> ·
-                <a href="https://martinfowler.com/articles/harness-engineering.html" target="_blank" rel="noopener noreferrer">Harness engineering</a> ·
-                <a href="https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents" target="_blank" rel="noopener noreferrer">Harnesses for long-running agents</a> ·
-                <a href="https://azure.microsoft.com/en-us/blog/agentic-devops-evolving-software-development-with-github-copilot-and-microsoft-azure/" target="_blank" rel="noopener noreferrer">Agentic DevOps</a>
-            </p>
-        </section>
-
-        <section class="slide">
-            <h2>Install one plugin. The loop sets up the rest.</h2>
-            <ol class="steps">
-                <li>
-                    <strong>Install</strong>
-                    <pre><code>copilot plugin install foundry-agentic-loop@awesome-copilot</code></pre>
-                    <span>Or add it from the awesome-copilot marketplace in GitHub Copilot App.</span>
+            <h2 class="arc-title"><span>Take an idea.</span> <span>Add your context.</span> <span>Make it real.</span></h2>
+            <ol class="arc">
+                <li class="station idea">
+                    <span class="dot" aria-hidden="true"></span><span class="wire" aria-hidden="true"></span>
+                    <h3>Idea</h3>
+                    <figure class="scenario">
+                        <img src="/images/customer-service-always-on-ai-agent.webp" alt="" width="786" height="337">
+                        <figcaption><strong>Resolve customer problems with an always-on AI agent</strong><span>One of 61 industry scenarios, or your own idea</span></figcaption>
+                    </figure>
                 </li>
-                <li>
-                    <strong>Ask</strong>
-                    <p class="say">“Open the agentic loop”</p>
-                    <span>The skill checks the bundled <code>foundry-agentic-loop-canvas</code> and <code>foundry-agentic-loop-workflow</code> extensions, adds any that are missing and opens the canvas.</span>
+                <li class="station context">
+                    <span class="dot" aria-hidden="true"></span><span class="wire" aria-hidden="true"></span>
+                    <h3>Context, with Work IQ</h3>
+                    <ul class="cites">
+                        <li><span class="src">Meeting<span class="visually-hidden">:</span></span> Refunds over $500 go to a person</li>
+                        <li><span class="src">Email<span class="visually-hidden">:</span></span> Answer in English and Spanish</li>
+                        <li><span class="src">Document<span class="visually-hidden">:</span></span> Follow returns policy v3</li>
+                    </ul>
+                    <p class="note">Requirements from your Microsoft 365 work, cited by source and confirmed by you.</p>
                 </li>
-                <li>
-                    <strong>Check</strong>
-                    <p class="say">The canvas opens on Start</p>
-                    <span>It checks skills, Azure CLI, Azure Developer CLI and sign-in, and offers a fix for anything missing.</span>
+                <li class="station real">
+                    <span class="dot" aria-hidden="true"></span>
+                    <h3>Solution</h3>
+                    <ul class="forks">
+                        <li><strong>Rapid prototyping</strong> <span>In an existing Foundry project</span></li>
+                        <li><strong>SDD workflow</strong> <span>From spec to Azure deployment</span></li>
+                    </ul>
                 </li>
             </ol>
         </section>
 
         <section class="slide">
-            <h2>Two ways to build</h2>
-            <div class="modes">
-                <article class="mode-card">
+            <h2>Two ways to make it real</h2>
+            <div class="lanes">
+                <div class="lane">
                     <h3>Rapid prototyping</h3>
-                    <p>Build in a Foundry project you already have.</p>
-                    <dl>
-                        <div><dt>Starts from</dt><dd>An existing Foundry project</dd></div>
-                        <div><dt>Runs as</dt><dd>A guided conversation in Chat</dd></div>
-                        <div><dt>Ends with</dt><dd>Working agents and a local app</dd></div>
-                        <div><dt>Best for</dt><dd>Demos, workshops and exploring an idea</dd></div>
-                    </dl>
-                </article>
-                <article class="mode-card">
+                    <p>Copilot builds in your existing Foundry project, step by step in Chat.</p>
+                    <ol class="track" aria-label="Milestones">
+                        <li>Loop started</li>
+                        <li>Project linked</li>
+                        <li>Running locally</li>
+                        <li class="optional">Deployed to Azure <small>optional</small></li>
+                    </ol>
+                    <p class="key">Ready to grow? Type <code>convert to SDD</code>.</p>
+                    <p class="fit">Best for demos, workshops and new ideas</p>
+                </div>
+                <div class="lane">
                     <h3>SDD workflow</h3>
-                    <p>Spec-driven development from a brief to Azure.</p>
-                    <dl>
-                        <div><dt>Starts from</dt><dd>A subscription and a region</dd></div>
-                        <div><dt>Runs as</dt><dd>A dynamic workflow with gates</dd></div>
-                        <div><dt>Ends with</dt><dd>A spec, tested code and a deployed solution</dd></div>
-                        <div><dt>Best for</dt><dd>Pilots and production-bound work</dd></div>
-                    </dl>
-                </article>
-            </div>
-            <p class="note">The canvas opens in Rapid mode and switches to SDD when the session has a workflow run. Your first build records the choice in <code>AGENTS.md</code>, which locks it until you ask Copilot to switch.</p>
-        </section>
-
-        <section class="slide">
-            <h2>Four tabs, the same in both modes</h2>
-            <ol class="rail">
-                <li><strong>Start</strong><span>Choose rapid or SDD, check readiness and where to build, then describe an outcome or pick one of 61 industry scenarios. Work IQ can add Microsoft 365 context.</span></li>
-                <li><strong>Build</strong><span>Follow rapid milestones or each SDD phase and gate live, with short commands such as run, test and deploy.</span></li>
-                <li><strong>Explore</strong><span>Open your app, list agents and tools, test in Agent Inspector.</span></li>
-                <li><strong>Optimize</strong><span>Review usage and cost, then run evaluations and the prompt optimizer.</span></li>
-            </ol>
-            <p class="note">Every tab hands a precise prompt to Chat. Copilot asks before it creates or changes resources.</p>
-        </section>
-
-        <section class="slide">
-            <h2>SDD workflow: four phases, you at the gates</h2>
-            <ol class="flow" aria-label="Phases and gates">
-                <li class="node"><span class="num">1</span><strong>Specify</strong></li>
-                <li class="gate"><span class="diamond" aria-hidden="true"></span><span class="gate-label">Approve the spec</span></li>
-                <li class="node"><span class="num">2</span><strong>Implement</strong></li>
-                <li class="link" aria-hidden="true"></li>
-                <li class="node"><span class="num">3</span><strong>Verify</strong></li>
-                <li class="gate"><span class="diamond" aria-hidden="true"></span><span class="gate-label">Approve deployment</span></li>
-                <li class="node"><span class="num">4</span><strong>Deploy</strong></li>
-            </ol>
-            <div class="facts">
-                <p><strong>Phases run in sequence.</strong> Fresh-context agents hand off through files, not chat history. Implement builds disjoint workstreams in parallel.</p>
-                <p><strong>Gates need evidence.</strong> An independent reviewer must pass every phase. After two fix loops, open issues come to you with the evidence.</p>
-                <p><strong>Every run leaves a record.</strong> Phases, gate results and lessons are saved so the next run starts smarter.</p>
-            </div>
-        </section>
-
-        <section class="slide phase-slide">
-            <div class="phase-copy">
-                <h2 class="phase-title"><span class="num" aria-hidden="true">1</span><span class="visually-hidden">Phase 1: </span>Specify</h2>
-                <p class="lede">Write the contract before the code.</p>
-                <ul>
-                    <li>Turns your brief into one spec: EARS acceptance criteria, a frozen implementation contract and up to four workstreams.</li>
-                    <li>Plans the Azure deployment after a read-only preflight: region, model quota, RBAC and cost drivers.</li>
-                    <li>An independent reviewer checks both. Approving them authorizes the resources in the deployment plan.</li>
-                </ul>
-            </div>
-            <aside class="phase-out">
-                <h3>Produces</h3>
-                <ul class="files"><li>docs/spec.md</li><li>.azure/deployment-plan.md</li></ul>
-                <pre><code>WHEN a claim photo is uploaded
-THE SYSTEM SHALL extract the damage
-  and cite the policy clause it used.</code></pre>
-                <p class="gate-line"><span class="diamond" aria-hidden="true"></span>Gate: you approve the spec and plan</p>
-            </aside>
-        </section>
-        <section class="slide phase-slide">
-            <div class="phase-copy">
-                <h2 class="phase-title"><span class="num" aria-hidden="true">2</span><span class="visually-hidden">Phase 2: </span>Implement</h2>
-                <p class="lede">Prove the integration, then build in parallel.</p>
-                <ul>
-                    <li>azd provisions the resource group, Foundry project and models with keyless access.</li>
-                    <li>A minimal hosted agent, one toolbox skill and one MCP tool pass an integration checkpoint first.</li>
-                    <li>Workstreams then build Responses API agents (GitHub Copilot SDK or Microsoft Agent Framework), tools, knowledge and the app against the contract.</li>
-                </ul>
-            </div>
-            <aside class="phase-out">
-                <h3>Produces</h3>
-                <ul class="files"><li>azure.yaml, infra/ and src/</li><li>docs/implementation.md</li><li>.env: FOUNDRY_PROJECT</li></ul>
-                <p class="gate-line"><span class="diamond" aria-hidden="true"></span>Gate: provisioned, checkpoint proven, tests pass</p>
-            </aside>
-        </section>
-
-        <section class="slide phase-slide">
-            <div class="phase-copy">
-                <h2 class="phase-title"><span class="num" aria-hidden="true">3</span><span class="visually-hidden">Phase 3: </span>Verify</h2>
-                <p class="lede">Cheap checks first, judgment second.</p>
-                <ol class="ladder">
-                    <li><strong>Computational</strong><span>Every component runs locally against Azure. Unit, contract and end-to-end tests cover each acceptance criterion.</span></li>
-                    <li><strong>Inferential</strong><span>A fresh-context reviewer checks the evidence against the spec. Foundry evaluators score task adherence and intent resolution, plus groundedness for grounded agents.</span></li>
-                    <li><strong>Human</strong><span>After two fix loops, open issues come to you with the evidence.</span></li>
-                </ol>
-            </div>
-            <aside class="phase-out">
-                <h3>Produces</h3>
-                <ul class="files"><li>docs/verify.md</li><li>tests/ and evaluation results</li><li>.env: LOCAL_FRONTEND</li></ul>
-                <p class="gate-line"><span class="diamond" aria-hidden="true"></span>Gate: criteria, evaluations and traces pass, or you decide</p>
-            </aside>
-        </section>
-
-        <section class="slide phase-slide">
-            <div class="phase-copy">
-                <h2 class="phase-title"><span class="num" aria-hidden="true">4</span><span class="visually-hidden">Phase 4: </span>Deploy</h2>
-                <p class="lede">You decide what goes live.</p>
-                <ul>
-                    <li>You review the verification evidence and approve going live.</li>
-                    <li>azd up reconciles the infrastructure, then deploys agents and apps with managed identity, least-privilege RBAC and Application Insights.</li>
-                    <li>Health checks, a call to each hosted agent and the end-to-end tests run against the deployed endpoints. Results and URLs land in docs/deploy.md.</li>
-                </ul>
-            </div>
-            <aside class="phase-out">
-                <h3>Runs</h3>
-                <pre><code>azd up
-# health, agents and E2E, then DEPLOYED_FRONTEND
-azd down --purge   # when you finish</code></pre>
-                <p class="gate-line"><span class="diamond" aria-hidden="true"></span>Gate: you approve before azd up</p>
-            </aside>
-        </section>
-
-        <section class="slide canvas-slide">
-            <div class="canvas-copy">
-                <h2>Follow every run from the canvas</h2>
-                <ul>
-                    <li>Phases, agents, gate results and artifacts update live.</li>
-                    <li>Approve, request changes or cancel without leaving the canvas.</li>
-                    <li>A paused run says what it needs. A failed gate shows its evidence, with Fix in Chat or Resume and retry.</li>
-                    <li>While Copilot works, a tip dock teaches Microsoft Foundry: hosted agents, toolbox, evaluations and tracing.</li>
-                </ul>
-            </div>
-            <div class="mock" aria-hidden="true">
-                <ol class="mock-steps">
-                    <li data-state="done"><i>✓</i><div><b>Specify</b><small>Done · 6m</small><span class="mock-gate"><em>Gate passed</em> Spec approved</span></div></li>
-                    <li data-state="active"><i></i><div><b>Implement</b><small>In progress · 12m</small><span class="mock-agents"><em>agent</em><em>api</em><em>frontend</em></span></div></li>
-                    <li><i>3</i><div><b>Verify</b><small>Not started</small></div></li>
-                    <li><i>4</i><div><b>Deploy</b><small>Not started</small></div></li>
-                </ol>
-                <div class="mock-dock">
-                    <span class="mock-status">Copilot is working · Implement · 12:41</span>
-                    <strong>Bring your agent code. Foundry runs it.</strong>
-                    <span>Package any framework as a container. Foundry adds an Entra identity, an endpoint and per-session isolation.</span>
-                    <span class="mock-progress"></span>
+                    <p>A dynamic workflow creates the Foundry project and runs four independently reviewed phases.</p>
+                    <ol class="track" aria-label="Phases">
+                        <li>Specify</li>
+                        <li><i class="gate" aria-hidden="true"></i>Implement</li>
+                        <li>Verify</li>
+                        <li><i class="gate" aria-hidden="true"></i>Deploy</li>
+                    </ol>
+                    <p class="key"><i class="gate" aria-hidden="true"></i>You approve the spec and the deployment.</p>
+                    <p class="fit">Best for pilots and production-bound work</p>
                 </div>
             </div>
         </section>
 
-        <section class="slide improve-slide">
-            <div>
-                <h2>Every run improves the next one</h2>
-                <ul>
-                    <li>Each run writes a flight record, and its lessons go to <code>docs/loop-sri.md</code>.</li>
-                    <li><strong>Improve the loop</strong> analyzes past runs and proposes edits to the skill and the workflow.</li>
-                    <li>Every change is a diff you review, checked against evals. Approvals, RBAC, safety and evidence gates are never weakened.</li>
-                </ul>
-            </div>
-            <svg class="cycle" viewBox="-40 0 400 320" role="img" aria-labelledby="cycle-title">
-                <title id="cycle-title">Run, record, reflect, propose, review, then run again</title>
-                <circle class="ring" cx="160" cy="160" r="112"/>
-                <path class="ring-flow" pathLength="100" d="M160 48a112 112 0 1 1 0 224a112 112 0 1 1 0-224"/>
-                <g class="stops">
-                    <circle cx="160" cy="48" r="7"/><circle cx="266.5" cy="125.4" r="7"/><circle cx="225.8" cy="250.6" r="7"/><circle cx="94.2" cy="250.6" r="7"/><circle cx="53.5" cy="125.4" r="7"/>
-                </g>
-                <g class="labels">
-                    <text x="160" y="26" text-anchor="middle">Run</text>
-                    <text x="282" y="118" text-anchor="start">Record</text>
-                    <text x="240" y="282" text-anchor="middle">Reflect</text>
-                    <text x="80" y="282" text-anchor="middle">Propose</text>
-                    <text x="38" y="118" text-anchor="end">Review</text>
-                </g>
-                <text class="center" x="160" y="166" text-anchor="middle">loop-sri.md</text>
-            </svg>
+        <section class="slide gbb">
+            <h2>Built on Microsoft Global Black Belt best practices</h2>
+            <p class="lede">Practices that Global Black Belt teams collected on Foundry are built in, so every solution starts from the same reference architecture.</p>
+            <dl class="stack">
+                <div><dt>App</dt><dd>React + Vite and FastAPI on Azure Container Apps</dd></div>
+                <div><dt>Agents</dt><dd>Foundry hosted agents on the Responses API, with the GitHub Copilot SDK or Microsoft Agent Framework</dd></div>
+                <div><dt>Tools and knowledge</dt><dd>One governed Foundry toolbox, and Foundry IQ grounding with citations</dd></div>
+                <div><dt>Models</dt><dd>Live region and quota checks for every resource before deployment</dd></div>
+                <div class="pillar"><dt>Identity and safety</dt><dd>Managed identities, keyless least-privilege RBAC and Foundry guardrails</dd></div>
+                <div class="pillar"><dt>Observability</dt><dd>OpenTelemetry into Application Insights, plus Foundry evaluations</dd></div>
+            </dl>
         </section>
 
         <section class="slide">
-            <h2>Opinionated defaults, firm guardrails</h2>
-            <div class="columns">
-                <div>
-                    <h3>Defaults</h3>
-                    <ul class="ticks">
-                        <li>Hosted agents on the Responses API</li>
-                        <li>GitHub Copilot SDK for skills, Agent Framework for workflows</li>
-                        <li>Python 3.13 and gpt-5.4-mini</li>
-                        <li>Foundry toolbox tools and Foundry IQ knowledge</li>
-                        <li>Tracing in Application Insights</li>
-                        <li>eastus2, or swedencentral for EU data</li>
+            <div class="improve">
+                <div class="improve-copy">
+                    <h2>Every run improves the next</h2>
+                    <ul class="points">
+                        <li>Each verified fix becomes a lesson in <code>docs/loop-sri.md</code> that the next build reads.</li>
+                        <li><strong>Improve the loop</strong> studies past runs and proposes edits to the skill and the workflow.</li>
+                        <li>You review each change as a diff, checked against evals. Gates are never weakened.</li>
                     </ul>
                 </div>
-                <div>
-                    <h3>Guardrails</h3>
-                    <ul class="ticks">
-                        <li>Keyless: managed identity and Azure RBAC</li>
-                        <li>Your approval before the spec and the deployment</li>
-                        <li>Bounded fix loops and run limits</li>
-                        <li>Fresh-context reviewers</li>
-                        <li>Every artifact lives in your repo</li>
-                        <li>Self-improvements are reviewable and revertible</li>
-                    </ul>
-                </div>
+                <svg class="cycle" viewBox="-40 0 400 320" role="img" aria-labelledby="cycle-title">
+                    <title id="cycle-title">Run, record, reflect, propose, review, then run again</title>
+                    <circle class="ring" cx="160" cy="160" r="112"/>
+                    <path class="ring-flow" pathLength="100" d="M160 48a112 112 0 1 1 0 224a112 112 0 1 1 0-224"/>
+                    <g class="stops">
+                        <circle cx="160" cy="48" r="7"/><circle cx="266.5" cy="125.4" r="7"/><circle cx="225.8" cy="250.6" r="7"/><circle cx="94.2" cy="250.6" r="7"/><circle cx="53.5" cy="125.4" r="7"/>
+                    </g>
+                    <g class="labels">
+                        <text x="160" y="26" text-anchor="middle">Run</text>
+                        <text x="282" y="119" text-anchor="start">Record</text>
+                        <text x="240" y="284" text-anchor="middle">Reflect</text>
+                        <text x="80" y="284" text-anchor="middle">Propose</text>
+                        <text x="38" y="119" text-anchor="end">Review</text>
+                    </g>
+                    <text class="center" x="160" y="166" text-anchor="middle">loop-sri.md</text>
+                </svg>
             </div>
         </section>
 
-        <section class="slide finale">
+        <section class="slide">
             <h2>Start your first loop</h2>
             <ol class="start">
-                <li><span>Install <code>foundry-agentic-loop</code> from awesome-copilot.</span></li>
-                <li>Open a project folder in GitHub Copilot App.</li>
-                <li>Say “Open the agentic loop”.</li>
-                <li>Pick a mode and a scenario, then follow the canvas.</li>
-                <li><span>Later, just type <code>deploy</code> or <code>improve</code>. <code>AGENTS.md</code> routes it to the right step.</span></li>
+                <li><span>Install the plugin.</span><code class="cmd">copilot plugin install foundry-agentic-loop@awesome-copilot</code></li>
+                <li><span>In the GitHub Copilot App, open a folder and say “Open the agentic loop”.</span></li>
+                <li><span>Pick an idea, switch on Work IQ, and choose rapid prototyping or the SDD workflow.</span></li>
+                <li><span>Later, just type <code>deploy</code> or <code>improve</code>. <code>AGENTS.md</code> routes it.</span></li>
             </ol>
             <p class="links">
                 <a href="https://github.com/github/awesome-copilot/tree/main/plugins/foundry-agentic-loop" target="_blank" rel="noopener noreferrer">Plugin on awesome-copilot</a>
