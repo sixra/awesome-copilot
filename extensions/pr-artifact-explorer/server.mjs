@@ -1266,6 +1266,7 @@ async function handleRequest(req, res, entry) {
       ["/assets/app.css", ["app.css", "text/css; charset=utf-8"]],
       ["/assets/trx-preview.js", ["trx-preview.js", "text/javascript; charset=utf-8"]],
       ["/assets/junit-preview.js", ["junit-preview.js", "text/javascript; charset=utf-8"]],
+      ["/assets/markdown-preview.js", ["markdown-preview.js", "text/javascript; charset=utf-8"]],
       ["/assets/app.js", ["app.js", "text/javascript; charset=utf-8"]],
       ["/assets/browser.js", ["browser.js", "text/javascript; charset=utf-8"]],
     ]);

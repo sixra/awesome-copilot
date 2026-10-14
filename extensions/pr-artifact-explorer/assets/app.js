@@ -4417,6 +4417,10 @@ async function previewArtifactFile(entry, sequence) {
         restoreReportState(artifact, entry.path, preview);
         return;
       }
+      if (entryKind === "markdown" && window.MarkdownPreview) {
+        window.MarkdownPreview.render(result.content, preview);
+        return;
+      }
       let content = result.content;
       if (entryKind === "json") {
         try {

@@ -24,6 +24,7 @@ export const HTML = `<!doctype html>
     <script defer src="/assets/asciinema-player.min.js"></script>
     <script defer src="/assets/trx-preview.js"></script>
     <script defer src="/assets/junit-preview.js"></script>
+    <script defer src="/assets/markdown-preview.js"></script>
     <script defer src="/assets/browser.js"></script>
     <script defer src="/assets/app.js"></script>
   </head>
