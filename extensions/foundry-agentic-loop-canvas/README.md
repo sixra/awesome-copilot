@@ -7,17 +7,17 @@ The GitHub Copilot App side panel for the `foundry-agentic-loop` plugin. It cove
 | Mode | Builds | When |
 | --- | --- | --- |
 | **Rapid prototyping** (default) | In an existing Foundry project, from Chat | Demos, workshops and exploring an idea |
-| **SDD** | A new Foundry project, deployed with azd by `foundry-agentic-loop-workflow` | Selected automatically when the session has workflow runs, or chosen in the header |
+| **SDD** | A new Foundry project, deployed with azd by `foundry-agentic-loop-workflow` | Selected automatically when the session has workflow runs, or chosen on the Start tab |
 
 Both modes use the same four tabs; only the content of Start and Build adapts.
 
-Once a build starts, the Agentic Loop section of the workspace root `AGENTS.md` locks the mode. The header then shows a lock, disables the other mode and offers **Open AGENTS.md**. To switch, ask Copilot in Chat; it confirms first, then rewrites the section.
+Once a build starts, the Agentic Loop section of the workspace root `AGENTS.md` locks the mode. The mode switch on Start then shows a lock, disables the other mode and offers **Open AGENTS.md**. To switch, ask Copilot in Chat; it confirms first, then rewrites the section.
 
 ## Tabs
 
 | Tab | What it does |
 | --- | --- |
-| **Start** | Three steps. **Readiness** checks the plugins, extensions, CLI tools (azd 1.32.0 or later) and Azure sign-in, offers a Chat prompt for each gap and collapses once ready. **Foundry project** (rapid) discovers projects across subscriptions and stays in sync with `FOUNDRY_PROJECT` in the workspace `.env`; **Deployment target** (SDD) sets the subscription, region and azd environment. **Describe the outcome** takes a brief, guided questions or one of 61 industry scenarios, optionally with Work IQ context |
+| **Start** | The mode switch, then three steps. **Readiness** checks the plugins, extensions, CLI tools (azd 1.32.0 or later) and Azure sign-in, offers a Chat prompt for each gap and collapses once ready. **Foundry project** (rapid) discovers projects across subscriptions and stays in sync with `FOUNDRY_PROJECT` in the workspace `.env`; **Deployment target** (SDD) sets the subscription, region and azd environment. **Describe the outcome** takes a brief, guided questions or one of 61 industry scenarios, optionally with Work IQ context |
 | **Build** | Rapid shows the milestones Copilot records in the workspace (loop started, project linked, running locally, deployed) and the short commands **Run locally**, **Run tests**, **Deploy** and **Convert to SDD**. SDD follows each workflow run live: phases, gates, agents, artifacts and the activity log. Approve the spec or deployment, request changes, resume, pause or cancel. Completed runs show their outcome and endpoints; verified runs offer **Deploy from Chat** |
 | **Explore** | Opens the local and deployed apps, lists agents, model deployments, toolboxes and resource-group resources, and launches Agent Inspector |
 | **Optimize** | Starts the Foundry Agent Optimizer, automatic evaluations, an Agent Insights scan or **Improve the loop**, and shows session usage and month-to-date Azure spend |
