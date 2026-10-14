@@ -25,8 +25,8 @@ The Micronaut Maven/Gradle plugins configure the Native Build Tools plugin for y
 
    Or `@Serdeable` for Micronaut Serialization types.
 
-2. **Reflection**: `@ReflectionConfig(type = MyClass.class, accessType = ReflectionConfig.AccessType.ALL_DECLARED_CONSTRUCTORS)` on a configuration class.
-3. **Resources**: `@ResourceConfig(includes = {"application.yml", "logback.xml"})`, or put patterns in `META-INF/native-image/...`.
+2. **Reflection**: `@ReflectionConfig(type = MyClass.class, accessType = TypeHint.AccessType.ALL_DECLARED_CONSTRUCTORS)` (both from `io.micronaut.core.annotation`; `accessType` takes `TypeHint.AccessType[]`) on a configuration class, or `@TypeHint(MyClass.class)` for the default access.
+3. **Resources**: Micronaut has no resource annotation; list patterns in `META-INF/native-image/<group>/<artifact>/resource-config.json` (or the unified `reachability-metadata.json`), or use the Native Build Tools resource detection settings.
 4. **Gradle build arguments** (only if needed):
 
    ```groovy

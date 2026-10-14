@@ -107,7 +107,7 @@ docker run --rm -p 127.0.0.1:5005:5005 \
   -e JAVA_TOOL_OPTIONS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" my-app
 ```
 
-Inside the container the agent must bind `*` for the port mapping to work; safety comes from the `127.0.0.1:` host-side mapping. Use this only on a developer machine with the default bridge network and no shared or user-defined networks that other containers can reach. For Kubernetes use `kubectl port-forward pod/<name> 5005:5005` against a dev/staging pod only.
+Inside the container the agent must bind `*` for the port mapping to work, so JDWP (full code execution) is reachable by every other container on the same Docker network; the `127.0.0.1:` mapping only blocks access from other hosts. Use this only on a developer machine where no untrusted containers share the network: run it on a dedicated user-defined network (not the shared default bridge) containing only this container, or keep the agent on `127.0.0.1` inside the container and reach it with `docker exec`/`kubectl port-forward` style forwarding instead of publishing it. For Kubernetes use `kubectl port-forward pod/<name> 5005:5005` against a dev/staging pod only.
 
 ## Common pitfalls
 
