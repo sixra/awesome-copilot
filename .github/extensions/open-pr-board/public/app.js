@@ -280,7 +280,9 @@ function renderBoard() {
     for (const list of el.board.querySelectorAll(".column-cards")) scroll.set(list.dataset.column, list.scrollTop);
 
     const columns = board.columns.map((column) => {
-        const items = board.items.filter((item) => item.column === column.id && matchesFilter(item));
+        const items = board.items
+            .filter((item) => item.column === column.id && matchesFilter(item))
+            .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt) || a.number - b.number);
         const list = h(
             "div",
             {

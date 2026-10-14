@@ -179,7 +179,9 @@ function renderBoard() {
     );
 
     const columns = board.columns.map((column) => {
-        const items = board.items.filter((item) => item.column === column.id && matchesFilter(item));
+        const items = board.items
+            .filter((item) => item.column === column.id && matchesFilter(item))
+            .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt) || a.number - b.number);
         const cards = h(
             "div",
             { class: "column-cards" },

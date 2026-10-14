@@ -10,7 +10,8 @@ authenticated `gh` CLI.
 
 - **Buckets** — `Unreviewed`, `Reviewing`, `Close`, `Request changes`,
   `Needs insight`, `Approve`, `Actioned`. The AI recommendation picks the bucket;
-  dragging a card overrides it.
+  dragging a card overrides it. Cards in each bucket are sorted oldest to newest
+  by creation date.
 - **AI reviews** — "Review pending" asks the agent to review every PR that has never
   been reviewed or whose review is stale. The agent records structured results
   (rationale, repo fit, compliance, differentiation, risks, validation, confidence,
@@ -90,6 +91,7 @@ Results arriving after a manual move, reset, or replacement review are rejected.
 
 ## Regression tests
 
+Run `node --test eng/board-column-order.test.mjs` to check oldest-first column ordering.
 Run `node --test eng/open-pr-board.test.mjs` from the repository root. GitHub writes
 are tested with injected in-process fakes, never the authenticated CLI.
 Run `node --test eng/board-bulk-actions.test.mjs` to check column confirmation, staged feedback,
