@@ -49,17 +49,25 @@ Option A (generated id, recommended pattern):
 @Override
 public boolean equals(Object o) {
     if (this == o) return true;
-    if (!(o instanceof Book other)) return false;          // proxy-safe
-    return id != null && id.equals(other.getId());          // use getter: proxies
+    if (o == null) return false;
+    Class<?> oClass = o instanceof HibernateProxy p
+            ? p.getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+    Class<?> thisClass = this instanceof HibernateProxy p
+            ? p.getHibernateLazyInitializer().getPersistentClass() : getClass();
+    if (thisClass != oClass) return false;                  // proxy-safe, symmetric
+    Book other = (Book) o;
+    return getId() != null && getId().equals(other.getId()); // getters: proxies
 }
 
 @Override
 public int hashCode() {
-    return getClass().hashCode();   // constant per class; stable before/after persist
+    return this instanceof HibernateProxy p
+            ? p.getHibernateLazyInitializer().getPersistentClass().hashCode()
+            : getClass().hashCode();   // constant per persistent class; stable before/after persist
 }
 ```
 
-Constant `hashCode` is fine for entity sets of modest size (hundreds); large in-memory sets of entities are a design smell anyway. `instanceof` with a `final` check is acceptable; for hierarchies use `Hibernate.getClass(this)`.
+Constant `hashCode` is fine for entity sets of modest size (hundreds); large in-memory sets of entities are a design smell anyway. `getClass()` on a proxy returns the generated subclass, so both methods resolve the persistent class first (`Hibernate.getClass(x)` does the same but initializes the proxy). The class comparison keeps `equals` symmetric and consistent with `hashCode`; for entity hierarchies where a subclass should equal its parent type, compare against the root entity class instead.
 
 Option B (business/natural key): compare an immutable, unique attribute (ISBN, email), using getters. Implement `hashCode` on the same field. Mark it `@NaturalId`. Never use mutable fields.
 

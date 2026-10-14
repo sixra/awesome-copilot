@@ -1,15 +1,19 @@
-# jps and jcmd basics (Tier 1)
+# jps and jcmd basics (Tier 1 for the safe commands; see the sensitive-output warning)
 
 ```bash
-jps -lv                      # list JVMs with main class and JVM args
-jcmd                         # same list via the attach API
+jps -l                       # list JVMs with PID and main class/JAR only (no arguments)
 jcmd <pid> help              # commands supported by that JVM
 jcmd <pid> VM.version
-jcmd <pid> VM.flags          # effective JVM flags
-jcmd <pid> VM.system_properties
+jcmd <pid> VM.flags          # effective -XX flags (no -D properties)
 jcmd <pid> VM.uptime
-jcmd <pid> VM.command_line
 ```
+
+Do NOT run these by default: they can print credentials, tokens, connection strings or other secrets passed as `-D` properties or program arguments, and the output lands in the transcript:
+
+- `jps -v`, `jps -lv`, `jps -m`, and bare `jcmd` (without arguments it also prints each JVM's main class and arguments)
+- `jcmd <pid> VM.system_properties`, `jcmd <pid> VM.command_line`, `jinfo`, `ps aux` / `ps -ef` / `/proc/<pid>/cmdline` for a Java process
+
+They need user consent first (explicit tier: Tier 3, sensitive output). Prefer reading only the specific property you need (for example `jcmd <pid> VM.system_properties | grep '^java.version'`), and redact secret values before showing or sharing any output.
 
 - Run as the same OS user as the target JVM, on the same host (or inside the same container). Different users/containers fail with "Unable to open socket file" or "process not found".
 - `jcmd` is preferred over `jstack`/`jmap`/`jinfo`, which are older single-purpose tools.
