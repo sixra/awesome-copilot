@@ -28,5 +28,4 @@ Fetch the page for the **target** version before editing; prefer it over this sk
 
 ## Related tooling
 
-- For large automated upgrades, build-fix loops and CVE validation, the external Microsoft plugin `modernize-java` (<https://github.com/microsoft/modernize-java>, listed in this repository's `plugins/external.json`) can be used alongside this skill.
-- This skill provides lightweight JDK and framework upgrade guidance plus the javax to jakarta safeguards; it does not require that plugin.
+- The external Microsoft plugin `modernize-java` (<https://github.com/microsoft/modernize-java>, listed in this repository's `plugins/external.json`) is the more powerful option for automated, large or multi-step upgrades (upgrade plan, build-fix loops, CVE validation). This skill works without it; see "Need a more powerful, automated upgrade?" in `SKILL.md`.
