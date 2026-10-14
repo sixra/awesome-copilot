@@ -67,11 +67,12 @@ This cookbook collects small, focused recipes showing how to accomplish common t
 ## Running Examples
 
 Before running examples, follow the prerequisites in your language's recipe README:
-[.NET](dotnet/recipe/README.md#prerequisites),
-[Node.js](nodejs/recipe/README.md#prerequisites),
-[Python](python/recipe/README.md#prerequisites),
-[Go](go/recipe/README.md#prerequisites), or
-[Java](java/recipe/README.md#prerequisites).
+
+ - [.NET](dotnet/recipe/README.md#prerequisites)
+ - [Node.js](nodejs/recipe/README.md#prerequisites)
+ - [Python](python/recipe/README.md#prerequisites)
+ - [Go](go/recipe/README.md#prerequisites)
+ - [Java](java/recipe/README.md#prerequisites)
 
 ### .NET
 
