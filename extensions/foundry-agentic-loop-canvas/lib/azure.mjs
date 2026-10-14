@@ -1,14 +1,57 @@
 import { execFile } from "node:child_process";
+import { statSync } from "node:fs";
+import path from "node:path";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
 const arm = "https://management.azure.com";
 const version = "2025-06-01";
+const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
+export const AZD_MINIMUM = "1.32.0";
+
+const isFile = file => { try { return statSync(file).isFile(); } catch { return false; } };
+// MSVCRT quoting: double backslashes before quotes and at the end, escape quotes, wrap in quotes.
+const quoteArgument = value => `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1")}"`;
+
+// Windows cannot execFile a .cmd shim such as az.cmd, so run it through cmd.exe with cross-spawn style escaping.
+export function resolveCommand(file, args, { platform = process.platform, env = process.env, exists = isFile } = {}) {
+    if (platform !== "win32") return { file, args, options: {} };
+    const extensions = (env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";").map(ext => ext.trim().toLowerCase()).filter(Boolean);
+    const names = extensions.some(ext => file.toLowerCase().endsWith(ext)) ? [file] : extensions.map(ext => file + ext);
+    const directories = (env.PATH ?? env.Path ?? "").split(";").map(entry => entry.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean);
+    const found = directories.flatMap(directory => names.map(name => path.win32.join(directory, name))).find(candidate => exists(candidate));
+    if (!found || /\.(?:exe|com)$/i.test(found)) return { file: found ?? file, args, options: {} };
+    if (args.some(arg => /[\r\n]/.test(String(arg)))) {
+        throw new Error(`${file}: an argument contains a line break, which cannot be passed safely to ${path.win32.basename(found)}.`);
+    }
+    // az.cmd re-expands %* so every argument is caret-escaped twice.
+    const escaped = args.map(arg => quoteArgument(String(arg)).replace(CMD_META, "^$1").replace(CMD_META, "^$1"));
+    return {
+        file: env.ComSpec || "cmd.exe",
+        args: ["/d", "/s", "/c", `"${[`"${found}"`, ...escaped].join(" ")}"`],
+        options: { windowsVerbatimArguments: true },
+    };
+}
+
+export function azdVersion(text) {
+    const match = /\bazd version (\d+)\.(\d+)\.(\d+)/.exec(String(text ?? ""));
+    return match ? match.slice(1).map(Number) : null;
+}
+
+export function versionAtLeast(found, minimum) {
+    const [have, need] = [found, minimum].map(value => Array.isArray(value) ? value : String(value).split(".").map(Number));
+    for (let index = 0; index < Math.max(have.length, need.length); index++) {
+        const difference = (have[index] ?? 0) - (need[index] ?? 0);
+        if (difference) return difference > 0;
+    }
+    return true;
+}
 
 export async function command(file, args, { json = true } = {}) {
+    const resolved = resolveCommand(file, args);
     try {
-        const { stdout } = await exec(file, args, {
-            timeout: 60_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true,
+        const { stdout } = await exec(resolved.file, resolved.args, {
+            timeout: 60_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true, ...resolved.options,
             env: { ...process.env, AZURE_CORE_COLLECT_TELEMETRY: "no" },
         });
         return json ? JSON.parse(stdout) : stdout.trim();
@@ -131,6 +174,10 @@ export class Azure {
             ].map(async ([id, label, file, args, json]) => ({
                 id, label, ...await outcome(async () => {
                     const result = await this.run(file, args, { json });
+                    const found = id === "azd" ? azdVersion(result) : null;
+                    if (found && !versionAtLeast(found, AZD_MINIMUM)) {
+                        throw new Error(`azd ${found.join(".")} is older than ${AZD_MINIMUM}, which the Agentic Loop needs. Update azd (for example winget upgrade Microsoft.Azd or brew upgrade azd), then recheck.`);
+                    }
                     return id === "az" ? result["azure-cli"] : id === "az-auth" ? `Token valid until ${result.expiresOn}` : result;
                 }),
             })),

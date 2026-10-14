@@ -1,5 +1,6 @@
-import { readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
+import { atomicWrite } from "./record.mjs";
 
 // The canvas (foundry-agentic-loop-canvas/lib/live.mjs) parses the same marker; the pin test keeps them in sync.
 export const AGENTS = "AGENTS.md";
@@ -15,8 +16,8 @@ export const FALLBACK_SDD = [
     "<!-- foundry-agentic-loop:begin mode=sdd -->",
     "## Agentic Loop: SDD workflow",
     "",
-    "This workspace is built with spec-driven delivery. For build requests and short commands such as `deploy`, `status` or `resume`, "
-    + "load the `foundry-agentic-loop` skill and follow its `references/sdd.md`; resume a paused run in `.agentic-loop/runs/` instead of starting a new one.",
+    "This workspace is built with spec-driven development. For build requests and short commands such as `deploy`, `status` or `resume`, "
+    + "load the `foundry-agentic-loop` skill and follow its `references/sdd.md`; it resumes a running or paused run instead of starting a second one.",
     "",
     "- Azure settings live only in `.azure/deployment-plan.md`, never here.",
     "- This section locks the build mode. Change it only when the user explicitly confirms a switch.",
@@ -57,14 +58,6 @@ export async function lockWorkspace(cwd, routerDir) {
     if (mode === "rapid") throw new Error(RAPID_LOCKED);
     if (mode === "sdd") return "kept";
     const target = text === null ? file : await realpath(file);
-    const content = appendSection(text ?? "", await template(routerDir));
-    const temp = `${target}.${process.pid}.${Date.now()}.tmp`;
-    try {
-        await writeFile(temp, content, "utf8");
-        await rename(temp, target);
-    } catch (error) {
-        await rm(temp, { force: true }).catch(() => {});
-        throw error;
-    }
+    await atomicWrite(target, appendSection(text ?? "", await template(routerDir)));
     return "written";
 }

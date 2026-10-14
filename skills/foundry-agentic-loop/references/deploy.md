@@ -16,6 +16,8 @@ Run these checks read-only and report every gap at once.
 
 ## 2. Deploy
 
+Inside a workflow run, the `approve-deploy-v1` approval covers this section. Otherwise ask first, summarizing the resources, cost, security and region impact for the named environment and subscription.
+
 1. When the infrastructure changed, run `azd provision --preview <layer> --no-prompt` for each `infra.layers` name (a plain `--preview` fails on multiple layers) and review deletions and replacements. Stop on surprises.
 2. Run `azd up --no-prompt`, or `azd deploy --no-prompt` when the infrastructure is unchanged. Wait for it to finish, record the exit code, and read back the [grants after deploy](azd-layout.md#grants-after-deploy).
 3. Read the endpoints from `azd env get-values` (`SERVICE_<NAME>_URI`, `AGENT_<NAME>_RESPONSES_ENDPOINT`). Confirm each container app has an active, healthy revision (`az containerapp revision list`).

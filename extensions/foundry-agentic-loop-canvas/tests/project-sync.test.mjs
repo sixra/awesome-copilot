@@ -145,3 +145,46 @@ test("partial subscription discovery warnings survive successful env synchroniza
     assert.equal(result.projectSync.error, null);
     assert.deepEqual(result.projectSync.warnings, ["Another account could not be listed"]);
 });
+
+test("failed env synchronization backs off to five minutes and an explicit retry resets the backoff", async t => {
+    const { file, model, calls } = await fixture(t);
+    await model.discover();
+    await writeFile(file, `FOUNDRY_PROJECT=${project("missing", otherSubscription).id}\n`);
+    let now = 1_000_000;
+    t.mock.method(Date, "now", () => now);
+    const delays = [];
+    for (let attempt = 0; attempt < 6; attempt++) {
+        const reads = calls.length;
+        assert.match((await model.frontends()).projectSync.error, /could not be found or accessed/);
+        assert.equal(calls.length, reads + 1, "a due retry discovers once");
+        delays.push(model.envProjectRetryAt - now);
+        now = model.envProjectRetryAt - 1;
+        await model.frontends();
+        assert.equal(calls.length, reads + 1, "no discovery before the retry is due");
+        now += 1;
+    }
+    assert.deepEqual(delays, [30_000, 60_000, 120_000, 240_000, 300_000, 300_000]);
+    const reads = calls.length;
+    await model.frontends(true);
+    assert.equal(calls.length, reads + 1);
+    assert.equal(model.envProjectRetryAt - now, 30_000, "an explicit retry starts again at 30 seconds");
+    assert.equal(model.envProjectBackoff, 60_000);
+});
+
+test("a refresh keeps the current projects and selection while pending and after it fails", async t => {
+    const { model } = await fixture(t);
+    await model.discover();
+    await model.select(second.id);
+    let started;
+    let fail;
+    const requested = new Promise(resolve => { started = resolve; });
+    model.azure.projects = () => { started(); return new Promise((resolve, reject) => { fail = reject; }); };
+    const pending = model.discover();
+    await requested;
+    assert.equal(model.project.id, second.id, "the list stays while the refresh is pending");
+    assert.equal(model.resourceState().projects.length, 2);
+    fail(new Error("Azure is unavailable"));
+    await assert.rejects(pending, /Azure is unavailable/);
+    assert.equal(model.project.id, second.id);
+    assert.deepEqual(model.projects.map(row => row.id), [first.id, second.id]);
+});

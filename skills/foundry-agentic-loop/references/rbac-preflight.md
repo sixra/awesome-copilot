@@ -102,7 +102,7 @@ Keep all four parts — the principal, one `MISSING` block per gap naming **scop
 
 ## Where it sits in the loop
 
-Run it **before provisioning**, after the target subscription/scopes are known and before any `azd provision`, resource creation, or Bicep deployment. In an azd-driven repo, wire the same script as a `preprovision` hook in `azure.yaml` so a direct `azd up` is gated too, not only a full agentic loop run.
+Run it **before provisioning**, after the target subscription/scopes are known and before any `azd provision`, resource creation, or Bicep deployment. Optionally wire the same script as a `preprovision` hook in `azure.yaml` so a direct `azd up` is gated too.
 
 Record the verdict in `./.azure/deployment-plan.md`, in both modes, so a later failure can be told apart from a permission gap that was accepted and worked around.
 

@@ -1,20 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { AGENTS, BEGIN, FALLBACK_SDD, appendSection, lockedMode } from "../lib/agents-md.mjs";
-import { MAX_FIX_LOOPS, META, PHASES, WORKFLOW, firstLine, validateArgs } from "../lib/args.mjs";
+import { AGENTS, FALLBACK_SDD, appendSection, lockedMode } from "../lib/agents-md.mjs";
+import { LESSONS, MAX_FIX_LOOPS, META, PHASES, WORKFLOW, validateArgs } from "../lib/args.mjs";
 import { FOUNDATION_SCHEMA, REPORT_SCHEMA, TASKS, buildPrompt, label, retryPrompt } from "../lib/prompts.mjs";
-import { clean, normalize, planWorkstreams, recordFile, reduce, scope } from "../lib/record.mjs";
+import { SHARED_PHRASE, clean, normalize, planWorkstreams, recordFile, reduce, scope, writeRecord } from "../lib/record.mjs";
 import { SKILLS, resolveSkills } from "../lib/skills.mjs";
 import { MAX_ROUNDS, checkpointLines, gateLine, noteLine, runLoop } from "../lib/loop.mjs";
 
 const extensionDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BRIEF = "Claims triage assistant for insurance adjusters.\nUsers: adjusters. Agents: triage and fraud. Data: policy PDFs. UX: web chat.";
 
-// Canvas contract (foundry-agentic-loop-canvas/lib/live.mjs): the pin test below fails if either side drifts.
+// What the canvas (foundry-agentic-loop-canvas/lib/live.mjs) parses from the workflow's Chat lines and checkpoint keys;
+// the canvas contract pin test checks these against the canvas parsers.
 const CANVAS = {
     gate: /^(Specify|Implement|Verify|Deploy) gate: (passed|failed|blocked)(?: [—-] (.*))?$/,
     blocked: /^blocked-(specify|implement|verify|deploy)-r([1-9]\d{0,2})$/,
@@ -128,7 +129,7 @@ test("gated run: phases in order, approvals, replay without duplicate work, flig
     assert.deepEqual(run.state.phases, ["Specify"]);
     assert.deepEqual(labels(run.state), ["Specify · lead", "Specify · review"]);
     assert.match(run.state.logs[0], CANVAS.brief);
-    assert.equal(CANVAS.brief.exec(run.state.logs[0])[1], firstLine(BRIEF));
+    assert.equal(CANVAS.brief.exec(run.state.logs[0])[1], "Claims triage assistant for insurance adjusters.", "the Brief line carries the first line of the brief");
     const specify = CANVAS.gate.exec(logMatches(run.state, CANVAS.gate)[0]);
     assert.deepEqual([specify[1], specify[2], specify[3]], ["Specify", "passed", "Specify · review done"]);
     let record = await run.record();
@@ -149,7 +150,8 @@ test("gated run: phases in order, approvals, replay without duplicate work, flig
     const foundation = run.state.calls.find(call => call.label === "Implement · foundation");
     assert.equal(foundation.schema, FOUNDATION_SCHEMA);
     const integration = run.state.calls.find(call => call.label === "Implement · integration");
-    assert.match(integration.prompt, /Workstream results:\n- api: passed\. Implement · api done\n- web: passed\./);
+    assert.ok(integration.prompt.includes("- api: passed. Implement · api done\n  Lessons:\n    - Implement · api lesson\n- web: passed."), "integration sees each workstream with its lessons");
+    assert.match(integration.prompt, /Workstream results \(resolve every issue and upsert the worker lessons you verify in docs\/loop-sri\.md\):/);
     assert.ok(run.state.logs.includes("Implement plan: 2 parallel workstreams (api, web)"));
     assert.ok(run.state.logs.includes("Spec approved. Continuing with Implement."));
     assert.ok(run.state.logs.includes("Implement · foundation passed: Implement · foundation done. Next: workstream plan."));
@@ -215,7 +217,8 @@ test("failed gate: bounded fix loop, blocked checkpoint, next round on resume", 
     assert.deepEqual(gate.slice(1), ["Verify", "failed", "1 issue: E2E test test_claim_upload fails with HTTP 500 · Verify · review 2 failed"], "failed gates lead with their issues");
     const review = run.state.calls.find(call => call.label === "Verify · review").prompt;
     assert.doesNotMatch(review, /Re-review/, "the first review of round 1 checks from scratch");
-    assert.match(review, /no frontend or backend was deployed during Verify/, "Verify reviews check that nothing was deployed before the deploy gate");
+    assert.match(review, /no frontend or backend revision created after the passed Implement gate \(its time is in the flight record\) runs a new image/, "Verify reviews check that nothing was deployed before the deploy gate");
+    assert.ok(review.includes("Flight record (read-only): .agentic-loop/runs/run-1.json."), "every subagent knows where the flight record is");
     const recheck = run.state.calls.find(call => call.label === "Verify · review 2").prompt;
     assert.match(recheck, /Re-review after fix 1\. First confirm, with evidence, that each of these issues is resolved and that the changes broke nothing nearby; report any that persist as issues:\n- E2E test test_claim_upload fails with HTTP 500\nThen finish the remaining checks\./);
     assert.doesNotMatch(recheck, /Verify · fix 1 done/, "re-reviews never see the fixer's own report");
@@ -347,7 +350,9 @@ test("a subagent that ends without a report is retried once and continues from t
     assert.deepEqual(labels(run.state), ["Specify · lead", "Specify · lead · retry", "Specify · review"]);
     const [first, retry] = run.state.calls;
     assert.equal(retry.prompt, retryPrompt(first.prompt, "Specify · lead"));
-    assert.match(retry.prompt, /Retry: the previous attempt \(Specify · lead\) ended without a report.*Do not start over\.$/s);
+    assert.ok(retry.prompt.startsWith(`${first.prompt}\n\n`));
+    assert.match(retry.prompt, /\n\nRetry: the previous attempt \(Specify · lead\) ended without a report[^\n]*$/, "the retry adds one line");
+    assert.match(first.prompt, /check the current state and continue from it instead of starting over/, "every attempt continues from the current state");
     assert.equal(retry.schema, REPORT_SCHEMA);
     const notices = logMatches(run.state, /^Specify · lead ended without a report/);
     assert.deepEqual(notices, ["Specify · lead ended without a report, often after a provider error. Retrying it once."]);
@@ -474,17 +479,73 @@ test("genuine failures are recorded and rethrown; invalid input stops before any
     assert.equal(invalid.journal.steps.size, 0);
 });
 
+test("a resume after a genuine failure marks the flight record running at its first live step", async t => {
+    const { cwd, home } = await workspace(t);
+    const run = harness({
+        cwd, home, args: { brief: BRIEF, autonomy: "auto" },
+        responder: who => {
+            if (who === "Specify · review") throw Object.assign(new Error("connection reset by peer"), { name: "ConnectionError" });
+            return defaultResponder(who);
+        },
+    });
+    assert.equal((await run.attempt()).status, "error");
+    assert.equal((await run.record()).status, "error");
+
+    let first = null;
+    run.state.responder = async who => {
+        first ??= { who, record: await run.record() };
+        return defaultResponder(who);
+    };
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "approve-deploy-v1" });
+    assert.equal(first.who, "Specify · review", "the completed lead report replays");
+    assert.deepEqual([first.record.status, first.record.error], ["running", null], "the record is rewritten before the first live subagent starts");
+});
+
+test("cancellation outside a checkpoint leaves the flight record as it was", async t => {
+    const { cwd, home } = await workspace(t);
+    const file = path.join(cwd, ...recordFile("run-1").split("/"));
+    let before = null;
+    const run = harness({
+        cwd, home, args: { brief: BRIEF, autonomy: "auto" },
+        responder: async who => {
+            if (who !== "Specify · review") return defaultResponder(who);
+            before = await readFile(file, "utf8");
+            throw new DOMException("The operation was aborted", "AbortError");
+        },
+    });
+    assert.deepEqual(await run.attempt(), { status: "paused", key: null });
+    assert.equal(await readFile(file, "utf8"), before);
+    assert.equal(JSON.parse(before).status, "running");
+});
+
+test("a failed flight record write leaves no temporary file", async t => {
+    const { cwd } = await workspace(t);
+    const file = path.join(cwd, ...recordFile("run-x").split("/"));
+    await mkdir(file, { recursive: true });
+    await assert.rejects(writeRecord(cwd, { runId: "run-x" }));
+    assert.deepEqual(await readdir(path.dirname(file)), ["run-x.json"]);
+});
+
 test("skills missing on disk are logged and loaded through the skill tool", async t => {
     const { cwd, home } = await workspace(t);
     const run = harness({ cwd, home, args: { brief: BRIEF, autonomy: "auto", skipDeploy: true }, dir: path.join(cwd, "x", "y", "z") });
     assert.equal((await run.attempt()).status, "completed");
-    assert.equal(run.state.logs[1], "Skills not found on disk, so subagents load them with the skill tool: foundry-agentic-loop, microsoft-foundry");
+    const [absent] = logMatches(run.state, /^Skills not found on disk, so subagents load them with the skill tool: /);
+    assert.deepEqual(absent.split(": ").at(-1).split(", ").sort(), ["foundry-agentic-loop", "microsoft-foundry"]);
     assert.ok(run.state.calls.every(call => call.prompt.includes("(load it with the skill tool)")));
     assert.equal((await run.record()).skills["foundry-agentic-loop"], "skill-tool");
     assert.equal(await readFile(path.join(cwd, AGENTS), "utf8"), `${FALLBACK_SDD}\n`, "without the skill on disk the minimal SDD section is written");
 });
 
 const SKILL_ASSETS = path.resolve(extensionDir, "..", "..", "skills", "foundry-agentic-loop", "assets");
+
+test("the skill names the same shared files as the workflow", async () => {
+    const skillDir = path.dirname(SKILL_ASSETS);
+    for (const file of ["SKILL.md", path.join("references", "implement.md")]) {
+        const text = (await readFile(path.join(skillDir, file), "utf8")).replaceAll("`", "");
+        assert.ok(text.includes(SHARED_PHRASE), `${file} lists the shared files as: ${SHARED_PHRASE}`);
+    }
+});
 
 test("a run adds the SDD section to AGENTS.md once and keeps the rest of the file", async t => {
     const { cwd, home } = await workspace(t);
@@ -564,6 +625,20 @@ test("validateArgs enforces the documented contract", () => {
     ]) assert.throws(() => validateArgs(bad), message);
 });
 
+test("every optional arg accepts null in the schema and in validation, where it means the default", () => {
+    const defaults = validateArgs({ brief: BRIEF });
+    const { properties, required } = META.argsSchema;
+    for (const [key, schema] of Object.entries(properties)) {
+        if (required.includes(key)) continue;
+        assert.ok([schema.type].flat().includes("null"), `${key}: the schema type allows null`);
+        if (schema.enum) {
+            assert.ok(schema.enum.includes(null), `${key}: the schema enum allows null`);
+            for (const value of schema.enum.filter(item => item !== null)) assert.equal(validateArgs({ brief: BRIEF, [key]: value })[key], value);
+        }
+        assert.equal(validateArgs({ brief: BRIEF, [key]: null })[key], defaults[key], `${key}: null means the default`);
+    }
+});
+
 test("META and schemas stay inside the runtime's schema subset and match the canvas phases", () => {
     const allowed = new Set(["type", "required", "enum", "const", "properties", "items", "anyOf", "oneOf", "allOf"]);
     const walk = (schema, where) => {
@@ -601,6 +676,11 @@ test("planWorkstreams accepts disjoint ownership and rejects unsafe plans", () =
         [[{ name: "a", goal: "g", files: ["src/a/**"] }, { name: "b", goal: "g", files: ["src/a/b.py"] }], /both claim src\/a\/b\.py/],
         [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "b", goal: "g", files: ["**/*.py"] }], /whole workspace/],
         [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "b", goal: "g", files: ["../outside"] }], /outside it/],
+        [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "b", goal: "g", files: ["/src/b"] }], /an absolute path/],
+        [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "b", goal: "g", files: ["C:\\src\\b"] }], /an absolute path/],
+        [[{ name: "api", goal: "g", files: ["src/API"] }, { name: "b", goal: "g", files: ["src/api/x.py"] }], /both claim src\/api\/x\.py/],
+        [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "b", goal: "g", files: ["Infra/main.bicep"] }], /shared path Infra\/main\.bicep/],
+        [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "b", goal: "g", files: ["package-lock.json"] }], /shared path package-lock\.json/],
         [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "A", goal: "g", files: ["src/b"] }], /duplicate workstream/],
         [[{ name: "a", goal: "g", files: ["src/a"] }, { name: "b", goal: "g", files: [] }], /owns no files/],
         [[{ name: "a", goal: "g", files: ["src/a"] }, { name: " ", goal: "g", files: ["src/b"] }], /has no name/],
@@ -612,6 +692,10 @@ test("planWorkstreams accepts disjoint ownership and rejects unsafe plans", () =
     }
     assert.equal(scope("src/api/**/x.py"), "src/api");
     assert.equal(scope("./a/./b/"), "a/b");
+    for (const absolute of ["/abs", "C:/x", "c:\\x", "\\\\server\\share"]) assert.equal(scope(absolute), null, absolute);
+    const lockfiles = planWorkstreams([{ name: "web", files: ["src/web", "src/web/package-lock.json"] }, { name: "api", files: ["src/api", "src/api/uv.lock"] }]);
+    assert.equal(lockfiles.mode, "parallel", "workers may own the lockfiles inside their folders");
+    for (const shared of ["azure.yaml", "infra/", "docs/", ".env", ".azure/", ".agentic-loop/", "AGENTS.md"]) assert.ok(SHARED_PHRASE.includes(shared), `the shared-file phrase names ${shared}`);
 });
 
 test("normalize bounds untrusted reports", () => {
@@ -642,9 +726,11 @@ test("gate lines are single-line, bounded and parse as canvas gates", () => {
     const line = gateLine({ phase: "Deploy", status: "failed", summary: "Health check failed", issues: ["x".repeat(500), "second"] });
     assert.ok(line.length <= 300);
     assert.match(line, CANVAS.gate);
-    assert.equal(gateLine({ phase: "Verify", status: "passed", summary: "All checks passed", issues: ["note"] }), "Verify gate: passed — All checks passed");
-    assert.equal(gateLine({ phase: "Specify", status: "failed", summary: "Placement passes", issues: ["a", "b"] }), "Specify gate: failed — 2 issues: a · Placement passes");
-    assert.equal(MAX_ROUNDS, 20);
+    const pass = CANVAS.gate.exec(gateLine({ phase: "Verify", status: "passed", summary: "All checks passed", issues: ["note"] }));
+    assert.deepEqual(pass.slice(1), ["Verify", "passed", "All checks passed"], "a passed gate shows only its summary");
+    const fail = CANVAS.gate.exec(gateLine({ phase: "Specify", status: "failed", summary: "Placement passes", issues: ["a", "b"] }));
+    assert.deepEqual(fail.slice(1, 3), ["Specify", "failed"]);
+    assert.ok(fail[3].startsWith("2 issues: a") && fail[3].includes("Placement passes"), "failed gates lead with their issue count and first issue");
     assert.match(`blocked-deploy-r${MAX_ROUNDS}`, CANVAS.blocked);
 });
 
@@ -653,8 +739,12 @@ test("note and checkpoint lines stay bounded, keep their next step and never par
     const note = noteLine(long, "Next: independent review.");
     assert.ok(note.length <= 300);
     assert.match(note, /y… Next: independent review\.$/);
-    assert.equal(noteLine({ role: "fix", who: "Verify · fix 1", report: { status: "failed", summary: "Still 500", issues: ["a"] } }), "Verify · fix 1 failed: Still 500");
-    assert.equal(noteLine({ role: "review", who: "Specify · review", report: { status: "failed", summary: "4 defects", issues: ["a", "b", "c", "d"] } }, "Next: automatic fix 1 of 2."), "Specify · review found 4 issues: a. Next: automatic fix 1 of 2.");
+    const fixNote = noteLine({ role: "fix", who: "Verify · fix 1", report: { status: "failed", summary: "Still 500", issues: ["a"] } });
+    assert.match(fixNote, /^Verify · fix 1 failed: Still 500/);
+    assert.doesNotMatch(fixNote, /Next:/, "a note without a next step names none");
+    const reviewNote = noteLine({ role: "review", who: "Specify · review", report: { status: "failed", summary: "4 defects", issues: ["a", "b", "c", "d"] } }, "Next: automatic fix 1 of 2.");
+    assert.match(reviewNote, /^Specify · review found 4 issues: a\b/, "a failed review leads with its issue count and first issue");
+    assert.ok(reviewNote.endsWith(" Next: automatic fix 1 of 2."));
     const blocked = checkpointLines("blocked-implement-r2", { phase: "Implement", round: 2, status: "failed", issues: ["z".repeat(500), "second"], fixes: 2 });
     assert.ok(blocked.wait.length <= 400);
     assert.match(blocked.wait, /^Needs you: Implement still fails its gate after 2 automatic fixes \(2 issues; first: z+…\)\. Ask Copilot to fix them, /);
@@ -671,7 +761,7 @@ test("prompts are deterministic, scoped and fall back to the skill tool", async 
     const { cwd, home } = await workspace(t);
     const skills = await resolveSkills({ cwd, extensionDir, home });
     const args = validateArgs({ brief: BRIEF, subscriptionId: "0000aaaa-bbbb-4ccc-8ddd-eeeeffff0000", location: "eastus2", scenarioId: "insurance-claims-triage" });
-    const base = { runId: "run-1", cwd, skills, args };
+    const base = { runId: "run-1", cwd, record: recordFile("run-1"), skills, args };
     const specify = buildPrompt({ base, phase: "Specify", round: 1, role: "lead", who: label("Specify", "lead", 1), task: TASKS.Specify.lead });
     assert.equal(specify, buildPrompt({ base, phase: "Specify", round: 1, role: "lead", who: label("Specify", "lead", 1), task: TASKS.Specify.lead }));
     assert.ok(specify.includes(`<brief>\n${BRIEF}\n</brief>`));
@@ -694,6 +784,8 @@ test("prompts are deterministic, scoped and fall back to the skill tool", async 
     const worker = buildPrompt({ base, phase: "Implement", round: 1, role: "worker", who: "Implement · api", task: TASKS.Implement.worker, workstream: { name: "api", goal: "API", files: ["src/api"], checks: [] } });
     assert.match(worker, /You own: src\/api/);
     assert.match(worker, /Edit only the files you own/);
+    assert.ok(worker.includes(`Never edit the shared files (${SHARED_PHRASE}) or lockfiles outside the folders you own`));
+    assert.ok(buildPrompt({ base, phase: "Implement", round: 1, role: "lead", task: TASKS.Implement.foundation }).includes(`Shared files stay with the lead: ${SHARED_PHRASE}.`), "workers and the planner name the same shared files");
     assert.ok(worker.includes("Hosted agents start from foundry-agent/create/quick-start-hosted.md of the microsoft-foundry skill (load it with the skill tool)."));
     const foundry = { ...skills, foundry: { name: "microsoft-foundry", dir: path.join(home, ".agents", "skills", "microsoft-foundry"), source: "personal" } };
     assert.ok(buildPrompt({ base: { ...base, skills: foundry }, phase: "Implement", round: 1, role: "lead", task: TASKS.Implement.foundation }).includes(`Hosted agents start from ${path.join(home, ".agents", "skills", "microsoft-foundry", "foundry-agent", "create", "quick-start-hosted.md")}.`));
@@ -731,12 +823,94 @@ test("the flight record reducer folds events and rejects unknown ones", () => {
     assert.equal(recordFile("run/../x y"), ".agentic-loop/runs/run_.._x_y.json");
 });
 
-test("canvas contract pin: foundry-agentic-loop-canvas parses what the workflow emits", async t => {
-    let source;
-    try { source = await readFile(new URL("../../foundry-agentic-loop-canvas/lib/live.mjs", import.meta.url), "utf8"); }
+test("canvas contract pin: foundry-agentic-loop-canvas reads what the workflow writes and accepts the same args", async t => {
+    const dir = new URL("../../foundry-agentic-loop-canvas/lib/", import.meta.url);
+    try { await stat(dir); }
     catch { t.skip("foundry-agentic-loop-canvas is not installed next to this extension"); return; }
-    for (const regex of [CANVAS.gate, CANVAS.blocked, CANVAS.brief, BEGIN]) assert.ok(source.includes(`/${regex.source}/`), `canvas regex changed: ${regex}`);
-    for (const key of CANVAS.approvals) assert.ok(source.includes(`"${key}"`), `canvas approval ${key} missing`);
-    assert.ok(source.includes(`WORKFLOW = "${WORKFLOW}"`));
-    assert.ok(source.includes(`PHASES = Object.freeze(${JSON.stringify(PHASES).replace(/,/g, ", ")})`));
+    const live = await import(new URL("live.mjs", dir));
+    const model = await import(new URL("model.mjs", dir));
+
+    assert.equal(live.WORKFLOW, WORKFLOW);
+    assert.deepEqual([...live.PHASES], [...PHASES]);
+    assert.equal(live.LESSONS, LESSONS);
+    assert.deepEqual(Object.keys(live.APPROVALS), CANVAS.approvals);
+    for (const phase of PHASES) for (const file of live.ARTIFACTS[phase]) assert.ok(Object.values(TASKS[phase]).some(task => task.includes(file)), `the ${phase} tasks write ${file}, which the canvas opens`);
+    for (const runId of ["run-1", "run/../x y", "Ünï ✓", "../../etc/passwd", "C:\\x", "a.b_c-D", 42]) assert.equal(live.flightRecordPath(runId), recordFile(runId), `flight record path of ${runId}`);
+
+    // The canvas sends trimmed text field values; the workflow also trims, so both are compared on trimmed values.
+    const workflowTarget = target => {
+        try {
+            const args = validateArgs({ brief: BRIEF, ...target });
+            return { subscriptionId: args.subscriptionId, location: args.location ?? "auto", environmentName: args.environmentName ?? "" };
+        } catch { return null; }
+    };
+    const canvasTarget = target => {
+        try {
+            const { subscriptionId, location, environmentName } = model.validTarget(target);
+            return { subscriptionId, location, environmentName };
+        } catch { return null; }
+    };
+    for (const [target, valid] of [
+        [{}, true],
+        [{ subscriptionId: null, location: null, environmentName: null }, true],
+        [{ subscriptionId: "", location: "", environmentName: "" }, true],
+        [{ subscriptionId: "0000aaaa-bbbb-4ccc-8ddd-eeeeffff0000", location: "eastus2", environmentName: "claims-dev" }, true],
+        [{ subscriptionId: "0000AAAA-BBBB-4CCC-8DDD-EEEEFFFF0000" }, true],
+        [{ subscriptionId: "not-a-guid" }, false],
+        [{ subscriptionId: "0000aaaa-bbbb-4ccc-8ddd-eeeeffff00000" }, false],
+        [{ location: "auto" }, true],
+        [{ location: "East US" }, false],
+        [{ location: "EASTUS" }, false],
+        [{ location: "eu" }, false],
+        [{ location: "2eastus" }, false],
+        [{ environmentName: "a1" }, true],
+        [{ environmentName: "a".repeat(20) }, true],
+        [{ environmentName: "a" }, false],
+        [{ environmentName: "1env" }, false],
+        [{ environmentName: "a".repeat(21) }, false],
+        [{ environmentName: "claims_dev" }, false],
+    ]) {
+        assert.equal(workflowTarget(target) !== null, valid, `workflow validity of ${JSON.stringify(target)}`);
+        assert.deepEqual(canvasTarget(target), workflowTarget(target), `canvas and workflow agree on ${JSON.stringify(target)}`);
+    }
+
+    const templates = await Promise.all(["rapid", "sdd"].map(mode => readFile(path.join(SKILL_ASSETS, `agents-md-${mode}.md`), "utf8")));
+    for (const text of [FALLBACK_SDD, appendSection("# A\r\n", FALLBACK_SDD), ...templates, null, "", "<!-- foundry-agentic-loop:begin mode=other -->", "<!-- foundry-agentic-loop:begin mode=SDD -->", "<!--foundry-agentic-loop:begin  mode=rapid-->"]) {
+        assert.equal(live.parseLock(text), lockedMode(text), `AGENTS.md lock of ${JSON.stringify(text)?.slice(0, 80)}`);
+    }
+    for (const mode of model.MODES) assert.equal(lockedMode(`<!-- foundry-agentic-loop:begin mode=${mode} -->`), mode);
+
+    for (const key of [...CANVAS.approvals, "blocked-verify-r1", ...PHASES.map(phase => `blocked-${phase.toLowerCase()}-r${MAX_ROUNDS}`), "blocked-verify-r0", "blocked-Verify-r1", "blocked-verify-r1000", "pause-v1"]) {
+        assert.equal(live.checkpointInfo(key).kind === "blocked", CANVAS.blocked.test(key), `blocked checkpoint ${key}`);
+    }
+
+    const { cwd, home } = await workspace(t);
+    const run = harness({
+        cwd, home, args: { brief: `\n  Claims\u0007triage ${"x".repeat(200)}\nUsers: adjusters.`, maxFixLoops: 0 },
+        responder: who => (who === "Verify · review" ? failed(who, "E2E test fails") : defaultResponder(who)),
+    });
+    for (const [key, kind, phase, round] of [["approve-spec-v1", "approve", "Specify"], ["blocked-verify-r1", "blocked", "Verify", 1], ["approve-deploy-v1", "approve", "Deploy"]]) {
+        assert.deepEqual(await run.attempt(), { status: "paused", key });
+        const info = live.checkpointInfo(key);
+        assert.deepEqual([info.kind, info.phase], [kind, phase], `the canvas reads checkpoint ${key}`);
+        if (round) assert.equal(info.round, round);
+        const record = await run.record();
+        assert.deepEqual([record.status, record.pending], [kind === "approve" ? "awaiting-approval" : "blocked", key]);
+    }
+    for (const phase of PHASES) {
+        const info = live.checkpointInfo(`blocked-${phase.toLowerCase()}-r${MAX_ROUNDS}`);
+        assert.deepEqual([info.phase, info.round], [phase, MAX_ROUNDS], "the canvas reads the last round the workflow can block at");
+    }
+
+    const records = run.state.logs.map((text, seq) => ({ kind: "log", text, seq }));
+    for (const record of records) {
+        const match = CANVAS.gate.exec(record.text);
+        const parsed = Object.entries(live.parseGates([record])).map(([phase, gate]) => [phase, gate.status, gate.summary]);
+        assert.deepEqual(parsed, match ? [[match[1], match[2], match[3] ?? ""]] : [], record.text);
+    }
+    const gates = Object.entries(live.parseGates(records)).map(([phase, gate]) => [phase, gate.status]);
+    assert.deepEqual(Object.fromEntries(gates), { Specify: "passed", Implement: "passed", Verify: "passed" }, "the last gate of each phase wins");
+    const brief = live.briefOf(records);
+    assert.equal(brief, CANVAS.brief.exec(logMatches(run.state, CANVAS.brief)[0])[1]);
+    assert.ok(brief.length <= 160 && brief.startsWith("Claims triage x") && !/[\u0000-\u001f\u007f]/.test(brief), "the canvas shows the cleaned first line of the brief");
 });

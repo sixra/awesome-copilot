@@ -27,7 +27,7 @@ Lay out `azure.yaml`, `infra/foundry` and `infra/app` exactly as in [azd-layout.
 - **Apps:** Container Apps with `remoteBuild`.
 - **Identity:** every row of the RBAC contract, plus a `postdeploy` hook for the runtime instance rows and MCP allow-lists ([grants after deploy](azd-layout.md#grants-after-deploy)).
 
-Validate with `az bicep build --file infra/app/main.bicep`. Then run `azd provision --no-prompt`. Record the actual regions and resource groups, including the Foundry provider's group (`azd env get-value AZURE_FOUNDRY_RESOURCE_GROUP`), in the plan's Region, Resource groups and Environment variables rows, and any fallback with its reason in the plan and `docs/spec.md`, before continuing. Upsert `FOUNDRY_PROJECT` (the `AZURE_AI_PROJECT_ID` value) and `RESOURCE_GROUP` into the root `.env`.
+Validate with `az bicep build --file infra/app/main.bicep`. Then run `azd provision --no-prompt`. Outside a workflow run, whose spec approval covers it, ask first, naming the checkpoint services this phase also deploys. Record the actual regions and resource groups, including the Foundry provider's group (`azd env get-value AZURE_FOUNDRY_RESOURCE_GROUP`), in the plan's Region, Resource groups and Environment variables rows, and any fallback with its reason in the plan and `docs/spec.md`, before continuing. Upsert `FOUNDRY_PROJECT` (the `AZURE_AI_PROJECT_ID` value) into the root `.env`. For Copilot SDK agents, discover the model account's `/openai/v1/` base and `azd env set MODEL_API_BASE_URL <url>` ([endpoint contract](hosted-integration-checkpoint.md#endpoint-contract)).
 
 ## 3. Build
 
@@ -36,7 +36,7 @@ Validate with `az bicep build --file infra/app/main.bicep`. Then run `azd provis
    1. Prove readiness and skill load locally with `azd ai agent run --no-client`, in the background, and `azd ai agent invoke --local "<probe>"`. `AgenticIdentityToken` tool calls work only hosted.
    2. Run `azd deploy <service>` for the MCP server, skill, connection, toolbox and agent services, in `uses` order.
    3. Prove the hosted version with `azd ai agent invoke <agent> "<probe>"`.
-3. **Workstreams.** Build the spec workstreams in parallel when subagents are available. Each worker owns its exclusive files and runs its acceptance checks. Shared files stay with the lead: `azure.yaml`, `infra/`, the contract, `.env` and lockfiles.
+3. **Workstreams.** Build the spec workstreams in parallel when subagents are available. Each worker owns exclusive workspace-relative files or folders, runs its acceptance checks and reports needed changes elsewhere as issues. Shared files stay with the lead: `azure.yaml`, `infra/`, `docs/`, `.env`, `.azure/`, `.agentic-loop/`, `AGENTS.md` and the root lockfiles.
 4. **Integration.** Integrate centrally. Run builds, linters and unit tests, and lock Python dependencies (`uv.lock` or pinned versions).
 
 **Deployments.** Implement deploys only the checkpoint services (MCP servers, skills, connections, toolbox and agents); the frontend, backend and workers run locally until Deploy. Reproduce agent defects locally first (`azd ai agent run` with `invoke --local`), and redeploy a hosted agent only for hosted-only behavior, once per verified fix. Redeploy only services whose source or configuration changed since their last verified deployment. After a transient `postdeploy` failure, rerun only the hook with `azd hooks run postdeploy`.
@@ -55,11 +55,12 @@ Write `docs/implementation.md` with:
 
 - the components and their files;
 - an animated Mermaid flow of a request across the frontend, backend, agent, toolbox, model and telemetry;
-- the env contract;
+- the env contract with the discovered endpoint values ([endpoint contract](hosted-integration-checkpoint.md#endpoint-contract));
+- the checkpoint record and its evidence locations;
 - how to run each component locally;
 - deviations from the spec, with their reason.
 
-Add the `microsoft-foundry` marker to `AGENTS.md` if missing.
+Add microsoft-foundry's `AGENTS.md` marker (its quick-start Step 6) if missing, outside the foundry-agentic-loop markers.
 
 ## Gate
 

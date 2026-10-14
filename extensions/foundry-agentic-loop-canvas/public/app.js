@@ -61,6 +61,7 @@ const TARGET_HELP = "The workflow creates a resource group and a Foundry project
 
 let snapshot;
 let projects = [];
+let resourceSubscription = "";
 let selected = null;
 let activeTab = "setup";
 let selectionRevision = 0;
@@ -117,11 +118,22 @@ async function api(action, input = {}) {
     return value;
 }
 
+const announcing = {};
+
+// Persistent live regions announce reliably; clearing first lets a repeated message be announced again.
+function announce(message, error = false) {
+    const id = error ? "announce-alert" : "announce-status";
+    clearTimeout(announcing[id]);
+    $(id).textContent = "";
+    announcing[id] = setTimeout(() => { $(id).textContent = message; }, 100);
+}
+
 function notice(message, error = false, action = null) {
     const node = $("notice");
     node.hidden = false;
     node.className = error ? "error" : "";
     node.textContent = message;
+    announce(message, error);
     if (action) {
         const button = document.createElement("button");
         button.className = "quiet";
@@ -295,6 +307,14 @@ async function saveTarget(input) {
     } catch (error) { notice(error.message, true); }
 }
 
+// frontends() polls every 5 seconds, so the banner is announced only when its message changes.
+function envError(message) {
+    const node = $("project-env-error");
+    if (message && message !== node.textContent) announce(message, true);
+    node.hidden = !message;
+    node.textContent = message;
+}
+
 async function frontends(retry = false) {
     if (frontendsLoading) return;
     frontendsLoading = true;
@@ -306,9 +326,7 @@ async function frontends(retry = false) {
         if (result.projectSync && selection === selectionRevision && !discovering) {
             const sync = result.projectSync;
             projectSyncError = Boolean(sync.error);
-            $("project-env-error").hidden = !sync.error;
-            $("project-env-error").textContent = sync.error
-                ? `Could not synchronize FOUNDRY_PROJECT from .env: ${sync.error} Current selection kept. Refresh to retry.` : "";
+            envError(sync.error ? `Could not synchronize FOUNDRY_PROJECT from .env: ${sync.error} Current selection kept. Refresh to retry.` : "");
             const signature = JSON.stringify({ ...sync, error: null });
             if (signature !== resourcesSignature) {
                 resourcesSignature = signature;
@@ -337,8 +355,7 @@ async function frontends(retry = false) {
         }
     } catch (error) {
         projectSyncError = true;
-        $("project-env-error").hidden = false;
-        $("project-env-error").textContent = `Could not read project configuration: ${error.message} Current selection kept. Refresh to retry.`;
+        envError(`Could not read project configuration: ${error.message} Current selection kept. Refresh to retry.`);
         frontendsSignature = undefined;
         setMark("build-mark", "");
         $("build-mark").title = error.message;
@@ -384,9 +401,13 @@ async function setup() {
             $(description).textContent = missing.length ? `Needs attention: ${missing.map(check => check.label).join(", ")}.` : "";
         }
         $("setup-actions").hidden = !missingPlugin.length && !missingTools.length && !missingAuth.length;
+        const pending = result.checks.filter(check => check.status !== "ready").length;
+        if (result.discoveryError) announce(`Skill discovery failed: ${result.discoveryError}`, true);
+        else announce(pending ? `Setup checked: ${pending} of ${result.checks.length} checks need attention.` : "Setup checked: everything is ready.");
     } catch (error) {
         setMark("setup-mark", "");
         failure($("checks"), error);
+        announce(`Setup check failed: ${error.message}`, true);
     }
 }
 
@@ -416,7 +437,8 @@ function updateProject(project) {
 function applyResources(result) {
     projects = result.projects;
     $("subscription").innerHTML = result.subscriptions.map(row => `<option value="${escape(row.id)}">${escape(row.name)}</option>`).join("");
-    $("subscription").value = result.subscriptionId ?? result.selected?.subscriptionId ?? "";
+    resourceSubscription = result.subscriptionId ?? result.selected?.subscriptionId ?? "";
+    $("subscription").value = resourceSubscription;
     updateProject(result.selected);
     if (result.warnings?.length) notice(`Some resources could not be listed: ${result.warnings.join("; ")}`, true);
 }
@@ -451,21 +473,33 @@ async function discover(subscriptionId) {
     try {
         const result = await api("discover", subscriptionId ? { subscriptionId } : {});
         applyResources(result);
+        announce(`${projects.length} Foundry ${projects.length === 1 ? "project" : "projects"} found.`);
         await monitoring();
     } catch (error) {
-        // Never keep a green check for a project whose current discovery failed.
-        projects = [];
-        updateProject(null);
-        failure($("projects"), error);
-        $("monitoring").innerHTML = "";
+        // A failed refresh keeps the server's list, subscription and selection, so the panel keeps showing them.
+        $("subscription").value = resourceSubscription;
+        if (projects.length) {
+            renderProjects();
+            notice(`Could not refresh Foundry projects: ${error.message} Current selection kept.`, true);
+        } else {
+            updateProject(null);
+            failure($("projects"), error);
+            announce(`Could not discover Foundry projects: ${error.message}`, true);
+            $("monitoring").innerHTML = "";
+        }
     } finally { discovering = false; $("subscription").disabled = false; }
+}
+
+// The industry filter groups by sector, the text before ":" (for example "Government: Ops and infra").
+function sector(industry) {
+    return industry.split(":")[0].trim();
 }
 
 function renderScenarios() {
     const query = $("scenario-search").value.toLowerCase();
     const industry = $("industry").value;
     const capability = $("capability").value;
-    const rows = snapshot.scenarios.filter(row => (!industry || row.industry === industry) &&
+    const rows = snapshot.scenarios.filter(row => (!industry || sector(row.industry) === industry) &&
         (!capability || row.tags.includes(capability) || row.capabilities?.includes(capability)) &&
         `${row.name} ${row.description} ${row.industry} ${row.tags.join(" ")}`.toLowerCase().includes(query));
     const sort = $("sort").value;
@@ -507,8 +541,8 @@ function returnToScenarios() {
     }
 }
 
-function table(headers, rows) {
-    return `<div class="table-scroll" tabindex="0" aria-label="Scrollable data table"><table><thead><tr>${headers.map(header => `<th scope="col">${escape(header)}</th>`).join("")}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${escape(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+function table(headers, rows, label) {
+    return `<div class="table-scroll" tabindex="0" role="region" aria-label="${escape(label)}"><table><thead><tr>${headers.map(header => `<th scope="col">${escape(header)}</th>`).join("")}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${escape(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 
 const external = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7m0-7L10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></svg>';
@@ -586,9 +620,9 @@ async function usage() {
             .map(([kind, value]) => [kind.replaceAll("_", " "), count(value.tokenCount)]);
         $("usage").innerHTML = `<p class="muted">Copilot session <span class="usage-session-id">${escape(metrics.sessionId)}</span>${metrics.sessionStartTime ? ` · Started ${escape(new Date(metrics.sessionStartTime).toLocaleString())}` : ""}</p>` +
             `<h4>Session accounting</h4><p>${metrics.totalNanoAiu == null ? "AI credits unavailable" : `${count(metrics.totalNanoAiu / 1e9)} AI credits`}</p>` +
-            (tokens.length ? table(["Token category", "Reported tokens"], tokens) : '<p class="muted">Session token accounting is unavailable from this runtime.</p>') +
+            (tokens.length ? table(["Token category", "Reported tokens"], tokens, "Session token accounting") : '<p class="muted">Session token accounting is unavailable from this runtime.</p>') +
             '<h4>Live model breakdown</h4>' +
-            (rows.length ? table(["Model", "Input", "Output", "Cache read", "Cache write", "Reasoning", "Calls"], rows) : '<p class="muted">No model breakdown returned by the runtime. This does not establish zero session usage.</p>') +
+            (rows.length ? table(["Model", "Input", "Output", "Cache read", "Cache write", "Reasoning", "Calls"], rows, "Live model usage breakdown") : '<p class="muted">No model breakdown returned by the runtime. This does not establish zero session usage.</p>') +
             `<p class="muted">${count(metrics.totalUserRequests)} runtime-reported user requests · ${metrics.totalApiDurationMs == null ? "API time unavailable" : `${(metrics.totalApiDurationMs / 1000).toFixed(1)}s model API time`}</p>` +
             '<p class="muted">After resume, token, request and model counters may cover different periods from session credits; they are not guaranteed lifetime totals. Missing history is not treated as zero. Accounting categories and live token counters are separate measures, not additive. Copilot credits are not USD or Azure usage.</p>' +
             `<p class="muted">Updated ${escape(new Date(metrics.checkedAt).toLocaleTimeString())}. Refreshes every 15 seconds while Optimize is visible.</p>`;
@@ -604,7 +638,7 @@ async function costs() {
     try {
         const result = await api("cost");
         if (revision !== selectionRevision) return;
-        $("azure-cost").innerHTML = result.rows.length ? table(["Service", "Actual cost"], result.rows.map(row => [row.service, money(row.amount, row.currency)])) : '<p class="muted">Azure returned no charges for this period. This does not guarantee zero cost.</p>';
+        $("azure-cost").innerHTML = result.rows.length ? table(["Service", "Actual cost"], result.rows.map(row => [row.service, money(row.amount, row.currency)]), "Azure spend by service, month to date") : '<p class="muted">Azure returned no charges for this period. This does not guarantee zero cost.</p>';
         $("azure-cost").innerHTML += `<p class="muted">Retrieved ${escape(new Date(result.checkedAt).toLocaleTimeString())}</p>`;
     } catch (error) { if (revision === selectionRevision) failure($("azure-cost"), error); }
     await usagePromise;
@@ -1290,7 +1324,7 @@ async function start() {
         setScenarioReview(true);
     }
     for (const [id, values] of [
-        ["industry", snapshot.scenarios.map(row => row.industry)],
+        ["industry", snapshot.scenarios.map(row => sector(row.industry))],
         ["capability", snapshot.scenarios.flatMap(row => [...row.tags, ...(row.capabilities ?? [])])],
     ]) for (const value of [...new Set(values)].sort()) $(id).add(new Option(value, value));
     renderScenarios();

@@ -4,14 +4,14 @@ Read for architecture, the first hosted deployment, and changed identity/endpoin
 
 ## Endpoint contract
 
-Record these distinct values in the root README contract and persist discovered values in the applicable deployment configuration and Git-ignored `.env`. Record their source, authentication audience, consuming component and version. Unknown values remain pending until discovery; do not synthesize endpoints from display names.
+Record these distinct values in the root `README.md` (rapid) or `docs/implementation.md` (SDD) and persist discovered values in the applicable deployment configuration and Git-ignored `.env`. Record their source, authentication audience, consuming component and version. Unknown values remain pending until discovery; do not synthesize endpoints from display names.
 
 | Application variable | Meaning and validation |
 | --- | --- |
 | `APP_FOUNDRY_PROJECT_ENDPOINT` | Full project URL including `/api/projects/<project>`, returned by project discovery. Used by project clients. |
 | `MODEL_API_BASE_URL` | Actual model-hosting account's OpenAI-compatible base ending in `/openai/v1/`. Used by the model provider; it is not the project or hosted-agent URL. Record model deployment name separately. |
 | `HOSTED_RESPONSES_ENDPOINT` | Deployed agent's actual Responses request URL, including required API version and agent routing. Record the agent version used by the probe; distinguish this complete request URL from an SDK base URL that appends `/responses`. |
-| `TOOLBOX_MCP_ENDPOINT` | Discovered toolbox MCP URL, including API version. Record toolbox name, selected version and whether the URL follows the default version or pins an immutable version. |
+| `TOOLBOX_ENDPOINT` | Toolbox MCP URL, including `api-version=v1`, mapped from the azd-written `TOOLBOX_<NAME>_MCP_ENDPOINT`. Record the toolbox name, its published default version and whether the URL is the consumer form (follows the default) or pins `/versions/<v>/`. |
 
 Keep `FOUNDRY_PROJECT` as the project **ARM ID**, not an endpoint. Keep platform-owned `FOUNDRY_*` variables untouched. A reported build had its custom `FOUNDRY_PROJECT_ENDPOINT` overwritten with an account-only URL; use `APP_FOUNDRY_PROJECT_ENDPOINT` for the application's verified full URL, explicitly pass it to project clients, and validate its path at startup. Do not silently append guessed project names or fall back to the reserved value. Verify how current adapters consume platform configuration through `microsoft-foundry`.
 
@@ -36,11 +36,11 @@ Invoke the deployed endpoint with an authorized caller, but ensure downstream mo
 ## Probes and pass criteria
 
 - Run a minimal direct model Responses request and toolbox skill/tool probe **inside the hosted identity/context path**, then run the equivalent SDK-mediated agent request. Record the actual skill version loaded and MCP tool name/call result using SDK/tool events or safe correlated telemetry, not the model's claim that it used them. A local run proves readiness and skill load only: `AgenticIdentityToken` tool calls fail outside the host ("requires AgentInstanceClientId and AgentBlueprintClientId").
-- Toolbox MCP calls can appear as `<server>___<tool>` in Responses output: parse the server prefix and require the exact tool name. Check the toolbox version the agent uses: `TOOLBOX_VERSION` must match the version in the toolbox MCP endpoint, and read back that version, not the server default.
+- Toolbox MCP calls can appear as `<server>___<tool>` in Responses output: parse the server prefix and require the exact tool name. Check the toolbox version the agent uses: read back the published default version (`azd ai toolbox show <name>`) or, for a pinned URL, the version in its path, and require the expected tools and skills there.
 - Exercise JSON and SSE using the actual returned content type. For SSE, consume through `response.completed`; EOF, `[DONE]`, text deltas, `session.idle` or a stopped spinner alone are insufficient. For nonstreaming JSON, require a final response object with `status: "completed"`; queued/in-progress responses require bounded polling. Also prove the streaming terminal event when streaming is supported.
 - Treat `response.failed`, `response.incomplete`, cancellation, timeout, protocol errors and embedded error payloads as failures, even with HTTP 200 or CLI exit code zero. A CLI wrapper must parse the response and return failure for unsuccessful terminal status.
 - Require nonempty, schema-valid application output with expected probe values and evidence of every required skill/tool/model operation. Reject absent upstream fields explicitly; do not turn missing results into empty success.
-- Correlate application request ID, response ID, hosted session ID, SDK session/turn ID, agent version and service request IDs. Save a concise checkpoint record and evidence locations in the README. Missing evidence leaves the gate blocked; label unavailable IDs as such, never invent them.
+- Correlate application request ID, response ID, hosted session ID, SDK session/turn ID, agent version and service request IDs. Save a concise checkpoint record and evidence locations in the same file as the endpoint contract. Missing evidence leaves the gate blocked; label unavailable IDs as such, never invent them.
 - Require the deployed probe's hosting-request, model-request and required tool-execution spans to arrive in the configured telemetry destination, without enabling sensitive prompt/completion/tool-content capture. Verify trace/parent relationships and agent/version identification using the destination's actual schema. For Copilot SDK, configure both producers through the [telemetry recipe](copilot-sdk-foundry.md#telemetry). A project connection, exporter startup message or hosting-request span alone is insufficient. Allow bounded ingestion delay; missing required spans leave the checkpoint incomplete. Only after the required checks pass may full application work begin.
 
 ## Diagnostic decision tree

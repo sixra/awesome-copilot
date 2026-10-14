@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { outcome, projectIdentity } from "./azure.mjs";
+import { AZD_MINIMUM, outcome, projectIdentity } from "./azure.mjs";
 import { frontendStatus } from "./frontends.mjs";
 import { ARTIFACTS, LESSONS, checkpointInfo, flightRecordPath } from "./live.mjs";
 
@@ -15,6 +15,8 @@ export const links = {
 };
 
 export const MODES = Object.freeze(["rapid", "sdd"]);
+const ENV_RETRY = 30_000;
+const ENV_RETRY_MAX = 300_000;
 const projectKinds = ["insights", "foundry", "inspect", "optimizer", "evaluations", "insightsScan"];
 const unscoped = ["quickstart", "landingZone", "plugin", "devpack", "auth", "sdd", "changes", "improve", "deploy"];
 
@@ -73,7 +75,7 @@ export function promptFor(kind, { project, scenario, text, agent, mode = "rapid"
     const sdd = brief ? `Use the foundry-agentic-loop skill in SDD mode. Start the foundry-agentic-loop-workflow to specify, implement, verify and deploy this solution end to end; Implement provisions a new Foundry project and the solution resources with azd. Run preflight and ask only the clarifying questions that change the spec before starting the workflow.\n\n${brief}\n\n${scenario?.id ? `Workflow scenarioId: ${scenario.id}\n` : ""}${azureTarget(target, subscriptions)}` : null;
     const prompts = {
         plugin: `Install or enable the missing Agentic Loop prerequisites. Check copilot plugin list and install only what is missing: copilot plugin install foundry-agentic-loop@awesome-copilot (skill, canvas and workflow) and copilot plugin install azure@awesome-copilot (Azure skills, including microsoft-foundry). If the marketplace is unknown, run copilot plugin marketplace add github/awesome-copilot first. Then reload skills and extensions and confirm the foundry-agentic-loop skill, foundry-agentic-loop-canvas and foundry-agentic-loop-workflow are available. If a plugin extension is still missing, install it with install_extension from ${links.extensions}/<name> at user scope; if one is listed as disabled, re-enable it as the foundry-agentic-loop skill bootstrap describes. Tell me if a new session is required.`,
-        devpack: `Guide me through installing missing az, azd, and azd ai tools using Foundry DevPack: ${links.devpack}. Check my OS and installed tools first. DevPack may not include Azure CLI; if az is still missing, use Microsoft's Azure CLI installation instructions. Ask before installing anything.`,
+        devpack: `Guide me through installing missing or outdated az, azd (${AZD_MINIMUM} or later), and azd ai tools using Foundry DevPack: ${links.devpack}. Check my OS and installed tools first. DevPack may not include Azure CLI; if az is still missing, use Microsoft's Azure CLI installation instructions. Ask before installing anything.`,
         auth: "Check Azure CLI and Azure Developer CLI availability and current sign-in. Authenticate only installed CLIs that need it, using az login or azd auth login as appropriate. Confirm the intended tenant and subscription; do not expose tokens.",
         quickstart: `Guide me through creating a Microsoft Foundry project using ${links.quickstart}. Clarify subscription, region, resource group and names, check permissions, estimate cost, and ask for approval before provisioning. Configure Application Insights for the project.`,
         landingZone: `Guide me through a production-ready enterprise AI deployment using Azure AI Landing Zones: ${links.landingZone}. Clarify governance, networking, identity, subscriptions, region and cost before provisioning.`,
@@ -112,6 +114,7 @@ export class Model {
         this.envProjectKey = undefined;
         this.envProjectError = null;
         this.envProjectRetryAt = 0;
+        this.envProjectBackoff = ENV_RETRY;
     }
 
     async load() {
@@ -185,6 +188,7 @@ export class Model {
         const result = await frontendStatus(this.session);
         const target = result.foundryProject;
         const key = target.id?.toLowerCase() ?? target.error;
+        if (key !== this.envProjectKey || retry) this.envProjectBackoff = ENV_RETRY;
         if (key !== this.envProjectKey || (this.envProjectError && (retry || Date.now() >= this.envProjectRetryAt))) {
             this.envProjectKey = key;
             this.envProjectError = target.error;
@@ -192,7 +196,9 @@ export class Model {
                 const sync = await outcome(() => this.discover(projectIdentity(target.id).subscriptionId, target.id));
                 this.envProjectError = sync.status === "error" ? sync.error : null;
             }
-            this.envProjectRetryAt = Date.now() + 30_000;
+            // Failed discovery backs off exponentially; Refresh (retry) or a changed .env starts again at 30 s.
+            this.envProjectRetryAt = Date.now() + this.envProjectBackoff;
+            this.envProjectBackoff = target.id && this.envProjectError ? Math.min(this.envProjectBackoff * 2, ENV_RETRY_MAX) : ENV_RETRY;
         }
         return { ...result, projectSync: {
             ...this.resourceState(),
@@ -200,8 +206,8 @@ export class Model {
         } };
     }
 
+    // Keeps the current list and selection until a refresh succeeds, so a failed refresh does not empty them.
     async discover(subscriptionId, requiredProjectId) {
-        if (!requiredProjectId) this.projects = [];
         const subscriptions = await this.azure.subscriptions();
         const requested = subscriptionId ?? this.state.subscriptionId ?? subscriptions[0]?.id;
         const id = subscriptions.find(row => row.id.toLowerCase() === requested?.toLowerCase())?.id;

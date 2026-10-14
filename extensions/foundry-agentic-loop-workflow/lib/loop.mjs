@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { lockWorkspace } from "./agents-md.mjs";
-import { PHASES, firstLine, validateArgs } from "./args.mjs";
+import { PHASES, validateArgs } from "./args.mjs";
 import { FOUNDATION_SCHEMA, REPORT_SCHEMA, TASKS, buildPrompt, label, retryPrompt } from "./prompts.mjs";
 import { clean, createRecord, endpoints, missing, normalize, planWorkstreams, recordFile, reduce, union, writeRecord } from "./record.mjs";
 import { missingSkills, resolveSkills } from "./skills.mjs";
@@ -75,14 +75,24 @@ class Run {
         this.args = args;
         this.now = now;
         this.cwd = setup.cwd;
-        this.base = { runId: ctx.runId, cwd: setup.cwd, skills: setup.skills, args };
+        this.base = { runId: ctx.runId, cwd: setup.cwd, record: recordFile(ctx.runId), skills: setup.skills, args };
         this.record = createRecord({ runId: ctx.runId, args, setup });
+        this.synced = false;
+    }
+
+    // Replay rebuilds the record in memory without writing it, so the first live step of an attempt saves it;
+    // otherwise a run resumed after a failure would keep showing "error" on disk until its next gate.
+    async sync() {
+        if (this.synced) return;
+        this.synced = true;
+        await save(this.ctx, this.cwd, this.record);
     }
 
     async event(key, make) {
         const event = await this.ctx.step(key, async () => {
             const event = await make(this.now());
             await save(this.ctx, this.cwd, reduce(this.record, event));
+            this.synced = true;
             return event;
         });
         this.record = reduce(this.record, event);
@@ -109,6 +119,7 @@ class Run {
         const who = label(phase, name, round);
         const prompt = buildPrompt({ base: this.base, phase, round, role, who, ...context });
         const ask = (key, text, retry) => this.ctx.step(`report-${key}-v1`, async () => {
+            await this.sync();
             if (retry) this.ctx.log(`${who} ended without a report, often after a provider error. Retrying it once.`);
             const result = await this.ctx.agent(text, { label: key, schema });
             if (result != null) return normalize(result, who);
@@ -178,7 +189,7 @@ class Run {
             const who = label(phase, workstream.name, round);
             const last = index === plan.items.length - 1;
             const report = await track(workers[index] ?? { role: "worker", who, report: normalize(null, who) }, last ? "Next: integration." : "");
-            results.push({ name: workstream.name, status: report.status, summary: report.summary, issues: report.issues });
+            results.push({ name: workstream.name, status: report.status, summary: report.summary, issues: report.issues, lessons: report.lessons });
         }
         return track(await this.call({ phase, round, role: "lead", name: "integration", task: tasks.integration, results }), review);
     }
@@ -243,7 +254,7 @@ export async function runLoop(ctx, { extensionDir, home = os.homedir(), now = ()
         const cwd = await workspace(ctx.session);
         const skills = await resolveSkills({ cwd, extensionDir, home });
         const startedAt = now();
-        ctx.log(`Brief: ${firstLine(args.brief)}`);
+        ctx.log(`Brief: ${args.brief.split(/\r?\n/).map(line => clean(line, 160)).find(Boolean) ?? ""}`);
         const absent = missingSkills(skills);
         if (absent.length) ctx.log(`Skills not found on disk, so subagents load them with the skill tool: ${absent.join(", ")}`);
         if (await lockWorkspace(cwd, skills.router.dir) === "written") ctx.log("AGENTS.md: added the Agentic Loop SDD section, which locks this workspace to SDD and routes commands such as deploy.");

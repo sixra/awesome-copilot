@@ -307,6 +307,25 @@ test("older gate records are fetched once and cached across refreshes", async t 
     assert.deepEqual(PHASES.slice(0, 3).map(title => slid.phases.find(row => row.title === title).gate?.summary), ["approved", "build green", "9/9 criteria"]);
 });
 
+test("the older-record cache holds only the selected run", async t => {
+    const older = Array.from({ length: 5 }, (_, index) => log(index + 1, `line ${index + 1}`));
+    const progress = { records: [log(6, "working")], hasMoreOlder: true };
+    const session = fakeSession({
+        runs: [summary("r1", { createdAt: 5 }), summary("r2", { createdAt: 1 })],
+        details: { r1: detail("r1", { progress }), r2: detail("r2", { progress }) },
+        older,
+    });
+    const live = new Live({ session, workspace: await workspace(t) });
+    t.after(() => live.stop());
+    await live.start();
+    assert.deepEqual([...live.history.keys()], ["r1"]);
+    await live.select("r2");
+    assert.deepEqual([...live.history.keys()], ["r2"], "switching runs releases the previous run's history");
+    assert.equal(live.history.get("r2").length, 5);
+    await live.select("r1");
+    assert.deepEqual([...live.history.keys()], ["r1"]);
+});
+
 test("errors are reported without dropping the last good state, and stop releases listeners", async t => {
     const session = fakeSession({ runs: [summary("r1")] });
     const live = new Live({ session, workspace: await workspace(t) });

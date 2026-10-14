@@ -17,14 +17,14 @@ End-to-end monitoring is **on by default**: every tier - **backend, hosted agent
 | Tier | How it's instrumented | What lands in Application Insights |
 | --- | --- | --- |
 | **Backend** (API) | Azure Monitor OpenTelemetry distro (`configure_azure_monitor()` / `useAzureMonitor()` / `.UseAzureMonitor()`); auto-instruments inbound + outbound HTTP | Request/dependency spans, logs, metrics; W3C `traceparent` propagated to agents, MCP servers, and models |
-| **Hosted agent** (Copilot SDK default; MAF when explicit) | See *Agent observability* below | `invoke_agent` / `chat` / `execute_tool` spans, GenAI metrics, prompts & responses (when content capture is on) |
+| **Hosted agent** (Copilot SDK or MAF) | See *Agent observability* below | `invoke_agent` / `chat` / `execute_tool` spans, GenAI metrics, prompts & responses (when content capture is on) |
 | **MCP server** | Azure Monitor OTel distro on the server process; record tool name, arguments, and result as span attributes | Tool-call spans that nest under the agent's `execute_tool` span via propagated trace context |
 | **Foundry models** | Foundry **server-side tracing** (automatic once App Insights is connected) plus model-SDK instrumentation when you call models from your own code | `gen_ai` chat spans: model, token usage, finish reason, and prompt/response content (when capture is on) |
 
-## Agent observability (Copilot SDK default; MAF when explicit)
+## Agent observability
 
-- **MAF** is natively instrumented and **on by default** (`ENABLE_INSTRUMENTATION=true`). At startup call `configure_azure_monitor(connection_string=os.environ["APPLICATIONINSIGHTS_CONNECTION_STRING"])` (or `FoundryChatClient.configure_azure_monitor(...)`, which pulls the string from the project); it then emits `invoke_agent` / `chat` / `execute_tool` spans and `gen_ai` metrics.
-- **Copilot SDK** — for the agent's **own in-process** telemetry, call `configure_otel()` from the reference agent [`copilot-sdk-with-toolbox.py`](copilot-sdk-with-toolbox.py) once at startup (before the client/session is created). It wires the Azure Monitor exporters straight from `APPLICATIONINSIGHTS_CONNECTION_STRING` (no collector) and emits `conversation_turn` spans, `execute_tool <name>` MCP tool-I/O spans, and a `gen_ai.client.token.usage` token-consumption metric; it is a no-op when the connection string is unset. The spawned **CLI's own** `gen_ai` spans are separate: build the client with `CopilotClient(telemetry=TelemetryConfig(...))` (see `_copilot_telemetry()` in the same file). The CLI exports **OTLP**, which App Insights does not ingest directly - route it through an **OpenTelemetry Collector** with the Azure Monitor exporter. See [`foundry-toolbox.md`](foundry-toolbox.md#observability--send-agent-execution-telemetry-to-application-insights-opentelemetry).
+- **MAF** is natively instrumented (`ENABLE_INSTRUMENTATION=true`) and emits `invoke_agent` / `chat` / `execute_tool` spans and `gen_ai` metrics. When the hosting adapter already exports to Application Insights, don't start a second exporter; otherwise call `configure_azure_monitor(connection_string=os.environ["APPLICATIONINSIGHTS_CONNECTION_STRING"])` once at startup.
+- **Copilot SDK:** the hosting adapter exports host spans from `APPLICATIONINSIGHTS_CONNECTION_STRING`. The Copilot runtime is a separate producer: it exports its `invoke_agent` / `chat` / `execute_tool` spans over OTLP only when the client gets a `telemetry` config pointing `COPILOT_OTLP_ENDPOINT` at a reachable receiver, such as a collector with the Azure Monitor exporter. The reference agent [`copilot-sdk-with-toolbox.py`](copilot-sdk-with-toolbox.py) adds its own spans at the toolbox boundary. Follow [copilot-sdk-foundry.md](copilot-sdk-foundry.md#telemetry) for the route, identities and delivery checks.
 - **Foundry-hosted agents** get `APPLICATIONINSIGHTS_CONNECTION_STRING` injected automatically and produce **server-side traces** (agent runs, tool calls, model calls, and the conversation view) with no code change; client-side instrumentation layers on top for your own app code.
 
 ## Capture the full detail (request data, prompts, responses)
@@ -34,10 +34,10 @@ Content capture is **off by default** because spans then carry prompts, completi
 | Layer | Flag to capture content |
 | --- | --- |
 | MAF | `ENABLE_SENSITIVE_DATA=true` (or `enable_sensitive_telemetry()`) |
-| Copilot SDK / CLI | `TelemetryConfig(capture_content=True)` / `ENABLE_SENSITIVE_DATA=true` |
+| Copilot runtime | `telemetry={"capture_content": True}` |
 | Model SDK (OpenAI / Azure AI Inference) | `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` (or `AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED=true`) |
 | Backend / MCP server | add request/response bodies and tool args/results as span attributes explicitly |
 
-- **Treat captured content as sensitive**: enable it in **dev/test** by default; in production gate it behind config, redact secrets/PII before it reaches telemetry, and apply the same access controls and retention as production logs.
+- **Treat captured content as sensitive:** keep capture off unless the user approves it, for dev/test with synthetic data. In production gate it behind config, redact secrets and PII before export, and apply production log access and retention.
 - Set a distinct **cloud role name / `service.name`** per component (frontend, backend, agent, mcp-server) so the **Application Map** renders the topology and transactions correlate across tiers.
 - Defer SDK/instrumentation wiring to `appinsights-instrumentation` and role assignments to the `microsoft-foundry/rbac` sub-skill.

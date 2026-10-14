@@ -76,7 +76,7 @@
     },
     {
       "id": 6,
-      "prompt": "Finish the local acceptance handoff for an Agentic Loop build. The UI-to-agent E2E checks and correlated telemetry verification have passed, and the verified local frontend URL has just been saved as LOCAL_FRONTEND in root .env. During this build, a backend/frontend API schema mismatch caused a failed E2E test; updating both sides to the README contract fixed it and the test passed. Existing docs/loop-sri.md contains a user-authored note and a proposed early contract check that we tried successfully. There are no measured time or token savings. Return the proposed docs/loop-sri.md update and handoff only; do not run services, modify installed skills or deploy anything.",
+      "prompt": "Finish the local acceptance handoff for an Agentic Loop build. The UI-to-agent E2E checks and correlated telemetry verification have passed, and the verified local frontend URL has just been saved as LOCAL_FRONTEND in root .env. During this build, a backend/frontend API schema mismatch caused a failed E2E test; updating both sides to the contract in the root README.md fixed it and the test passed. Existing docs/loop-sri.md contains a user-authored note and a proposed early contract check that we tried successfully. There are no measured time or token savings. Return the proposed docs/loop-sri.md update and handoff only; do not run services, modify installed skills or deploy anything.",
       "expected_output": "An evidence-grounded docs/loop-sri.md update after the .env write, preserving prior content, evaluating the earlier lesson, and proposing generalizable changes to the foundry-agentic-loop skill with regression checks, followed by the separate app deployment approval question.",
       "files": [],
       "expectations": [
@@ -203,11 +203,11 @@
     },
     {
       "id": 14,
-      "prompt": "Use Agentic Loop to build and deploy a claims triage assistant for Contoso Insurance with spec-driven delivery. Use subscription 00000000-0000-0000-0000-000000000000 and region eastus2. Adjusters upload a claim summary; the agent classifies severity, checks the policy rules skill and routes the claim. Start the delivery now.",
+      "prompt": "Use Agentic Loop to build and deploy a claims triage assistant for Contoso Insurance with spec-driven development. Use subscription 00000000-0000-0000-0000-000000000000 and region eastus2. Adjusters upload a claim summary; the agent classifies severity, checks the policy rules skill and routes the claim. Start the delivery now.",
       "expected_output": "SDD mode: a read-only preflight, at most one clarification round, then run_dynamic_workflow for foundry-agentic-loop-workflow with a self-contained brief and the Azure target, followed by a short report of the run ID, canvas progress and checkpoints without polling.",
       "files": [],
       "expectations": [
-        "Chooses SDD mode, not rapid prototyping, because the user asks for spec-driven delivery and deployment.",
+        "Chooses SDD mode, not rapid prototyping, because the user asks for spec-driven development and deployment.",
         "Runs read-only preflight checks (az account, azd auth status, azd Foundry extension, microsoft-foundry availability) and reports all gaps together without installing or upgrading tools unasked.",
         "Asks at most one round of clarifying questions, only about decisions that change the spec.",
         "Starts run_dynamic_workflow with name foundry-agentic-loop-workflow and args containing a self-contained brief, subscriptionId, location eastus2 and an environmentName of at most 20 characters.",
@@ -389,11 +389,11 @@
     {
       "id": 27,
       "prompt": "You are the reviewer for the Verify gate. `docs/verify.md` says every acceptance criterion passes and that the backend request span shares an `operation_Id` with both hosted agents. `az containerapp revision list` for `ca-backend` shows a new revision created during Verify, after the backend was deployed to get that span, because local telemetry export failed without Monitoring Metrics Publisher on Application Insights. Should the gate pass? Return the verdict and the required fixes only.",
-      "expected_output": "A failed Verify gate: the backend was deployed during Verify, which the phase forbids. The fix proves backend telemetry locally with the deployer's Monitoring Metrics Publisher grant.",
+      "expected_output": "A failed Verify gate: a backend revision created after the passed Implement gate runs a new image, so the backend was deployed during Verify, which the phase forbids. The fix proves backend telemetry locally with the deployer's Monitoring Metrics Publisher grant.",
       "files": [],
       "expectations": [
-        "Fails the gate because a backend revision was created during Verify, which breaks Verify's rule against deploying the frontend or backend, regardless of the passing trace.",
-        "Confirms from container app revision timestamps, not only from `docs/verify.md`, whether any frontend or backend was deployed during Verify.",
+        "Fails the gate because a backend revision created during Verify runs a new image, which breaks Verify's rule against deploying the frontend or backend, regardless of the passing trace.",
+        "Confirms from the container app revisions created after the passed Implement gate (its time is in the flight record), not only from `docs/verify.md`, whether any frontend or backend revision runs a new image; same-image revisions from re-provisioning do not count.",
         "Requires the backend telemetry check to pass locally or carry an approved waiver, rather than relying on a backend deployed in Verify.",
         "Fixes local export by granting the deployer Monitoring Metrics Publisher on Application Insights, as the deployment plan's RBAC rows specify.",
         "Does not weaken the gate or accept a deferral to Deploy for a check that can run locally."
@@ -563,7 +563,7 @@
       "files": [],
       "expectations": [
         "Reads the Agentic Loop section of the root AGENTS.md and treats the workspace as SDD without asking for the mode.",
-        "Checks the latest flight record in `.agentic-loop/runs/` before acting.",
+        "Reads the live run with `dynamic_workflows_manage` (`runs`, then `inspect-run`) before its flight record in `.agentic-loop/runs/`, treating the run status as authoritative.",
         "When that run is paused at `approve-deploy-v1`, summarizes resources, cost, security and region impact, then resumes it with `resumeFromRunId` after approval instead of starting a new run.",
         "Otherwise runs the Deploy phase guide against `.azure/deployment-plan.md`, asking before `azd up`.",
         "Never reports the deployment as successful without the deployed smoke and E2E evidence."
@@ -580,6 +580,57 @@
         "After confirmation, derives the spec with Specify `reverse`, rewrites the section to SDD and reads it back before starting the workflow.",
         "If the user declines, keeps the rapid section and offers rapid's own deploy path.",
         "Never removes other AGENTS.md content."
+      ]
+    },
+    {
+      "id": 42,
+      "prompt": "Review the Copilot SDK hosted agent in our Agentic Loop SDD claims build before we add more tools. It creates the session with `PermissionHandler.approve_all`, reads `TOOLBOX_CLAIMS_TOOLS_MCP_ENDPOINT` in code, and configures the model provider with an API key from `AZURE_OPENAI_API_KEY`. Return the corrected design only; do not deploy.",
+      "expected_output": "A design aligned with the skill's Copilot SDK recipe and reference agent: a least-privilege permission handler, a keyless refreshing bearer-token provider on the discovered /openai/v1/ base, and the toolbox endpoint mapped to TOOLBOX_ENDPOINT.",
+      "files": [],
+      "expectations": [
+        "Replaces `approve_all` with an explicit least-privilege permission handler that approves only this turn's toolbox tools and reads of the downloaded skills, and rejects everything else.",
+        "Configures the `openai` provider with `wire_api: \"responses\"` on the discovered `/openai/v1/` base from `MODEL_API_BASE_URL`, authenticated by a refreshing `bearer_token_provider` for `https://ai.azure.com/.default`, with no API key.",
+        "Reads the toolbox from `TOOLBOX_ENDPOINT`, mapped in the agent's `azure.yaml` `env` from `${TOOLBOX_CLAIMS_TOOLS_MCP_ENDPOINT}`, instead of reading the azd output name or hard-coding tool URLs.",
+        "Checks the installed `github-copilot-sdk` APIs against the latest stable release before changing code.",
+        "Does not deploy, and puts no credentials in code, `.env` or Git."
+      ]
+    },
+    {
+      "id": 43,
+      "prompt": "This SDD workspace has an approved docs/spec.md and .azure/deployment-plan.md, and no workflow run is running or paused. The user types: implement",
+      "expected_output": "Runs the Implement phase guide in Chat on the existing artifacts and asks once before provisioning, because no workflow spec approval covers it.",
+      "files": [],
+      "expectations": [
+        "Follows the root AGENTS.md SDD route and confirms with `dynamic_workflows_manage` that no run is running or paused before running the phase alone.",
+        "Runs the Implement phase guide against the existing `docs/spec.md` and `.azure/deployment-plan.md`, reconciling existing work instead of starting a workflow run or re-scaffolding.",
+        "Asks before `azd provision`, naming the checkpoint services the phase also deploys, because only a workflow run's spec approval covers them.",
+        "Passes the hosted integration checkpoint before building the workstreams.",
+        "Keeps the frontend and backend local; deploying them belongs to the Deploy phase."
+      ]
+    },
+    {
+      "id": 44,
+      "prompt": "During SDD Implement, declare the model deployments from the approved deployment plan: gpt-5.4-mini for the agents and text-embedding-3-large for grounding, in swedencentral. Explain the azure.yaml and azd changes only; do not provision.",
+      "expected_output": "Declares both deployments in azure.yaml under services.ai-project.deployments[] from the plan's values, lets azd provision create them, and avoids the legacy AI_PROJECT_DEPLOYMENTS variable.",
+      "files": [],
+      "expectations": [
+        "Declares each deployment in `azure.yaml` under `services.ai-project.deployments[]` with its deployment name, model name, format, version, SKU name and capacity.",
+        "Uses the names, versions, SKUs and capacities recorded in `.azure/deployment-plan.md` instead of choosing new ones.",
+        "Does not use the legacy `AI_PROJECT_DEPLOYMENTS` azd environment variable.",
+        "Checks that `services.ai-project.deployments[]` is not empty and has no literal `{{…}}` before validating with `az bicep build`.",
+        "Does not provision or deploy."
+      ]
+    },
+    {
+      "id": 45,
+      "prompt": "Build a field-service scheduling assistant with spec-driven development in this workspace. Its root AGENTS.md has the Agentic Loop SDD section, and an earlier foundry-agentic-loop-workflow run for this workspace is paused at approve-spec-v1.",
+      "expected_output": "Finds the paused run before starting anything, reports it and offers to resume it instead of starting a second run.",
+      "files": [],
+      "expectations": [
+        "Lists runs with `dynamic_workflows_manage` (`runs`) and matches them to this workspace's `.agentic-loop/runs/` records before starting a run.",
+        "Reports the paused run and its gate, and offers to resume it with `resumeFromRunId` instead of starting a second run.",
+        "Does not start a second run without the user's explicit choice.",
+        "Treats the workspace as SDD from the AGENTS.md section without asking for the mode again."
       ]
     }
   ]

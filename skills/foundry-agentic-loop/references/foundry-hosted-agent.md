@@ -12,41 +12,30 @@ Use the **invocations** protocol only when the user explicitly requests it, when
 
 ## Python dependency contract (`requirements.txt`)
 
-When post-processing the spec, declare the hosted agent's Python dependencies so the generated `requirements.txt` (or `pyproject.toml`) is complete. Resolve the latest stable compatible releases at implementation time and capture the resolved versions in the generated application's lockfile; the list below is the **required intent**, conditional on the choices already made (framework, toolbox, telemetry). The reference agent [`copilot-sdk-with-toolbox.py`](copilot-sdk-with-toolbox.py) imports exactly this set.
+Declare each agent's dependencies in `requirements.txt` or `pyproject.toml`. Resolve the latest stable compatible releases at implementation time and lock them; the table is the required intent for the choices already made. Pick one framework row per agent, following SKILL.md's framework rule.
 
 | When | Package | Why |
 | --- | --- | --- |
-| **Always** (keyless auth) | `azure-identity` | `DefaultAzureCredential` for managed-identity / `az login` tokens |
-| **Always** (local config) | `python-dotenv` | Load `.env` in local dev (`load_dotenv`) |
-| **Hosted agent runtime** | `azure-ai-agentserver-responses` | Serve the **Responses API** endpoint the Foundry platform calls |
-| **Hosted agent runtime - invocations fallback** | `azure-ai-agentserver-invocations` | Include only when invocations is explicitly selected for compatibility (`InvocationAgentServerHost`) |
-| **GitHub Copilot SDK** | `github-copilot-sdk` | Default hosted-agent framework: `CopilotClient`, Foundry Skills API downloads, toolbox MCP bridge, integrated agent loop, BYOK provider |
-| **MAF agent** | `agent-framework` | Microsoft Agent Framework runtime (include only when explicitly requested or clearly needed for graph/workflow orchestration) |
-| **Toolbox over MCP** | `httpx` | Streamable-HTTP MCP bridge to the Foundry toolbox endpoint |
-| **Runtime skill download from Foundry** | `azure-ai-projects` | `AIProjectClient` to download governed skill content at hosted-agent startup; create/update/list/show/download management operations should prefer `azd ai skill` outside the runtime |
-| **Observability (ON by default)** | `azure-monitor-opentelemetry-exporter`, `opentelemetry-sdk`, `opentelemetry-api` | Export traces/metrics/logs straight to Application Insights, no collector |
-| **Observability — model-call tracing** | `opentelemetry-instrumentation-openai-v2` | Instrument in-process OpenAI/Foundry model calls |
+| Always | `azure-identity` | `DefaultAzureCredential`: managed identity hosted, `az login` locally |
+| Always | `azure-ai-agentserver-responses` | Serves the Responses endpoint; its core exports host telemetry from `APPLICATIONINSIGHTS_CONNECTION_STRING` |
+| Invocations only | `azure-ai-agentserver-invocations` | Only when invocations is explicitly selected |
+| Agents that use runtime skills | `github-copilot-sdk[telemetry]` | Copilot runtime, BYOK provider and runtime telemetry; brings `httpx` for the toolbox bridge in [`copilot-sdk-with-toolbox.py`](copilot-sdk-with-toolbox.py) |
+| Basic agents and explicit workflows | `agent-framework` | Microsoft Agent Framework |
+| Multi-file skills or skills outside a toolbox | `azure-ai-projects` | Skills API download (see microsoft-foundry); toolbox skills arrive as MCP resources instead |
+| In-process OpenAI-client model calls | `opentelemetry-instrumentation-openai-v2` | Model spans the runtime doesn't emit |
 
-Keep the Copilot SDK, toolbox, and skill-download rows for the default foundry-agentic-loop hosted agent. Drop them only for an explicit MAF/non-toolbox variant. Do **not** add `azure-search-documents` to the default runtime dependency set; Foundry IQ grounding is consumed through the toolbox MCP endpoint. Add Search SDK dependencies only for the direct-retrieval escape hatch in [`foundry-iq-grounding.md`](foundry-iq-grounding.md#escape-hatch-direct-in-code-retrieval). Drop the model-tracing row only if no in-process model calls are made. Keep the observability core rows because telemetry is **ON by default**.
+Don't add a second global telemetry exporter next to the hosting adapter's ([observability.md](observability.md)). Don't add `azure-search-documents`: Foundry IQ grounding comes through the toolbox; add Search SDKs only for the direct-retrieval escape hatch in [`foundry-iq-grounding.md`](foundry-iq-grounding.md#escape-hatch-direct-in-code-retrieval).
 
 Resolve versions against the index the build uses as well, because a mirror or proxy can lag the official index. Hashed locks keep only sha256, sha384 or sha512 hashes; pip rejects others ("Allowed hash algorithms for --hash are sha256, sha384, sha512").
 
 ## Copilot SDK compatibility
 
-Generated code and documentation examples must match the latest stable package release rather than a stale example from a moving upstream branch. At implementation time, query the official package index, install the latest stable release, inspect its package metadata and API signatures, and record the resolved version in the generated application's contract and lockfile. If the build's index lacks that release, lock the newest stable release it serves (never a pre-release), inspect that API, and record the gap.
+Generated code must match the latest stable `github-copilot-sdk`, not a stale example. At implementation time, resolve the latest stable release from the official index, install it, and inspect `CopilotClient.create_session`, `CopilotSession.send_and_wait`, the event data types and the async context-manager lifecycle before writing handlers. If the build's index lacks that release, lock the newest stable release it serves (never a pre-release) and record the gap. [copilot-sdk-foundry.md](copilot-sdk-foundry.md) lists what to record.
 
-| Contract | Latest stable `github-copilot-sdk` resolved at implementation time |
-| --- | --- |
-| Python | 3.11+ |
-| Session creation | Inspect `CopilotClient.create_session`; the current reference uses `await client.create_session(**config)` |
-| Prompt send | Inspect `CopilotSession.send_and_wait`; the current reference passes a string prompt |
-| Return/event shape | Inspect the installed package's annotations and event data types before generating handlers |
-| Lifecycle | Prefer the async context-manager lifecycle supported by the installed release |
+Compatibility checks belong to the generated application's implementation and CI, which run against its resolved lockfile; this skill bundles no SDK test suite. If companion-skill guidance conflicts with the installed package, follow the package API and report the defect upstream (issue or PR) instead of patching the third-party skill locally.
 
-Compatibility checks belong in the generated application, where they run against its resolved dependencies during implementation and CI. This skill does not bundle or automatically execute an SDK test suite. If current companion-skill guidance conflicts with the installed package source, treat that guidance as an upstream documentation defect and follow the package API.
-
-When reviewing or correcting generated SDK code, include the relevant compatibility facts in the response: resolved package version, Python minimum, session-creation shape, prompt-send shape, return/event shape, and lifecycle pattern. This makes the correction independently verifiable instead of leaving important constraints implicit in this reference.
+When reviewing or correcting SDK code, state the resolved version, the Python minimum (3.11 for v1.0.14; hosted agents keep 3.13), and the session-creation, prompt-send, event and lifecycle shapes, so the correction can be checked.
 
 ## Read-only container filesystem
 
-Hosted-agent container filesystems are **read-only except `/tmp`**. Any path the agent writes at runtime (downloaded skills cache, session/scratch state, generated files) must default under `tempfile.gettempdir()`. Defaulting writable paths under the app directory crashes on first invocation. See [`foundry-toolbox.md`](foundry-toolbox.md) for the skills-download cache (`SKILLS_DIR`) and [`copilot-sdk-with-toolbox.py`](copilot-sdk-with-toolbox.py) for the `working_directory` default.
+Hosted containers are read-only except `/tmp`. Default every runtime write (skills, session state, generated files) under `tempfile.gettempdir()`; writing under the app directory crashes the first invocation. The reference agent writes skills to a per-turn temporary directory and moves Copilot session state under the temp directory only when HOME isn't writable.

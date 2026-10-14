@@ -18,7 +18,7 @@ Each phase follows its guide in the `foundry-agentic-loop` skill (`references/sp
 - **Lead**: does the phase work and records lessons in `docs/loop-sri.md`.
 - **Review**: an independent reviewer reruns every check and reports all blocking issues at once, with evidence. Earlier reports count as claims, not evidence.
 - **Fix**: a fixer resolves the issues, then a new review first confirms each one is resolved before finishing its checks. This repeats up to `maxFixLoops` times.
-- **Implement**: the foundation step plans up to four workstreams. If they own disjoint files, they run in parallel before integration; otherwise the build runs in sequence. Implement deploys only the hosted checkpoint services, and only when they changed; the app services deploy in Deploy.
+- **Implement**: the foundation step plans up to four workstreams. If they own disjoint workspace-relative files outside the shared ones the lead keeps, such as `azure.yaml`, `infra/`, `docs/` and the root lockfiles, they run in parallel before integration; otherwise the build runs in sequence. Implement deploys only the hosted checkpoint services, and only when they changed; the app services deploy in Deploy.
 - **Retry**: a subagent that ends without a report, usually after a provider error, is retried once and told to continue from the current workspace and Azure state. A second miss blocks the gate instead of spending fix loops; for a workstream worker, integration receives it as a failed workstream and finishes it.
 
 The gate passes only on the reviewer's verdict.
@@ -33,7 +33,7 @@ The gate passes only on the reviewer's verdict.
 
 Each pause posts a `Needs you:` line in Chat that names the decision. The flight record lists every gate issue, and the canvas shows them. Resume with `run_dynamic_workflow` and `resumeFromRunId`, or from the canvas. Completed steps, including every subagent report, replay from the journal, so resuming never repeats finished work.
 
-Workflow subagents don't appear in `list_agents` or `read_agent`, and the flight record changes only when a step ends, so a quiet hour inside one Implement step is normal. The canvas Workflow tab shows live subagent activity.
+Workflow subagents don't appear in `list_agents` or `read_agent`. The flight record is saved when the run starts, at the first step that runs after a resume, at each gate, checkpoint and Deploy skip, at the result and on failure, so a quiet hour inside one Implement step is normal. A cancelled run keeps its last saved status, so the run status from `dynamic_workflows_manage` (`runs` or `inspect-run`) is authoritative. The canvas Workflow tab shows live subagent activity.
 
 ## Arguments
 
@@ -48,7 +48,7 @@ Workflow subagents don't appear in `list_agents` or `read_agent`, and the flight
 | `maxFixLoops` | `2` | Fix rounds per phase gate, 0–5 |
 | `skipDeploy` | `false` | End after Verify with status `verified` |
 
-For an unattended run from Specify through Verify, use `autonomy: "auto"` and `skipDeploy: true`. The command is `copilot workflow run foundry-agentic-loop-workflow --args @args.json`.
+For an unattended run from Specify through Verify, use `autonomy: "auto"` and `skipDeploy: true` with `copilot workflow run foundry-agentic-loop-workflow --args @args.json --result-file result.json`, where `--result-file` writes only the workflow result. Such a run can still pause at a `blocked-<phase>-r<n>` checkpoint, and with `autonomy: "gated"` or without `skipDeploy` it also pauses for approval. The CLI has no resume command, so continue a paused run from a Copilot session with its run ID.
 
 ## Outputs
 
@@ -61,3 +61,5 @@ For an unattended run from Specify through Verify, use `autonomy: "auto"` and `s
 ```bash
 node --test extensions/foundry-agentic-loop-workflow/tests/*.test.mjs
 ```
+
+Or run `npm test` from `extensions/foundry-agentic-loop-workflow`. When the Agentic Loop canvas sits next to this extension, a contract test checks that it reads the workflow's Chat lines, checkpoints, flight record path and `AGENTS.md` section, and validates Azure args the same way.

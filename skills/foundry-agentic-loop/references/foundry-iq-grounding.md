@@ -50,7 +50,7 @@ If a known-answer query refuses with empty citations, inspect the toolbox call r
 
 ## Escape hatch: direct in-code retrieval
 
-Use direct in-code Search / Foundry IQ retrieval only when the toolbox path cannot support a required diagnostic or unsupported preview capability. Make it explicit in the spec or README contract, isolate it from the default agent runtime, and remove or disable it after the diagnostic is complete.
+Use direct in-code Search / Foundry IQ retrieval only when the toolbox path cannot support a required diagnostic or unsupported preview capability. Record it in `docs/spec.md` (SDD) or the root `README.md` (rapid), isolate it from the default agent runtime, and remove or disable it after the diagnostic is complete.
 
 Escape-hatch implications:
 

@@ -197,7 +197,7 @@
   {
     "id": "drive-predictive-insights-with-ai",
     "name": "Improve financial forecasting by analyzing market data with AI",
-    "industry": "Financial Services: Capital markets",
+    "industry": "Financial services: Capital markets",
     "description": "Learn how the Microsoft data platform can unify internal and external data and enable AI to deliver predictive insights that drive smarter investment decisions.",
     "image": "images/drive-predictive-insights-with-ai.webp",
     "tags": [
@@ -572,7 +572,7 @@
   {
     "id": "automated-claims-processing-fraud-detection",
     "name": "Modernize claims processes",
-    "industry": "Financial Services: Insurance",
+    "industry": "Financial services: Insurance",
     "description": "Automate claims processing, improve insurance fraud detection, and streamline claims management with intelligent workflows for faster, accurate results.",
     "image": "images/automated-claims-processing-fraud-detection.webp",
     "tags": [
@@ -601,7 +601,7 @@
   {
     "id": "empower-relationship-managers-with-ai",
     "name": "Agent-powered relationship managers",
-    "industry": "Financial Services: Banking",
+    "industry": "Financial services: Banking",
     "description": "Learn how AI in customer relationship management boosts engagement in financial services by giving relationship managers insights, summaries, and prep tools.",
     "image": "images/empower-relationship-managers-with-ai.webp",
     "tags": [
@@ -660,7 +660,7 @@
   {
     "id": "boost-sales-and-help-policyholders-with-ai",
     "name": "Accelerate insurance underwriting",
-    "industry": "Financial Services: Insurance",
+    "industry": "Financial services: Insurance",
     "description": "Boost sales and improve coverage accuracy with intelligent AI support agents. Help agents confidently match policyholders to the right insurance plans.",
     "image": "images/boost-sales-and-help-policyholders-with-ai.webp",
     "tags": [
@@ -828,7 +828,7 @@
   {
     "id": "accelerate-financial-research-with-ai",
     "name": "Accelerate financial research with AI-driven analysis and summaries",
-    "industry": "Financial Services: Capital markets",
+    "industry": "Financial services: Capital markets",
     "description": "Accelerate research with AI in financial services. Summarize reports, earnings calls, and market sentiment to power smarter decisions in capital markets.",
     "image": "images/accelerate-financial-research-with-ai.webp",
     "tags": [
@@ -966,7 +966,7 @@
   {
     "id": "predictive-underwriting-automation-risk-assessment-with-ai",
     "name": "Improve underwriting risk analysis",
-    "industry": "Financial Services: Insurance",
+    "industry": "Financial services: Insurance",
     "description": "Enhance insurance underwriting with AI automation, predictive risk analysis, and improved decision-making to reduce losses and streamline processes.",
     "image": "images/predictive-underwriting-automation-risk-assessment-with-ai.webp",
     "tags": [
@@ -1024,7 +1024,7 @@
   {
     "id": "improve-risk-and-compliance-management-with-ai",
     "name": "Improve risk and compliance management",
-    "industry": "Financial Services: Capital markets",
+    "industry": "Financial services: Capital markets",
     "description": "Discover how AI for risk management predicts risks, helps report suspicious activity, automates monitoring, and strengthens compliance across financial systems.",
     "image": "images/improve-risk-and-compliance-management-with-ai.webp",
     "tags": [
@@ -1077,7 +1077,7 @@
   {
     "id": "ai-for-insurance-agents",
     "name": "Enhance agent and employee productivity",
-    "industry": "Financial Services: Insurance",
+    "industry": "Financial services: Insurance",
     "description": "Explore how AI tools can help insurance agents deliver better customer service by improving meeting preparation and enhancing customer insights.",
     "image": "images/ai-for-insurance-agents.webp",
     "tags": [
@@ -1107,7 +1107,7 @@
   {
     "id": "empower-advisory-and-sales-roles-with-ai",
     "name": "Empower advisory and sales roles",
-    "industry": "Financial Services: Capital markets",
+    "industry": "Financial services: Capital markets",
     "description": "Learn how advisors and sales teams can use an AI sales enablement platform to streamline meetings, personalize presentations, and deliver portfolio insights.",
     "image": "images/empower-advisory-and-sales-roles-with-ai.webp",
     "tags": [
@@ -1304,7 +1304,7 @@
   {
     "id": "improve-fraud-analysis-and-detection-with-ai",
     "name": "AI Transforms Banking: Fraud Detection, Efficiency, and Accelerated AI Adoption",
-    "industry": "Financial Services: Banking",
+    "industry": "Financial services: Banking",
     "description": "Learn how AI in fraud detection empowers intelligence officers with real-time insights, fewer false positives, and exact identification of fraudulent activity.",
     "image": "images/improve-fraud-analysis-and-detection-with-ai.webp",
     "tags": [
@@ -1386,7 +1386,7 @@
   {
     "id": "ai-in-capital-markets",
     "name": "Automate operations",
-    "industry": "Financial Services: Capital markets",
+    "industry": "Financial services: Capital markets",
     "description": "Boost efficiency and reduce costs in capital markets operations with AI-powered automation, predictive analytics, and machine learning tools.",
     "image": "images/ai-in-capital-markets.webp",
     "tags": [
@@ -1442,7 +1442,7 @@
   {
     "id": "enhance-marketing-effectiveness-with-ai",
     "name": "Enhance banking marketing with AI-driven personalization, insights, and employee empowerment",
-    "industry": "Financial Services: Banking",
+    "industry": "Financial services: Banking",
     "description": "Learn how to enhance your financial services marketing with AI-driven personalization and targeted offers that build meaningful customer relationships.",
     "image": "images/enhance-marketing-effectiveness-with-ai.webp",
     "tags": [
@@ -1552,7 +1552,7 @@
   {
     "id": "modernize-lending-and-mortgage-processes-with-ai",
     "name": "Modernizing Lending with AI-Driven automation, faster approvals, and enhanced compliance",
-    "industry": "Financial Services: Banking",
+    "industry": "Financial services: Banking",
     "description": "Learn how AI in financial services can automate data analysis, enhance risk assessment accuracy, and accelerate application approvals for fast lending decisions.",
     "image": "images/modernize-lending-and-mortgage-processes-with-ai.webp",
     "tags": [
@@ -1608,7 +1608,7 @@
   {
     "id": "transform-the-contact-center-with-ai",
     "name": "Transform banking customer service with AI-powered contact centers and Copilot solutions",
-    "industry": "Financial Services: Banking",
+    "industry": "Financial services: Banking",
     "description": "Discover how to empower your bank’s contact center with AI to transform routine service tasks into meaningful customer interactions and service experiences.",
     "image": "images/transform-the-contact-center-with-ai.webp",
     "tags": [
@@ -1638,7 +1638,7 @@
   {
     "id": "personalize-and-augment-the-client-experience-with-ai",
     "name": "Personalize and augment the client experience",
-    "industry": "Financial Services: Capital markets",
+    "industry": "Financial services: Capital markets",
     "description": "Learn how AI in capital markets enables AI-driven personalization and transforms client experiences in financial services, driving client satisfaction.",
     "image": "images/personalize-and-augment-the-client-experience-with-ai.webp",
     "tags": [
@@ -1666,7 +1666,7 @@
   {
     "id": "transform-customer-service-with-ai",
     "name": "Transform customer service",
-    "industry": "Financial Services: Insurance",
+    "industry": "Financial services: Insurance",
     "description": "See how AI for insurance enhances customer service with personalized support, faster claims processing, and smarter upsell opportunities for financial services.",
     "image": "images/transform-customer-service-with-ai.webp",
     "tags": [

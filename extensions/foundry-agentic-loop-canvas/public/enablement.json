@@ -17,7 +17,7 @@
       "topic": "azd CLI",
       "phase": "deploy",
       "title": "From sample to hosted agent with azd ai agent",
-      "body": "Use init to start from a sample, run to test locally, azd deploy to build it in Foundry, invoke to call it and monitor to stream logs. Needs azd 1.27.1 or later.",
+      "body": "Use init to start from a sample, run to test locally, azd deploy to build it in Foundry, invoke to call it and monitor to stream logs. Needs azd 1.32.0 or later.",
       "snippet": "azd ai agent monitor --follow",
       "link": {
         "label": "Deploy your first hosted agent",

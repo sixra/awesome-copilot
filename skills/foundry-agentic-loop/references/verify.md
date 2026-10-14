@@ -33,13 +33,13 @@ Run every azd command from the workspace root, with `AZURE_DEV_USER_AGENT=micros
 | **Hosted** | `azd ai agent invoke <agent> "<scenario>"` against the deployed version. Run `azd deploy <agent>` first if the agent code changed. Retry 424 or 502 warm-up responses with backoff. |
 | **Telemetry** | A trace from this run, including backend spans, reaches Application Insights (query `requests` or `dependencies` in the last 30 minutes). Local exporters sign in as the developer ([observability](observability.md)). |
 | **Evaluation** | Write at least 10 rows from the spec scenarios to `tests/eval/dataset.jsonl`. Run `azd ai agent eval generate --agent <svc> --dataset tests/eval/dataset.jsonl --evaluator builtin.task_adherence --evaluator builtin.intent_resolution`, adding `builtin.groundedness` when the agent is grounded. Then run `azd env set LAST_EVAL_ID ""` and `azd ai agent eval run --agent <svc>`, and check that its `Agent: <name> v<N>` line names that agent. |
-| **Review** | A fresh-context reviewer checks the code and evidence against each requirement, the contract and the RBAC rows. |
+| **Review** | A fresh-context reviewer checks the code and evidence against each requirement, the contract and the RBAC rows, and confirms from the container app revisions that no frontend or backend revision created after the Implement gate runs a new image (re-provisioning may add same-image revisions). |
 
 ## 4. Fix
 
 1. Fix the root cause in the smallest scope.
 2. Rerun the failing checks after each fix, and the full suite once after the last fix.
-3. Upsert the lesson in `docs/loop-sri.md`.
+3. Upsert the lesson in `docs/loop-sri.md` ([template](../assets/loop-sri-template.md)).
 
 Contract or scope changes go to `docs/spec.md` first. Never weaken a test or a threshold to get a pass.
 

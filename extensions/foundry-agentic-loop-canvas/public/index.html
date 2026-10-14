@@ -9,6 +9,8 @@
     <script type="module" src="/app.js"></script>
 </head>
 <body data-mode="rapid">
+<div id="announce-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+<div id="announce-alert" class="visually-hidden" role="alert" aria-atomic="true"></div>
 <header>
     <div class="brand">
         <svg class="loop" viewBox="0 0 32 32" aria-hidden="true"><path class="loop-track" pathLength="100" d="M16 16c-3-4-5-6-8-6a6 6 0 0 0 0 12c3 0 5-2 8-6s5-6 8-6a6 6 0 0 1 0 12c-3 0-5-2-8-6Z"/><path class="loop-flow" pathLength="100" d="M16 16c-3-4-5-6-8-6a6 6 0 0 0 0 12c3 0 5-2 8-6s5-6 8-6a6 6 0 0 1 0 12c-3 0-5-2-8-6Z"/></svg>
@@ -21,7 +23,7 @@
     </div>
 </header>
 <div class="mode" role="radiogroup" aria-label="How to build" aria-describedby="mode-hint">
-    <button role="radio" aria-checked="true" data-mode="rapid"><strong>Rapid prototype<svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></strong><span>In an existing Foundry project</span></button>
+    <button role="radio" aria-checked="true" data-mode="rapid"><strong>Rapid prototyping<svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></strong><span>In an existing Foundry project</span></button>
     <button role="radio" aria-checked="false" tabindex="-1" data-mode="sdd"><strong>SDD workflow<svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></strong><span>From spec to Azure deployment</span></button>
 </div>
 <p id="mode-hint" class="mode-hint"></p>
@@ -35,13 +37,13 @@
     <button role="tab" id="tab-explore" aria-controls="explore" aria-selected="false" tabindex="-1" data-tab="explore">Explore</button>
     <button role="tab" id="tab-optimize" aria-controls="optimize" aria-selected="false" tabindex="-1" data-tab="optimize">Optimize</button>
 </nav>
-<p id="notice" role="status" aria-live="polite" hidden></p>
-<p id="project-env-error" class="error banner" role="status" aria-live="polite" hidden></p>
+<p id="notice" hidden></p>
+<p id="project-env-error" class="error banner" hidden></p>
 </div>
 <main>
     <section id="setup" role="tabpanel" aria-labelledby="tab-setup">
         <h2>Ready to build?</h2><p class="intro">Install once. Then carry a complete solution from intent to production.</p>
-        <div id="checks" aria-live="polite"><div class="skeleton"><span></span><span></span><span></span><p class="visually-hidden">Checking skills, extensions, tools and Azure sign-in…</p></div></div>
+        <div id="checks"><div class="skeleton"><span></span><span></span><span></span><p class="visually-hidden">Checking skills, extensions, tools and Azure sign-in…</p></div></div>
         <div id="setup-actions" hidden>
             <div id="setup-plugin-help" hidden>
                 <div class="section-heading"><h3>Install the Agentic Loop plugin</h3></div>
@@ -69,8 +71,8 @@ copilot plugin install azure@awesome-copilot</code></pre>
         <h2>Your deployment home</h2><p class="intro">Choose a Foundry project. Its resource group brings the rest of your solution together.</p>
         <label for="subscription">Azure subscription</label><select id="subscription"><option value="">Discovering subscriptions…</option></select>
         <label for="project-search">Find a project</label><input id="project-search" type="search" placeholder="Search project or resource group">
-        <div id="projects" class="project-list" aria-live="polite"></div>
-        <div id="resource-context"></div><div id="monitoring" aria-live="polite"></div>
+        <div id="projects" class="project-list"></div>
+        <div id="resource-context"></div><div id="monitoring"></div>
         <div class="section-heading"><h3>Start with new resources</h3></div>
         <div class="choice"><div><h4>Foundry quickstart</h4><p>A focused starting point for development.</p></div><button data-prompt="quickstart">Create in Chat</button></div>
         <div class="choice"><div><h4>AI Landing Zone</h4><p>Enterprise networking, identity and governance for production.</p></div><button data-prompt="landingZone">Plan in Chat</button></div>
@@ -120,7 +122,7 @@ copilot plugin install azure@awesome-copilot</code></pre>
     </section>
     <section id="workflow" role="tabpanel" aria-labelledby="tab-workflow" hidden>
         <div id="wf-empty">
-            <h2>Spec-driven delivery, phase by phase</h2>
+            <h2>Spec-driven development, phase by phase</h2>
             <p class="intro">Start an SDD workflow from Build. This tab follows it live: each phase, its agents, the evidence it writes and the gate it must pass.</p>
             <ol class="phases preview">
                 <li class="phase" data-view="pending"><span class="phase-icon" aria-hidden="true"></span><div class="phase-body"><div class="phase-head"><h3>Specify</h3></div><p class="muted">EARS acceptance criteria, a frozen contract, workstreams and a deployment plan, checked by an independent reviewer.</p><p class="gate-note">Gate · you approve the spec and plan</p></div></li>
@@ -146,7 +148,7 @@ copilot plugin install azure@awesome-copilot</code></pre>
     <section id="explore" role="tabpanel" aria-labelledby="tab-explore" hidden>
         <h2>Explore your solution</h2><p class="intro">See what is deployed, then continue the loop: observe, evaluate, improve.</p>
         <h3>Your apps</h3>
-        <div id="frontend-links" aria-live="polite"><p class="muted">Reading frontend URLs from workspace .env…</p></div>
+        <div id="frontend-links"><p class="muted">Reading frontend URLs from workspace .env…</p></div>
         <div class="section-heading"><h3>Foundry resources</h3></div>
         <div class="actions"><button data-prompt="foundry" data-requires-project disabled>Open Microsoft Foundry Canvas</button><button id="refresh-foundry">Refresh Foundry panel</button></div>
         <p class="muted">Reuses the installed Foundry panel for configuration, deployment and interactive testing. Chat synchronizes your project; opening does not deploy anything.</p>
@@ -186,7 +188,7 @@ copilot plugin install azure@awesome-copilot</code></pre>
             <div class="actions"><button data-prompt="improve">Improve in Chat</button></div>
         </div>
         <p class="muted">Copilot confirms the agent and prerequisites in Chat. Billable runs, recurring execution and changes to deployed agents require approval.</p>
-        <div class="section-heading"><h3>This Copilot session</h3></div><div id="usage" aria-live="polite"></div>
+        <div class="section-heading"><h3>This Copilot session</h3></div><div id="usage"></div>
         <div class="section-heading"><h3>Azure spend · month to date</h3></div><div id="azure-cost"></div>
         <p class="muted">Actual resource-group charges reported by Azure, not just this project. Billing data can lag. Cost Management Reader access may be required.</p>
     </section>

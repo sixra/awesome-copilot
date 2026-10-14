@@ -23,6 +23,7 @@ Declarative skill, connection and toolbox services need these extension versions
 
 - `azure.ai.agents` 1.0.0-beta.17 or later
 - `azure.ai.connections` and `azure.ai.toolboxes` 1.0.0-beta.8 or later
+- `azure.ai.skills` 1.0.0-beta.1 or later
 
 Check the installed versions with `azd ext list`. Upgrade only with approval, using `azd extension update <id>`.
 
@@ -76,6 +77,7 @@ services:
     # keep kind, name, codeConfiguration, protocols and container from the scaffold
     env:
       AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+      MODEL_API_BASE_URL: ${MODEL_API_BASE_URL}   # Copilot SDK agents; set after provision
       TOOLBOX_ENDPOINT: ${TOOLBOX_CLAIMS_TOOLS_MCP_ENDPOINT}
   backend:
     host: containerapp

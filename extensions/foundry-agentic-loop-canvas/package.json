@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "main": "extension.mjs",
-  "author": "Microsoft",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "author": "Microsoft AI Apps GBB",
   "license": "MIT",
   "dependencies": {
     "@github/copilot-sdk": "1.0.17"

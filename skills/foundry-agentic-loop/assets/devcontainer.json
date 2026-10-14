@@ -7,7 +7,7 @@
       "installBicep": true
     },
     "ghcr.io/azure/azure-dev/azd:latest": {
-      "extensions": "azure.ai.agents,azure.ai.toolboxes,azure.ai.skills"
+      "extensions": "azure.ai.agents,azure.ai.toolboxes,azure.ai.skills,azure.ai.connections"
     },
     "ghcr.io/devcontainers/features/copilot-cli:1": {}
   },

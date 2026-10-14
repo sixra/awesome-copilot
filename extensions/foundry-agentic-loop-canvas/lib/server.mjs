@@ -1,21 +1,28 @@
 import { createServer } from "node:http";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 const imageTypes = { ".webp": "image/webp", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg" };
+const MAX_BODY = 131_072;
+const digest = value => createHash("sha256").update(value).digest();
 
+// Drain an oversized body instead of aborting it, so the client receives the 413 rather than a reset connection.
 export async function readBody(req) {
-    let body = "";
+    const chunks = [];
+    let size = 0;
     for await (const chunk of req) {
-        body += chunk;
-        if (Buffer.byteLength(body) > 32_768) throw new Error("Request body exceeds 32 KB.");
+        size += chunk.length;
+        if (size <= MAX_BODY) chunks.push(chunk);
     }
-    return JSON.parse(body || "{}");
+    if (size > MAX_BODY) throw Object.assign(new Error("Request body exceeds 128 KB."), { status: 413 });
+    return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 }
 
 export async function startServer({ assets, images, scenarios, dispatch, snapshot, live }) {
     const token = randomBytes(32).toString("hex");
+    const expected = digest(token);
+    const trusted = value => typeof value === "string" && timingSafeEqual(digest(value), expected);
     const imagePaths = new Set(scenarios.map(row => `/${row.image}`));
     const staticFiles = new Map([
         ["/", ["index.html", "text/html; charset=utf-8"]],
@@ -45,7 +52,7 @@ export async function startServer({ assets, images, scenarios, dispatch, snapsho
             if (file && req.method === "GET") {
                 let content = await readFile(path.join(assets, file[0]));
                 if (url.pathname === "/") {
-                    if (url.searchParams.get("key") !== token) return json(403, { error: "Open this panel through Copilot." });
+                    if (!trusted(url.searchParams.get("key"))) return json(403, { error: "Open this panel through Copilot." });
                     content = content.toString().replace("__CANVAS_TOKEN__", token);
                 }
                 res.writeHead(200, { "Content-Type": file[1] });
@@ -59,7 +66,7 @@ export async function startServer({ assets, images, scenarios, dispatch, snapsho
                 res.writeHead(200, { "Content-Type": type, "Cache-Control": "private, max-age=3600" });
                 return res.end(content);
             }
-            if (req.headers["x-canvas-token"] !== token || (req.headers.origin && req.headers.origin !== origin)) {
+            if (!trusted(req.headers["x-canvas-token"]) || (req.headers.origin && req.headers.origin !== origin)) {
                 return json(403, { error: "Untrusted canvas request." });
             }
             if (url.pathname === "/api/state" && req.method === "GET") return json(200, await snapshot());
@@ -78,7 +85,7 @@ export async function startServer({ assets, images, scenarios, dispatch, snapsho
                 return json(200, await dispatch(action, input ?? {}));
             }
             json(404, { error: "Not found." });
-        } catch (error) { json(400, { error: error.message }); }
+        } catch (error) { json(error.status === 413 ? 413 : error.code === "mode_locked" ? 409 : 400, { error: error.message }); }
     });
     await new Promise((resolve, reject) => {
         server.once("error", reject);

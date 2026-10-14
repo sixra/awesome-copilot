@@ -7,7 +7,7 @@ This workspace is a rapid prototype in an existing Foundry project. For build re
 | --- | --- |
 | `run` | Start the backend and frontend dev servers and report their URLs |
 | `test` | Run the local acceptance, contract and E2E tests |
-| `add agent`, `add tool`, `add skill` | Extend against the README contract, then rerun the checkpoint probes |
+| `add agent`, `add tool`, `add skill` | Extend against the contract, then rerun the checkpoint probes |
 | `deploy` | Redeploy changed agents and MCP servers and rerun their probes, then ask before deploying the app to the target in `.azure/deployment-plan.md` |
 | `improve` | Improve mode |
 | `convert to SDD` | Confirm, derive the spec with Specify `reverse`, switch this section to SDD and start the workflow |

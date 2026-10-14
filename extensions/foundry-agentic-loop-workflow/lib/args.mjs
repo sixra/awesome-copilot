@@ -10,7 +10,7 @@ const optionalString = { type: ["string", "null"] };
 export const META = {
     name: WORKFLOW,
     description:
-        "Agentic Loop spec-driven delivery for Microsoft Foundry, GitHub and Azure. Runs Specify, Implement, Verify and Deploy in sequence; "
+        "Agentic Loop spec-driven development for Microsoft Foundry, GitHub and Azure. Runs Specify, Implement, Verify and Deploy in sequence; "
         + "each phase follows its guide in the foundry-agentic-loop skill in fresh-context subagents and passes an independent evidence gate with bounded fix loops. "
         + "Pauses at approve-spec-v1 (unless autonomy is auto), approve-deploy-v1 (always) and blocked-<phase>-r<n>. "
         + `Writes docs/*.md, including lessons in ${LESSONS}, and .agentic-loop/runs/<runId>.json. `
@@ -33,7 +33,7 @@ export const META = {
             location: optionalString,
             environmentName: optionalString,
             scenarioId: optionalString,
-            autonomy: { type: "string", enum: ["gated", "auto"] },
+            autonomy: { type: ["string", "null"], enum: ["gated", "auto", null] },
             maxFixLoops: { type: ["integer", "null"] },
             skipDeploy: { type: ["boolean", "null"] },
         },
@@ -71,9 +71,4 @@ export function validateArgs(raw) {
         maxFixLoops,
         skipDeploy,
     });
-}
-
-export function firstLine(text, max = 160) {
-    const line = String(text ?? "").split(/\r?\n/).map(part => part.trim()).find(Boolean) ?? "";
-    return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }

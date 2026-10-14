@@ -2,8 +2,7 @@
 
 Reference implementation for the `foundry-agentic-loop` skill's RBAC pre-flight
 (see references/rbac-preflight.md). Copy into ./scripts/ of the generated repo
-and run it *before* any provisioning -- an `azd` preprovision hook is a good
-home for it.
+and run it *before* any provisioning, optionally as an `azd` preprovision hook.
 
 The failure this guards against is an RBAC gap that surfaces mid-provisioning,
 after partial resources exist, one scope at a time. So this check reports

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { request } from "node:http";
 import { Azure, projectIdentity, trustedEndpoint, foundryPortalUrl, azurePortalUrl } from "../lib/azure.mjs";
 import { Model, links, promptFor, validTarget } from "../lib/model.mjs";
-import { startServer } from "../lib/server.mjs";
+import { readBody, startServer } from "../lib/server.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const id = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-demo/providers/Microsoft.CognitiveServices/accounts/demo/projects/demo-project";
@@ -403,7 +403,8 @@ test("project choice persists across panel instances and reloads; prompts use se
     assert(sent[1].prompt.includes(second.id));
     await assert.rejects(reloaded.select("not-discovered"), /available/);
     await assert.rejects(reloaded.discover("not-accessible"), /accessible/);
-    assert.equal(reloaded.project, null);
+    assert.equal(reloaded.project.id, second.id, "a failed refresh keeps the current list and selection");
+    assert.equal(reloaded.projects.length, 2);
 });
 
 test("rechecking setup reloads newly installed skills and surfaces discovery failures", async () => {
@@ -468,6 +469,51 @@ test("server protects actions and state while serving only allowlisted scenario 
             .on("error", reject).end();
     });
     assert.equal(rebound, 403, "DNS-rebinding hosts are rejected even for static files");
+});
+
+test("request bodies decode UTF-8 once, after all chunks arrive, and oversized bodies drain before a 413", async () => {
+    const payload = Buffer.from(JSON.stringify({ action: "preferences", input: { draft: "é智🙂" } }));
+    const split = payload.indexOf(Buffer.from("智")) + 1;
+    assert.deepEqual(await readBody([payload.subarray(0, split), payload.subarray(split)]), { action: "preferences", input: { draft: "é智🙂" } });
+    let read = 0;
+    const chunks = function* () { for (let i = 0; i < 5; i++) { read++; yield Buffer.alloc(40_000, 32); } };
+    await assert.rejects(readBody(chunks()), error => error.status === 413 && /128 KB/.test(error.message));
+    assert.equal(read, 5, "the whole oversized body is consumed");
+});
+
+test("server accepts a full-length CJK draft, rejects oversized bodies and forged tokens, and maps a mode lock to 409", async t => {
+    const scenarios = JSON.parse(await readFile(path.join(root, "assets/scenarios.json"), "utf8"));
+    const entry = await startServer({
+        assets: path.join(root, "public"), images: path.join(root, "assets/images"), scenarios,
+        snapshot: async () => ({}),
+        dispatch: async (action, input) => {
+            if (action === "mode") throw Object.assign(new Error("Locked to SDD."), { code: "mode_locked" });
+            return { action, input };
+        },
+    });
+    t.after(() => entry.close());
+    const url = new URL(entry.url);
+    const key = url.searchParams.get("key");
+    const headers = { "X-Canvas-Token": key, "Content-Type": "application/json" };
+    const post = (body, extra = {}) => fetch(`${url.origin}/api/action`, { method: "POST", headers: { ...headers, ...extra }, body });
+    const draft = "智能体解决方案".repeat(2_286).slice(0, 16_000);
+    assert.equal(draft.length, 16_000);
+    assert(Buffer.byteLength(draft) > 32_768, "the draft exceeds the old 32 KB cap");
+    const accepted = await post(JSON.stringify({ action: "preferences", input: { draft } }));
+    assert.equal(accepted.status, 200);
+    assert.equal((await accepted.json()).input.draft, draft);
+    const oversized = await post(JSON.stringify({ action: "preferences", input: { draft: "x".repeat(200_000) } }));
+    assert.equal(oversized.status, 413);
+    assert.match((await oversized.json()).error, /128 KB/);
+    const locked = await post(JSON.stringify({ action: "mode", input: { mode: "rapid" } }));
+    assert.equal(locked.status, 409);
+    assert.deepEqual(await locked.json(), { error: "Locked to SDD." });
+    assert.equal((await post("{not json")).status, 400);
+    const forged = `${key.slice(0, -1)}${key.endsWith("0") ? "1" : "0"}`;
+    for (const token of [forged, key.slice(0, 8), `${key}0`]) {
+        assert.equal((await post("{}", { "X-Canvas-Token": token })).status, 403, token);
+        assert.equal((await fetch(`${url.origin}/?key=${token}`)).status, 403, token);
+    }
 });
 
 test("packaged scenarios and enablement cards are complete and self-contained", async () => {

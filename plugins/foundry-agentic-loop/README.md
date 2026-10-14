@@ -14,8 +14,8 @@ In the GitHub Copilot App, ask Copilot to **open the agentic loop**. The `foundr
 
 | Mode | Start with | Result |
 | --- | --- | --- |
-| **Rapid prototyping** (default) | An existing Foundry project | Hosted agents, a governed toolbox, Foundry IQ grounding when needed and a React/FastAPI app on Container Apps, built from Chat |
-| **Spec-driven delivery (SDD)** | A brief and an Azure subscription | `foundry-agentic-loop-workflow` creates the Foundry project and runs **Specify → Implement → Verify → Deploy** to a solution deployed with azd |
+| **Rapid prototyping** | An existing Foundry project | Hosted agents, a governed toolbox, Foundry IQ grounding when needed and a React/FastAPI app on Container Apps, built from Chat |
+| **Spec-driven development (SDD)** | A brief and an Azure subscription | `foundry-agentic-loop-workflow` creates the Foundry project and runs **Specify → Implement → Verify → Deploy** to a solution deployed with azd |
 
 Start either mode from Chat or from the canvas. The canvas includes 61 industry scenarios.
 
@@ -26,9 +26,9 @@ When a build starts, Copilot adds an Agentic Loop section to the workspace root 
 | Mode | Commands |
 | --- | --- |
 | Rapid prototyping | `run`, `test`, `add agent`, `add tool`, `add skill`, `deploy`, `improve`, `convert to SDD` |
-| SDD | `specify`, `implement`, `verify`, `deploy`, `status`, `approve`, `resume`, `build <brief>`, `improve` |
+| SDD | `status`, `approve`, `resume`, `deploy`, `specify`, `implement`, `verify`, `build <brief>`, `improve` |
 
-For example, `deploy` in an SDD workspace resumes a run paused for deployment approval, or runs the Deploy phase. Other `AGENTS.md` content is kept. Azure settings, such as the subscription, region, Foundry project and resource names, live only in `.azure/deployment-plan.md`. To switch modes, ask Copilot; it confirms first, then rewrites the section.
+For example, `deploy` in an SDD workspace resumes a run paused for deployment approval, or runs the Deploy phase when no run is active. `build <brief>` offers to resume a running or paused run before starting a new one. Other `AGENTS.md` content is kept. Azure settings, such as the subscription, region, Foundry project and resource names, live only in `.azure/deployment-plan.md`. To switch modes, ask Copilot; it confirms first, then rewrites the section.
 
 ## How SDD works
 

@@ -1,11 +1,8 @@
-# Foundry Models Selector
+# Foundry models selector
 
-Configure the `AZURE_LOCATION` and `AI_PROJECT_DEPLOYMENTS` azd environment variables by selecting the right models and regions for the user's needs.
+Choose the model, version, SKU, capacity and region for each deployment the solution needs. SDD declares the deployments in `azure.yaml` under `services.ai-project.deployments[]` ([azd-layout.md](azd-layout.md#azureyaml)) and `azd provision` creates them. Rapid reuses the project's deployments and asks before adding one. Both record the selection in `.azure/deployment-plan.md`. Resolve live quota, availability and provisioning commands through `microsoft-foundry`.
 
-> Source of truth: [Foundry Models sold by Azure - Azure OpenAI](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure?tabs=global-standard&pivots=azure-openai) and [other providers](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure?tabs=global-standard&pivots=azure-direct-others). When in doubt, check these pages - model lineup changes monthly. Tables below reflect the May 2026 catalog.
-
-> Provisioning handoff: this selector only sets the azd model/region/SKU env vars. The actual resource provisioning (Bicep, quota, RBAC, deployment) is owned by the `microsoft-foundry` skill - invoke or recommend it to deploy these model deployments.
-
+> Source of truth: [Foundry Models sold by Azure - Azure OpenAI](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure?tabs=global-standard&pivots=azure-openai) and [other providers](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure?tabs=global-standard&pivots=azure-direct-others). The lineup changes monthly; the tables below reflect the May 2026 catalog.
 ## Preferred Models by Task & Modality
 
 Always recommend the best-fit first, then offer alternatives. Prefer GA over Preview for production; flag Preview clearly.
@@ -116,7 +113,7 @@ Always recommend the best-fit first, then offer alternatives. Prefer GA over Pre
 
 ## Joint region and capacity preflight
 
-Treat placement as one subscription-specific decision, not a static model lookup. Before setting any azd environment variable, validate every required resource in each candidate region:
+Treat placement as one subscription-specific decision, not a static model lookup. Before persisting `AZURE_LOCATION` or declaring a deployment, validate every required resource in each candidate region:
 
 | Resource | Validate live |
 | --- | --- |
@@ -138,51 +135,13 @@ Write the placement decision to `./.azure/deployment-plan.md`:
 
 When the deployed location differs from the preferred location, update `./docs/spec.md` (SDD) before implementation continues.
 
-## How to Set Environment Variables
+## Record the selection
 
-Only persist these values after the joint preflight passes.
+Only after the joint preflight passes:
 
-### Set Azure Location
-
-```bash
-azd env set AZURE_LOCATION "<region>"
-# Example
-azd env set AZURE_LOCATION "eastus2"
-```
-
-### Set Model Deployments
-
-```bash
-azd env set AI_PROJECT_DEPLOYMENTS "[{'name':'<deployment-name>', 'model': {'name': '<model-name>','format': '<format>', 'version':'<version>'},'sku': {'name': '<sku-name>','capacity':<capacity>}}]"
-```
-
-Single model:
-```bash
-azd env set AI_PROJECT_DEPLOYMENTS "[{'name':'gpt-5.4-mini', 'model': {'name': 'gpt-5.4-mini','format': 'OpenAI', 'version':'2026-03-17'},'sku': {'name': 'GlobalStandard','capacity':100}}]"
-```
-
-Multiple models:
-```bash
-azd env set AI_PROJECT_DEPLOYMENTS "[{'name':'gpt-5.4-mini', 'model': {'name': 'gpt-5.4-mini','format': 'OpenAI', 'version':'2026-03-17'},'sku': {'name': 'GlobalStandard','capacity':100}}, {'name':'text-embedding-3-large', 'model': {'name': 'text-embedding-3-large','format': 'OpenAI', 'version':'1'},'sku': {'name': 'GlobalStandard','capacity':30}}]"
-```
-
-## Deployment Entry Format
-
-```
-{
-  'name': '<deployment-name>',        # Deployment name (typically same as model name)
-  'model': {
-    'name': '<model-name>',           # Exact model name from the tables above
-    'format': '<format>',             # Provider format: OpenAI, OpenAI-OSS, DeepSeek, Meta,
-                                      # Microsoft, MistralAI, Cohere, BlackForestLabs, Moonshot, xAI
-    'version': '<version>'            # Model version string (date or integer)
-  },
-  'sku': {
-    'name': '<sku-name>',             # Usually 'GlobalStandard'
-    'capacity': <number>              # TPM in thousands (e.g., 100 = 100K TPM)
-  }
-}
-```
+- Set the region: `azd env set AZURE_LOCATION "<region>"` (SDD).
+- Declare each deployment in `azure.yaml` `services.ai-project.deployments[]` with its deployment `name`, model `name`, `format` (`OpenAI`, `Microsoft`, `MistralAI`, `Cohere`, `DeepSeek`, `Meta`, `xAI`, ...), `version`, and `sku` `name` (usually `GlobalStandard`) and `capacity` (thousands of tokens per minute).
+- Record the preferred and deployed locations, each deployment and the evidence in `.azure/deployment-plan.md`.
 
 ## Region Availability
 
@@ -200,51 +159,11 @@ As of the May 2026 catalog, **Global Standard** for the Azure-direct models from
 
 ## Workflow
 
-1. Ask the user what task / modality they need (chat, reasoning, coding, multimodal, embeddings, rerank, image gen, video, audio, document AI).
+1. Take the task and modality (chat, reasoning, coding, multimodal, embeddings, rerank, image generation, video, audio, document AI) from the spec or brief; ask only when neither states it.
 2. Recommend the **Best** model from the matching table; offer alternatives only if cost, region, or registration is a blocker.
 3. Confirm the preferred region. Start with `eastus2`; prefer `swedencentral` for EU data residency.
 4. Confirm capacity. Defaults: **100** (chat / reasoning / coding), **30** (embeddings), **50** (image / audio). When one end-to-end request makes several model calls, size chat capacity to at least four times its estimated tokens, within the remaining quota, so Verify can run E2E cases in parallel. GlobalStandard bills per token, so the headroom costs nothing; record the sizing in the deployment plan.
 5. Flag any **registration-required** or **Preview** models explicitly before deploying.
 6. Run the joint live preflight for the model and every co-located required service; rank only complete placements.
-7. Record preferred/deployed locations and evidence in `./.azure/deployment-plan.md`, then run the `azd env set` commands.
+7. [Record the selection](#record-the-selection).
 8. **Reconcile actual availability.** If provisioning selects a different model or location, update `./docs/spec.md` and `./.azure/deployment-plan.md` immediately.
-
-## Quick-Start Examples
-
-### Basic chat app
-```bash
-azd env set AZURE_LOCATION "eastus2"
-azd env set AI_PROJECT_DEPLOYMENTS "[{'name':'gpt-5.4-mini', 'model': {'name': 'gpt-5.4-mini','format': 'OpenAI', 'version':'2026-03-17'},'sku': {'name': 'GlobalStandard','capacity':100}}]"
-```
-
-### Reasoning agent
-```bash
-azd env set AZURE_LOCATION "eastus2"
-azd env set AI_PROJECT_DEPLOYMENTS "[{'name':'gpt-5.4', 'model': {'name': 'gpt-5.4','format': 'OpenAI', 'version':'2026-03-05'},'sku': {'name': 'GlobalStandard','capacity':100}}]"
-```
-
-### Coding agent (Codex-optimized)
-```bash
-azd env set AZURE_LOCATION "eastus2"
-azd env set AI_PROJECT_DEPLOYMENTS "[{'name':'gpt-5.3-codex', 'model': {'name': 'gpt-5.3-codex','format': 'OpenAI', 'version':'2026-02-24'},'sku': {'name': 'GlobalStandard','capacity':100}}]"
-```
-
-### RAG application (chat + embeddings)
-```bash
-azd env set AZURE_LOCATION "eastus2"
-azd env set AI_PROJECT_DEPLOYMENTS "[{'name':'gpt-5.4-mini', 'model': {'name': 'gpt-5.4-mini','format': 'OpenAI', 'version':'2026-03-17'},'sku': {'name': 'GlobalStandard','capacity':100}}, {'name':'text-embedding-3-large', 'model': {'name': 'text-embedding-3-large','format': 'OpenAI', 'version':'1'},'sku': {'name': 'GlobalStandard','capacity':30}}]"
-```
-
-### Document AI pipeline (PDF -> text + chat)
-```bash
-azd env set AZURE_LOCATION "eastus2"
-azd env set AI_PROJECT_DEPLOYMENTS "[{'name':'mistral-document-ai-2512', 'model': {'name': 'mistral-document-ai-2512','format': 'MistralAI', 'version':'1'},'sku': {'name': 'GlobalStandard','capacity':50}}, {'name':'gpt-5.4-mini', 'model': {'name': 'gpt-5.4-mini','format': 'OpenAI', 'version':'2026-03-17'},'sku': {'name': 'GlobalStandard','capacity':100}}]"
-```
-
-### Cost-optimized with Model Router
-```bash
-azd env set AZURE_LOCATION "eastus2"
-azd env set AI_PROJECT_DEPLOYMENTS "[{'name':'model-router', 'model': {'name': 'model-router','format': 'Microsoft', 'version':'2025-11-18'},'sku': {'name': 'GlobalStandard','capacity':100}}]"
-```
-
-For model deployment, provisioning, quota, and RBAC details, invoke or recommend `microsoft-foundry`.

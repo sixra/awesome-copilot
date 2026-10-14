@@ -306,7 +306,9 @@ export class Live {
     }
 
     // Older progress records are immutable, so gate and brief lines beyond the detail tail are fetched once.
+    // Only the selected run is cached, so switching runs releases the previous run's history.
     async records(runId, page) {
+        for (const key of this.history.keys()) if (key !== runId) this.history.delete(key);
         const tail = page?.records ?? [];
         if (!page?.hasMoreOlder || !tail.length) return tail;
         const first = tail[0].seq;

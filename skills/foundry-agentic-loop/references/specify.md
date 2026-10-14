@@ -14,7 +14,7 @@ Write the source of truth for an agentic solution. Apply the [skill defaults](..
 | --- | --- |
 | *(none)* | Create or update both artifacts |
 | `sync` | Update the spec from the current code and `docs/*.md`; list any drift |
-| `reverse` | Derive the spec from an existing or rapid-prototype workspace (README contract, `azure.yaml`, `src/`) |
+| `reverse` | Derive the spec from an existing or rapid-prototype workspace (root `README.md`, `azure.yaml`, `src/`) |
 | `validate` | Run the checklist below and report only the gaps |
 | `devcontainer` | Copy [devcontainer.json](../assets/devcontainer.json) to `.devcontainer/devcontainer.json` |
 

@@ -2,7 +2,7 @@
 
 Reference for the `foundry-agentic-loop` skill: maps reference-architecture areas to the Azure services and companion skills to add **only when the spec needs them**. `foundry-agentic-loop` matches the spec against this map during skill suggestion; it is not a default resource list.
 
-Use this map to propose additional Azure services only when they are needed or desired by the spec. Do not turn every reference-architecture box into a default resource. The default greenfield baseline remains GitHub Copilot SDK + Foundry Skills API + toolbox MCP + Foundry hosted agent + Foundry model; add MAF only when explicitly requested or clearly needed for graph/workflow orchestration.
+Use this map to propose additional Azure services only when they are needed or desired by the spec. Do not turn every reference-architecture box into a default resource. The greenfield baseline is a Foundry hosted agent on a Foundry model, with one toolbox carrying its skills, tools and grounding. The framework follows SKILL.md's rule: the Copilot SDK for agents that use runtime skills, Microsoft Agent Framework for basic agents and explicit workflows.
 
 | Reference architecture area | Add when the spec needs | Suggested service / capability | Skill |
 | --- | --- | --- | --- |

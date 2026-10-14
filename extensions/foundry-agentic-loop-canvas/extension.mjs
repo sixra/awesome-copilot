@@ -193,14 +193,14 @@ const descriptions = {
     workflow_cancel: "Cancel a foundry-agentic-loop-workflow run.",
     open_artifact: "Open an existing workflow artifact such as docs/spec.md, or the workspace AGENTS.md, in the Editor canvas.",
     refresh_foundry: "Reuse the existing Foundry canvas public refreshWorkspaceState action.",
-    prompt: "Send a user-reviewed canvas prompt to Chat; this starts a Copilot turn.",
+    prompt: "Send a canvas prompt to Chat; this starts a Copilot turn. In the panel only the Build brief (kind custom) is reviewed and edited by the user before sending; changes adds the user's feedback to a fixed change request, and the other kinds send a fixed prompt for their step directly.",
 };
 
 const session = await joinSession({
     canvases: [createCanvas({
         id: "foundry-agentic-loop-canvas",
         displayName: "Agentic Loop",
-        description: "Build agentic solutions on Microsoft Foundry: rapid prototyping in an existing project, or spec-driven delivery with live foundry-agentic-loop-workflow phases, gates and artifacts.",
+        description: "Build agentic solutions on Microsoft Foundry: rapid prototyping in an existing project, or spec-driven development with live foundry-agentic-loop-workflow phases, gates and artifacts.",
         inputSchema: objectSchema({ tab: { enum: tabs }, mode: { enum: ["rapid", "sdd", "auto"] } }),
         actions: Object.entries(schemas).map(([name, inputSchema]) => ({
             name, inputSchema, description: descriptions[name],
@@ -210,19 +210,28 @@ const session = await joinSession({
                     assertSession(session, ctx.sessionId);
                     return await dispatch(name, ctx.input ?? {});
                 }
-                catch (error) { throw new CanvasError("foundry_agentic_loop_error", error.message); }
+                catch (error) {
+                    const code = typeof error.code === "string" && /^[a-z][a-z0-9_]*$/.test(error.code) ? error.code : "foundry_agentic_loop_error";
+                    throw new CanvasError(code, error.message);
+                }
             },
         })),
         open: async ctx => {
             await ready;
             assertSession(session, ctx.sessionId);
             await ensureLive();
-            // An AGENTS.md lock wins over the requested mode; the canvas still opens, in the locked mode.
-            if (ctx.input?.mode) {
-                try { await dispatch("mode", { mode: ctx.input.mode }); }
-                catch (error) { if (error.code !== "mode_locked") throw error; }
+            // Reopens and reloads repeat the same input; apply it only when it changes so the user's later choices stay.
+            const openInput = JSON.stringify([ctx.input?.mode ?? null, ctx.input?.tab ?? null]);
+            if (openInput !== model.state.openInput) {
+                // An AGENTS.md lock wins over the requested mode; the canvas still opens, in the locked mode.
+                if (ctx.input?.mode) {
+                    try { await dispatch("mode", { mode: ctx.input.mode }); }
+                    catch (error) { if (error.code !== "mode_locked") throw error; }
+                }
+                if (ctx.input?.tab) await dispatch("preferences", { tab: ctx.input.tab });
+                model.state.openInput = openInput;
+                await model.save();
             }
-            if (ctx.input?.tab) await dispatch("preferences", { tab: ctx.input.tab });
             let entry = servers.get(ctx.instanceId);
             if (!entry) {
                 entry = await startServer({
@@ -262,4 +271,5 @@ try {
     live.onNewRun = async () => { if (model.state.mode) await model.setMode(null); };
     resolveReady();
 } catch (error) { rejectReady(error); }
-await ready;
+// Keep the extension running so the reason reaches the timeline; open and actions reject with the same error.
+ready.catch(error => session.log(`Agentic Loop canvas failed to start: ${error.message}`, { level: "error" }).catch(() => {}));

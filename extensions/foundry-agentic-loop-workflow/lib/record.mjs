@@ -1,10 +1,15 @@
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { WORKFLOW } from "./args.mjs";
-import { MAX_ITEMS } from "./prompts.mjs";
+
+export const MAX_ITEMS = 20;
 
 const STATUSES = ["passed", "failed", "blocked"];
-const SHARED = ["azure.yaml", "infra", "docs", ".env", ".azure", ".agentic-loop", "AGENTS.md"];
+const LOCKFILES = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "uv.lock", "poetry.lock"];
+// Workspace paths that stay with the phase lead (folders end in /). Workers never own them, so the prompts and planWorkstreams share this list.
+export const SHARED = Object.freeze(["azure.yaml", "infra/", "docs/", ".env", ".azure/", ".agentic-loop/", "AGENTS.md", ...LOCKFILES]);
+export const SHARED_PHRASE = `${SHARED.filter(item => !LOCKFILES.includes(item)).join(", ")} and the root lockfiles`;
 const RESERVED = /^(?:lead|foundation|build|integration|review(?: \d+)?|fix(?: \d+)?)$/i;
 
 export function clean(value, max = 500) {
@@ -57,10 +62,12 @@ export function missing(who, role) {
     return { ...report, status: "blocked", issues: [`${who} ended twice without a report, likely a provider error: check the session log, then resume.`] };
 }
 
-// Static path prefix of a file or glob, relative to the workspace; null when it escapes the workspace.
+// Static path prefix of a workspace-relative file or glob; null for an absolute path or one that escapes the workspace.
 export function scope(file) {
+    const value = String(file ?? "").trim().replace(/\\/g, "/");
+    if (/^(?:[a-z]:)?\//i.test(value)) return null;
     const parts = [];
-    for (const part of String(file ?? "").trim().replace(/\\/g, "/").split("/")) {
+    for (const part of value.split("/")) {
         if (!part || part === ".") continue;
         if (part === "..") return null;
         if (/[*?[\]{}]/.test(part)) break;
@@ -69,7 +76,13 @@ export function scope(file) {
     return parts.join("/");
 }
 
-const overlaps = (a, b) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+// Case-insensitive, because macOS and Windows file systems usually are.
+function overlaps(a, b) {
+    const [x, y] = [a.toLowerCase(), b.toLowerCase()];
+    return x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`);
+}
+
+const SHARED_SCOPES = SHARED.map(scope);
 const single = reason => ({ mode: "single", items: [], reason });
 
 // Parallel workers need two to four workstreams with disjoint, non-shared file ownership; otherwise build in sequence.
@@ -85,8 +98,8 @@ export function planWorkstreams(list) {
         const files = strings(raw?.files, 300, 30);
         if (!files.length) return single(`workstream "${name}" owns no files`);
         const scopes = files.map(scope);
-        if (scopes.some(value => !value)) return single(`workstream "${name}" claims the whole workspace or a path outside it`);
-        const shared = scopes.find(value => SHARED.some(path => overlaps(value, path)));
+        if (scopes.some(value => !value)) return single(`workstream "${name}" claims the whole workspace, an absolute path or a path outside it`);
+        const shared = scopes.find(value => SHARED_SCOPES.some(owned => overlaps(value, owned)));
         if (shared) return single(`workstream "${name}" claims shared path ${shared}`);
         for (const other of items) {
             const clash = scopes.find(value => other.scopes.some(owned => overlaps(value, owned)));
@@ -165,11 +178,21 @@ export function reduce(record, event) {
     return next;
 }
 
+// Readers never see a partial file: write a unique temp file, rename it over the target and remove it if either step fails.
+export async function atomicWrite(file, text) {
+    const temp = `${file}.${randomUUID()}.tmp`;
+    try {
+        await writeFile(temp, text, "utf8");
+        await rename(temp, file);
+    } catch (error) {
+        await rm(temp, { force: true }).catch(() => {});
+        throw error;
+    }
+}
+
 export async function writeRecord(cwd, record) {
     const file = path.join(cwd, ...recordFile(record.runId).split("/"));
     await mkdir(path.dirname(file), { recursive: true });
-    const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
-    await writeFile(temp, `${JSON.stringify(record, null, 2)}\n`, "utf8");
-    await rename(temp, file);
+    await atomicWrite(file, `${JSON.stringify(record, null, 2)}\n`);
     return file;
 }
