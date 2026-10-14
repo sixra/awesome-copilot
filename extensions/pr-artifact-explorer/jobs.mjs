@@ -130,6 +130,7 @@ export class JobRegistry {
         job.unregister = [];
         this.#emit(job);
         this.#syncIdleTimer();
+        this.#trim();
         this.#schedulePersist();
       }
       if (job.status !== "succeeded") throw job.cause;
@@ -206,6 +207,7 @@ export class JobRegistry {
         this.#syncIdleTimer();
         // Finished streams are transient; only failures remain visible.
         if (job.status === "succeeded" || job.status === "cancelled") this.#jobs.delete(job.id);
+        this.#trim();
       },
     };
   }

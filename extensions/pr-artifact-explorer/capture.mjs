@@ -42,9 +42,10 @@ export async function loadPlaywright() {
   for (const base of candidates) {
     for (const name of ["playwright", "playwright-core"]) {
       try {
-        const require = createRequire(join(base, "noop.js"));
-        const resolved = require.resolve(name, { paths: [base] });
-        const mod = await import(new URL(`file:///${resolved.replaceAll("\\", "/")}`).href);
+        // Playwright ships CommonJS; load the user-provided install explicitly
+        // through a scoped loader rather than a dynamic import().
+        const load = createRequire(join(base, "noop.js"));
+        const mod = load(load.resolve(name, { paths: [base] }));
         const chromium = mod.chromium ?? mod.default?.chromium;
         if (chromium) return chromium;
       } catch {
@@ -53,8 +54,8 @@ export async function loadPlaywright() {
     }
     // The env var may point straight at a package directory.
     try {
-      const require = createRequire(join(base, "noop.js"));
-      const mod = require(base);
+      const load = createRequire(join(base, "noop.js"));
+      const mod = load(base);
       if (mod?.chromium) return mod.chromium;
     } catch {
       // fall through to the setup error
@@ -95,6 +96,9 @@ function assertHttpUrl(value) {
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new CaptureError("invalid_url", "Only http and https URLs can be captured.");
+  }
+  if (url.username || url.password) {
+    throw new CaptureError("invalid_url", "URLs with embedded credentials cannot be captured.");
   }
   return url;
 }

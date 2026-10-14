@@ -4037,7 +4037,9 @@ select {
 .browser-notice { background: var(--app-bg-muted); border-bottom: 1px solid var(--app-border); padding: 8px 12px; font-size: 13px; }
 .browser-notice[hidden] { display: none; }
 .browser-stage {
-  background: var(--app-bg-inset);
+  background: var(--bgColor-inset, var(--background-color-default, var(--app-bg-inset)));
+  color: var(--app-fg, var(--text-color-default, inherit));
+  color-scheme: light dark;
   min-height: max(320px, calc(100dvh - 133px));
   min-width: 0;
   max-width: 100%;

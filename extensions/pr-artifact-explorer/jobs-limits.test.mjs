@@ -103,11 +103,34 @@ test("a failed job reports the error without being treated as cancelled", async 
   }
 });
 
+test("finished jobs are capped at completion and active jobs are never trimmed", async () => {
+  const { dir, policy: p } = await policy();
+  try {
+    const registry = new JobRegistry(p);
+    let release;
+    const active = registry.start("active", { repository: "o/r", artifactId: 1 }, () => new Promise((r) => (release = r)));
+    for (let i = 0; i < 40; i++) {
+      const job = registry.start(`k${i}`, { repository: "o/r", artifactId: 100 + i }, async () => {
+        if (i % 2) throw new Error("fail");
+        return "ok";
+      });
+      await job.promise.catch(() => {});
+    }
+    const jobs = registry.list();
+    assert.ok(jobs.filter((j) => j.status !== "running").length <= 25);
+    assert.ok(jobs.some((j) => j.id === active.id));
+    release("done");
+    await active.promise;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("limits persist across policy instances", async () => {
   const { dir, policy: p } = await policy();
   try {
     p.submit("downloadBytes", 123456789);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await p.flush();
     const next = new LimitPolicy(join(dir, "limits.json"));
     await next.load();
     assert.equal(next.get("downloadBytes"), 123456789);

@@ -87,19 +87,41 @@ function fromExplorerRoute(input) {
   return target;
 }
 
+function safeRepository(raw) {
+  let repository;
+  try {
+    repository = decodeURIComponent(raw);
+  } catch {
+    throw new TargetError("That explorer route has an invalid repository.");
+  }
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
+    throw new TargetError("That explorer route has an invalid repository.");
+  }
+  return repository;
+}
+
+function safeId(raw, { allowZero = false } = {}) {
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < (allowZero ? 0 : 1)) {
+    throw new TargetError("That explorer route has an invalid number.");
+  }
+  return value;
+}
+
 function fromExplorerPath(route, query) {
   if (route === "/browser") {
     const view = decodeView(query.get("v"));
     return view ? { kind: "url", url: view.url ?? null, view } : null;
   }
   let match = route.match(/^\/pull\/([^/]+)\/(\d+)$/);
-  if (match) return { kind: "pull", repository: decodeURIComponent(match[1]), number: Number(match[2]) };
+  if (match) return { kind: "pull", repository: safeRepository(match[1]), number: safeId(match[2]) };
   match = route.match(/^\/issue\/([^/]+)\/(\d+)$/);
-  if (match) return { kind: "issue", repository: decodeURIComponent(match[1]), number: Number(match[2]) };
+  if (match) return { kind: "issue", repository: safeRepository(match[1]), number: safeId(match[2]) };
   match = route.match(/^\/artifact\/([^/]+)\/(\d+)\/(\d+)$/);
   if (match) {
-    const target = { kind: "artifact", repository: decodeURIComponent(match[1]), artifactId: Number(match[3]) };
-    if (Number(match[2]) > 0) target.pullNumber = Number(match[2]);
+    const target = { kind: "artifact", repository: safeRepository(match[1]), artifactId: safeId(match[3]) };
+    const pullNumber = safeId(match[2], { allowZero: true });
+    if (pullNumber > 0) target.pullNumber = pullNumber;
     if (query.get("file")) {
       target.file = query.get("file");
       if (query.get("view") === "raw") target.mode = "raw";
@@ -107,7 +129,7 @@ function fromExplorerPath(route, query) {
     return target;
   }
   match = route.match(/^\/pulls\/([^/]+)$/);
-  if (match) return { kind: "repository", repository: decodeURIComponent(match[1]) };
+  if (match) return { kind: "repository", repository: safeRepository(match[1]) };
   if (route === "/cache") return { kind: "cache" };
   if (route === "/docs" || route.startsWith("/docs/")) return { kind: "docs", section: route.slice(6) || null };
   return null;

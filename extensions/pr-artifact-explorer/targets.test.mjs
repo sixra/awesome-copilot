@@ -37,6 +37,19 @@ test("localhost and HTTP(S) URLs are previewable, other schemes are rejected", (
 });
 
 test("dot segments and garbage are rejected", () => {
+  for (const bad of [
+    "#/pull/o%2/5",
+    "#/pull/%E0%A4%A/5",
+    "#/pull/nope/5",
+    "#/pull/o%2Fr/0",
+    "#/pull/o%2Fr/9007199254740993",
+    "#/issue/o%2Fr/0",
+    "#/artifact/o%2Fr/0/0",
+    "#/artifact/%zz/1/2",
+  ]) {
+    assert.throws(() => parseTarget(bad), TargetError, bad);
+  }
+  assert.equal(parseTarget("#/pull/o%2Fr/5").number, 5);
   assert.throws(() => parseTarget("../x"), TargetError);
   assert.throws(() => parseTarget("hello there"), TargetError);
   assert.throws(() => parseTarget(""), TargetError);

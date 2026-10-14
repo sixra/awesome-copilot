@@ -35,13 +35,26 @@ function encodeViewClient(view) {
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
+function safeHttpUrl(value) {
+  if (typeof value !== "string" || /[\u0000-\u001f\u007f]/.test(value)) return undefined;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    if (url.username || url.password) return undefined;
+    return url.href;
+  } catch {
+    return undefined;
+  }
+}
+
 function decodeViewClient(text) {
   if (!text) return {};
   try {
     const padded = text.replaceAll("-", "+").replaceAll("_", "/");
     const binary = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
     const body = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0))));
-    return { url: body.url, preset: body.preset, width: body.w, height: body.h, zoom: body.z, orientation: body.o };
+    if (!body || typeof body !== "object" || body.v !== 1) return {};
+    return { url: body.url === undefined ? undefined : safeHttpUrl(body.url), preset: body.preset, width: body.w, height: body.h, zoom: body.z, orientation: body.o };
   } catch {
     return {};
   }

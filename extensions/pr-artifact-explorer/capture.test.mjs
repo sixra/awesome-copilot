@@ -21,6 +21,16 @@ test("non-http URLs are refused before any browser starts", async () => {
   await assert.rejects(captureScreenshot({ url: "nope" }), { code: "invalid_url" });
 });
 
+test("URLs with embedded credentials are refused before any browser starts", async () => {
+  const urls = ["http://user:pass@127.0.0.1:9/", "https://user@example.com/", "http://:secret@localhost/"];
+  for (const url of urls) {
+    await assert.rejects(captureScreenshot({ url }), { code: "invalid_url" });
+    const browser = new ControlledBrowser();
+    await assert.rejects(browser.navigate(url), { code: "invalid_url" });
+    await browser.close();
+  }
+});
+
 test("missing Playwright reports explicit setup instructions", async () => {
   const saved = process.env.PR_ARTIFACT_EXPLORER_PLAYWRIGHT;
   process.env.PR_ARTIFACT_EXPLORER_PLAYWRIGHT = join(tmpdir(), "no-such-playwright-dir");

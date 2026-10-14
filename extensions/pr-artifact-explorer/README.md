@@ -80,7 +80,6 @@ Reload extensions, then ask Copilot to open the `pr-artifact-explorer` canvas. Y
 - `navigate_browser`, `set_viewport`, `set_zoom`, `screenshot` - drive the browser preview.
 - `controlled_navigate`, `controlled_back`, `controlled_forward`, `controlled_refresh`, `controlled_close` - drive the isolated controlled Chromium.
 - `share { input, preset?, zoom?, width?, height? }` - build shareable links that round-trip through `open_target`.
-- `share { input }` - produce a shareable link, route, and text for a target.
 - `docs { section? }` - open the built-in Docs tab.
 - `cache_status` - report local artifact cache usage.
 - `clear_cache { artifactId? }` - remove one cached artifact or clear the entire cache.

@@ -86,5 +86,8 @@ test("soft entry limit warns while indexing continues", () =>
       onSoftLimit: (kind, current) => warnings.push([kind, current]),
     });
     assert.equal(index.entries.length, 1);
-    assert.ok(Array.isArray(warnings));
+    assert.equal(warnings.length, 1);
+    assert.equal(warnings[0][0], "zipEntries");
+    assert.equal(warnings[0][1], index.entries.length);
+    assert.ok(warnings[0][1] > 0);
   }));
