@@ -17,10 +17,10 @@ You need to handle various error conditions like connection failures, timeouts, 
 Java's `try-with-resources` ensures the client is always cleaned up, even when exceptions occur.
 
 ```java
-//DEPS com.github:copilot-sdk-java:0.2.1-java.1
+//DEPS com.github:copilot-sdk-java:1.0.21
 
-import com.github.copilot.sdk.*;
-import com.github.copilot.sdk.json.*;
+import com.github.copilot.*;
+import com.github.copilot.rpc.*;
 
 public class BasicErrorHandling {
     public static void main(String[] args) {
@@ -128,6 +128,11 @@ Runtime.getRuntime().addShutdownHook(new Thread(() -> {
 }));
 ```
 
+`client.stop()` returns a `CompletableFuture` that fails if graceful cleanup
+encounters an error; log the cause rather than treating it as a successful stop.
+If a graceful stop exceeds your application's shutdown deadline, use
+`client.forceStop()` to retire the connection and sessions locally.
+
 ## Try-with-resources (nested)
 
 When working with multiple sessions, nest `try-with-resources` blocks to guarantee each resource is closed.
@@ -148,12 +153,39 @@ try (var client = new CopilotClient()) {
 } // client is closed here
 ```
 
+## Tagging message provenance
+
+Use `MessageOptions.setSource(...)` to distinguish human input from application
+context or another agent's messages when diagnosing errors in a transcript:
+
+```java
+import com.github.copilot.rpc.MessageSource;
+
+session.sendAndWait(new MessageOptions()
+    .setPrompt("What changed in the last release?")
+    .setSource(MessageSource.USER)).get();
+
+session.sendAndWait(new MessageOptions()
+    .setPrompt("Re-run the failed step and report the result.")
+    .setSource(MessageSource.SYSTEM)).get();
+
+session.sendAndWait(new MessageOptions()
+    .setPrompt("Summarize the open incidents.")
+    .setSource(MessageSource.agent("incident-bot"))).get();
+```
+
+Omitting `source` retains the runtime's default user-input behavior.
+`MessageSource.agent(id)` serializes as `"agent-<id>"`; pass the identifier
+without adding that prefix. The source records provenance only: it does not
+replace the session's system prompt, change delivery mode, or grant permissions.
+The same source values work with `send(...)`.
+
 ## Handling tool errors
 
 When defining tools, return an error string to signal a failure back to the model instead of throwing.
 
 ```java
-import com.github.copilot.sdk.json.ToolDefinition;
+import com.github.copilot.rpc.ToolDefinition;
 import java.util.concurrent.CompletableFuture;
 
 var readFileTool = ToolDefinition.create(

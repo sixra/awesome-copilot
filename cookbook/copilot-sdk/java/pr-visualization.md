@@ -25,14 +25,15 @@ jbang recipe/PRVisualization.java github/copilot-sdk
 ## Full example: PRVisualization.java
 
 ```java
-//DEPS com.github:copilot-sdk-java:0.2.1-java.1
-import com.github.copilot.sdk.CopilotClient;
-import com.github.copilot.sdk.events.AssistantMessageEvent;
-import com.github.copilot.sdk.events.ToolExecutionStartEvent;
-import com.github.copilot.sdk.json.MessageOptions;
-import com.github.copilot.sdk.json.PermissionHandler;
-import com.github.copilot.sdk.json.SessionConfig;
-import com.github.copilot.sdk.json.SystemMessageConfig;
+//DEPS com.github:copilot-sdk-java:1.0.21
+import com.github.copilot.CopilotClient;
+import com.github.copilot.generated.AssistantMessageEvent;
+import com.github.copilot.generated.ToolExecutionStartEvent;
+import com.github.copilot.rpc.MessageOptions;
+import com.github.copilot.rpc.PermissionHandler;
+import com.github.copilot.rpc.SessionConfig;
+import com.github.copilot.rpc.SystemMessageConfig;
+import com.github.copilot.rpc.ToolSearchConfig;
 import java.io.BufferedReader;
 import java.io.EOFException;
 import java.io.IOException;
@@ -94,6 +95,7 @@ public class PRVisualization {
             var session = client.createSession(
                 new SessionConfig().setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
                     .setModel("gpt-5")
+                    .setToolSearch(new ToolSearchConfig().setEnabled(true).setDeferThreshold(20))
                     .setSystemMessage(new SystemMessageConfig().setContent(systemMessage))
             ).get();
 
@@ -221,6 +223,33 @@ public class PRVisualization {
 | Flexibility     | Fixed logic       | **AI decides best approach**      |
 | Chart types     | What you coded    | **Any type Copilot can generate** |
 | Data grouping   | Hardcoded buckets | **Intelligent grouping**          |
+
+## Deferring tools with tool search
+
+The GitHub MCP Server can expose many tools alongside file and code-execution
+tools. Configure `SessionConfig.setToolSearch(...)` to defer less-used tools
+behind a search step rather than listing every tool on each turn:
+
+```java
+import com.github.copilot.rpc.ToolSearchConfig;
+
+var session = client.createSession(new SessionConfig()
+    .setModel("auto")
+    .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
+    .setToolSearch(new ToolSearchConfig()
+        .setEnabled(true)
+        .setDeferThreshold(20))
+).get();
+```
+
+- `setEnabled(true)` explicitly enables tool search; leave it unset to use the runtime default.
+- `setDeferThreshold(20)` sets the tool count above which MCP and external tools
+  are deferred behind `tool_search_tool`. The runtime default is 30 when unset.
+- To replace the search implementation, register a tool named `"tool_search_tool"`
+  and call `.overridesBuiltInTool(true)` on its `ToolDefinition`.
+
+This configuration is per session, so tool-heavy recipes can use a different
+threshold from lightweight sessions.
 
 ## Best practices
 
