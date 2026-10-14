@@ -39,7 +39,7 @@ Dependencies (same for 5 and 6; verified with Maven and Gradle): import `org.jun
 
 ## Assertions
 
-Match the project's library. Plain Jupiter rules live in `instructions/java-junit5-assertions.instructions.md` (applied automatically to test files: expected first, lazy `Supplier` messages, `assertAll`, `assertThrowsExactly`, timeouts). If the project uses AssertJ, prefer it for collections, strings and exceptions; patterns (soft assertions, `assertThatThrownBy`, `extracting`, `containsExactly`, `usingRecursiveComparison`) are in `references/assertj-and-mockito.md`.
+Match the project's library. Plain Jupiter rules: expected value first, lazy `Supplier` messages, `assertAll`, `assertThrowsExactly`, timeouts. (The separate `instructions/java-junit5-assertions.instructions.md` resource has the longer version but is not installed with this skill.) If the project uses AssertJ, prefer it for collections, strings and exceptions; patterns (soft assertions, `assertThatThrownBy`, `extracting`, `containsExactly`, `usingRecursiveComparison`) are in `references/assertj-and-mockito.md`.
 
 - Assert on outcomes and state, not on how many times internals were called.
 - Compare values; avoid bare `assertNotNull`.
@@ -77,7 +77,7 @@ Surefire defaults pick `*Test`, `Test*`, `*Tests`, `*TestCase`; Failsafe picks `
 
 - JaCoCo: add only if the project uses it or the user asks. With Surefire/Failsafe use `<argLine>@{argLine} ...</argLine>` so the JaCoCo agent is not overwritten.
 - Coverage is a smell detector, not a goal; never add assertion-free tests to raise a number, and do not add a coverage gate the project lacks.
-- PIT (mutation testing) is slow; run it on changed classes only if the project already uses it or the user asks (see `references/build-setup.md`; not verified here).
+- PIT (mutation testing) is slow; run it on changed classes only if the project already uses it or the user asks (see `references/build-setup.md`, which records a verified pitest-maven + JUnit 5 plugin run).
 
 ## Agent guardrails
 

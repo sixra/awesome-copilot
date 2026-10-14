@@ -1,6 +1,6 @@
 # Heap, histograms, Eclipse MAT
 
-## Tier 1: class histogram (no pause with `-all=true`; full GC otherwise)
+## Tier 2: class histogram (no full GC with `-all=true`, but still a safepoint pause)
 
 ```bash
 jcmd <pid> GC.class_histogram -all=true | head -40   # no GC; includes unreachable objects
@@ -9,7 +9,7 @@ jcmd <pid> GC.class_histogram | head -40             # full GC, live objects onl
 jmap -histo:live <pid> | head -40                    # full GC, live objects only
 ```
 
-The last two force a full GC (a pause): on production, get explicit consent first. The first two avoid the GC but may count garbage that is not yet collected. Take two histograms several minutes apart under load; classes whose instance count and bytes keep growing are leak suspects.
+All four run heap inspection at a safepoint, which can pause application threads for the duration of the scan on a large heap: on production, get explicit consent and state the overhead first. The last two also force a full GC. The first two avoid the full GC but may count garbage that is not yet collected. Take two histograms several minutes apart under load; classes whose instance count and bytes keep growing are leak suspects.
 
 ## Tier 3: heap dump (explicit consent required)
 

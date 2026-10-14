@@ -1,6 +1,6 @@
 # Build tool setup (Maven and Gradle)
 
-Use the GraalVM Native Build Tools plugin for plain Java projects. Spring Boot, Quarkus and Micronaut projects already get it (or an equivalent) from their own plugins; do not add it again there.
+Use the GraalVM Native Build Tools plugin for plain Java projects. Quarkus and Micronaut projects get native support (or an equivalent) from their own plugins; do not add it again there. Spring Boot with Maven and `spring-boot-starter-parent` also gets it through the `native` profile, but Spring Boot with Gradle, or Maven with a custom parent, needs the plugin applied explicitly (see `spring-boot.md`).
 
 ## Versions
 
@@ -111,7 +111,7 @@ Fallback images (which bundle a JVM launcher) are deprecated and removed in rece
 
 | Argument | Purpose |
 |---|---|
-| `-O b` | quick build mode for development |
+| `-Ob` | quick build mode for development |
 | `--initialize-at-run-time=<class-or-package>` | defer class initialization |
 | `--initialize-at-build-time=<class-or-package>` | initialize during the build (only when safe) |
 | `-H:+ReportExceptionStackTraces` | fuller build errors |

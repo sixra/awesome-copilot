@@ -41,7 +41,7 @@ Hibernate does not change isolation levels. Default `READ COMMITTED` allows non-
 - Keep the persistence context scope = transaction scope (transaction-scoped `EntityManager`). An `EntityManager` is not thread-safe; never share it, or entities, across threads.
 - No HTTP calls, message sends, or long computation inside a transaction: they hold connections and locks. Publish events after commit (outbox pattern for reliability).
 - Read-only use cases: mark the transaction read-only (framework facility) or `session.setDefaultReadOnly(true)`; this skips dirty checking snapshots.
-- Rollback: JPA rolls back on `RuntimeException`; checked exceptions do not roll back unless configured (framework-specific).
+- Rollback: JPA does not define rollback-by-exception-type for a resource-local `EntityTransaction`; call `rollback()` explicitly in a `catch`/`finally`. Automatic rollback rules (for example on `RuntimeException` but not checked exceptions) come from the surrounding framework or container, such as Spring `@Transactional` or Jakarta `@Transactional`.
 - After a persistence exception the session is in an undefined state: discard it, do not continue using it.
 - Flush modes: `AUTO` flushes before queries that touch dirty entity tables; unexpected flushes inside loops show up in logs as updates before selects. Use `FlushModeType.COMMIT` or `em.setFlushMode` sparingly, only when you understand the stale-read risk.
 - `merge` returns a managed copy: use the returned instance, not the argument. Prefer loading and modifying a managed entity over `merge` of detached state.

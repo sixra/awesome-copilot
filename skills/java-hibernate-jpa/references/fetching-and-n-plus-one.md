@@ -63,7 +63,7 @@ If the caller needs a flat view, select exactly the columns (below).
 
 - Defaults: `@ManyToOne`, `@OneToOne` EAGER; `@OneToMany`, `@ManyToMany`, `@ElementCollection` LAZY; `@Basic` EAGER (`@Lob` and `@Basic(fetch = LAZY)` need bytecode enhancement to be really lazy).
 - `FetchType.EAGER` in a mapping applies to **every** load: `em.find` joins it, but JPQL/criteria queries ignore it for the initial SQL and load eager associations with follow-up selects (a hidden N+1). Set `LAZY` in the mapping and fetch per use case.
-- Lazy `@OneToOne` on the **inverse** side (`mappedBy`) cannot be a lazy proxy without bytecode enhancement or `@MapsId`/shared primary key; prefer a unidirectional owning side, or `@MapsId`.
+- Lazy `@OneToOne` on the **inverse** side (`mappedBy`) is normally loaded eagerly because Hibernate must query to detect null; it can be a lazy proxy only with `optional = false` (the row is guaranteed to exist) or bytecode enhancement. Prefer a unidirectional owning side; `@MapsId` on the owning side does not by itself solve null detection for an optional inverse side.
 - Hibernate proxies: use `Hibernate.initialize(x)`, `Hibernate.isInitialized(x)`, and `em.getReference` (id-only reference to set a foreign key without a SELECT).
 
 ## LazyInitializationException

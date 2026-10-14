@@ -69,7 +69,7 @@ A `@OneToMany` without `mappedBy` and without `@JoinColumn` creates a join table
 
 ## One-to-one
 
-Prefer a shared primary key (`@MapsId`) for a true one-to-one: no extra index, lazy-loadable from the owning side, and one-query `find`. Without it, the inverse side (`mappedBy`) is always eagerly loaded.
+Prefer a shared primary key (`@MapsId`) for a true one-to-one: no extra index, lazy-loadable from the owning side, and one-query `find`. Without it, the inverse side (`mappedBy`) is usually loaded eagerly, because Hibernate must query to know whether it is null; it can be a lazy proxy only when `optional = false` guarantees the row exists, or with bytecode enhancement.
 
 ## Delete and update patterns
 
