@@ -951,6 +951,16 @@ select {
   overflow: visible;
 }
 
+.artifact-list-box > :first-child {
+  border-top-left-radius: calc(var(--app-radius) - 1px);
+  border-top-right-radius: calc(var(--app-radius) - 1px);
+}
+
+.artifact-list-box > :last-child {
+  border-bottom-left-radius: calc(var(--app-radius) - 1px);
+  border-bottom-right-radius: calc(var(--app-radius) - 1px);
+}
+
 .artifact-toolbar {
   position: relative;
   gap: var(--base-size-8, 8px);
