@@ -1,6 +1,6 @@
 ---
 name: javax-to-jakarta-migration
-description: "Migrate Java code from javax.* to jakarta.* namespace. Use only when the user explicitly asks for a javax to jakarta namespace or framework migration (for example to Tomcat 10+/11 or Jakarta EE), or when java-upgrade or spring-boot-4-migration delegates it. Finding javax imports alone does not authorize a migration."
+description: 'Migrate Java code from javax.* to jakarta.* namespace. Use only when the user explicitly asks for a javax to jakarta namespace or framework migration (for example to Tomcat 10+/11 or Jakarta EE), or when java-upgrade or spring-boot-4-migration delegates it. Finding javax imports alone does not authorize a migration.'
 argument-hint: "File, package, or module to migrate"
 ---
 
@@ -64,7 +64,7 @@ Replace dependency coordinates:
 ```
 
 ### Step 4 — Update Java Source Files
-Replace all `javax.` imports with `jakarta.` equivalents in `.java` files. Also check non-Java references: `persistence.xml` (`javax.persistence.*` properties), `META-INF/services`, `beans.xml`, properties/YAML, string class names and reflection.
+Replace only the Jakarta EE `javax.` imports identified in Step 1 with their `jakarta.` equivalents in `.java` files; leave JDK packages (for example `javax.sql`, `javax.crypto`) unchanged. Also check non-Java references: `persistence.xml` (`javax.persistence.*` properties), `META-INF/services`, `beans.xml`, properties/YAML, string class names and reflection.
 
 ### Step 5 — Verify
 1. Run `mvn clean compile` or `gradlew build` — fix any compilation errors

@@ -209,20 +209,20 @@ public String formatValue(Object obj) {
         case String s -> "String: " + s;
         case Integer i -> "Integer: " + i;
         case null -> "null value";
-        case default -> "Unknown: " + obj.getClass().getSimpleName();
+        default -> "Unknown: " + obj.getClass().getSimpleName();
     };
 }
 
-// With guarded patterns
+// With guarded patterns (Java 17 preview syntax: && guard; the "when" keyword arrived in Java 21)
 public String categorizeNumber(Object obj) {
     return switch (obj) {
-        case Integer i when i < 0 -> "Negative integer";
-        case Integer i when i == 0 -> "Zero";
-        case Integer i when i > 0 -> "Positive integer";
-        case Double d when d.isNaN() -> "Not a number";
+        case Integer i && i < 0 -> "Negative integer";
+        case Integer i && i == 0 -> "Zero";
+        case Integer i && i > 0 -> "Positive integer";
+        case Double d && d.isNaN() -> "Not a number";
         case Number n -> "Other number: " + n;
         case null -> "null";
-        case default -> "Not a number";
+        default -> "Not a number";
     };
 }
 ```
