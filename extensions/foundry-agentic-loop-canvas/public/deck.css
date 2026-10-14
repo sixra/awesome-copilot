@@ -166,9 +166,17 @@ h3 { font-size: clamp(16px, 1.6vw, 21px); font-weight: 650; line-height: 1.25; }
 
 /* Start */
 .start { display: grid; gap: 14px; max-width: 64ch; counter-reset: go; }
-.start li { counter-increment: go; position: relative; display: grid; align-content: center; gap: 8px; min-height: 32px; padding-left: 46px; font-size: clamp(16px, 1.7vw, 20px); line-height: 1.45; }
-.start li::before { content: counter(go); position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font: 650 14px/1 var(--sans); }
-.cmd { display: block; padding: 10px 14px; border-radius: 8px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.start > li { counter-increment: go; position: relative; display: grid; align-content: center; gap: 8px; min-height: 32px; padding-left: 46px; font-size: clamp(16px, 1.7vw, 20px); line-height: 1.45; }
+.start > li::before { content: counter(go); position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font: 650 14px/1 var(--sans); }
+.ui-path { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 0; font-size: 14px; line-height: 1.2; }
+.ui-path li { display: flex; align-items: center; }
+.ui-path li:not(:last-child)::after { content: ""; flex: none; width: 6px; height: 6px; margin-inline: 8px 10px; border: solid var(--muted); border-width: 1.5px 1.5px 0 0; rotate: 45deg; }
+.tab, .field, .button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 11px; border: 1px solid var(--border); border-radius: 8px; font-weight: 600; white-space: nowrap; }
+.tab { background: var(--surface); }
+.field { padding-right: 14px; background: var(--bg); color: var(--muted); font-weight: 400; }
+.field svg { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.field code { padding: 0; border: 0; background: none; color: var(--text); font-size: 13px; }
+.button { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .links { display: flex; flex-wrap: wrap; gap: 10px; }
 .links a { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 16px; border: 1px solid var(--border); border-radius: 999px; font-size: 15px; font-weight: 600; text-decoration: none; transition: background-color 150ms var(--ease), border-color 150ms var(--ease); }
 .links a::after { content: "↗"; }

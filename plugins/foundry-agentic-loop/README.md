@@ -4,11 +4,15 @@ Build agentic solutions on Microsoft Foundry, GitHub and Azure, from a quick pro
 
 ## Install
 
+In the GitHub Copilot App, click **Customize** in the sidebar, then **Plugins**. Find `foundry-agentic-loop` and click **Install**.
+
+To install from the Copilot CLI instead:
+
 ```
 copilot plugin install foundry-agentic-loop@awesome-copilot
 ```
 
-In the GitHub Copilot App, ask Copilot to **open the agentic loop**. The `foundry-agentic-loop` skill finds the bundled canvas and workflow, installs any that are missing and opens the canvas. It installs the `microsoft-foundry` skill only after you agree.
+Then ask Copilot in the App to **open the agentic loop**. The `foundry-agentic-loop` skill finds the bundled canvas and workflow, installs any that are missing and opens the canvas. It installs the `microsoft-foundry` skill only after you agree.
 
 ## Two ways to build
 
