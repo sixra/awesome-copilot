@@ -149,7 +149,7 @@ Native installers (`dmg`, `pkg`, `msi`, `deb`, `rpm`) need platform tooling and 
 
 ## GitHub Actions CI (unverified: not executed)
 
-`actions/setup-java` v6 and `actions/checkout` v7 were the latest release tags when this was written (checked through the GitHub API); verify the current majors, and pin to a full commit SHA if the repository's policy requires it.
+`actions/setup-java` v6 and `actions/checkout` v7 were the latest major release tags as of 2026-10 (checked through the GitHub API); verify the current majors, and pin to a full commit SHA if the repository's policy requires it.
 
 ```yaml
 name: CI

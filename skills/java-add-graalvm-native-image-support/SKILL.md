@@ -27,7 +27,7 @@ Detail lives in `references/`; load only what the project needs:
    - Micronaut: `io.micronaut` parent/plugin or `micronaut-*` dependencies
    - otherwise plain Java
 3. Existing native configuration: native-build-tools plugin, `META-INF/native-image/`, native profile, `application.properties` native keys.
-4. Toolchain: run `java -version` and `native-image --version`. A GraalVM JDK (with `native-image`) must be the JDK used for the build. Check the project's Java level against the installed GraalVM version.
+4. Toolchain: run `java -version` and `native-image --version`. Local native compilation needs a GraalVM JDK (with `native-image`) as the JDK used for the build. Container or buildpack builds (Spring Boot buildpacks via `bootBuildImage`/`spring-boot:build-image`, Quarkus container builds) compile inside a container and need no local GraalVM, only a container runtime. Check the project's Java level against the installed GraalVM version.
 
 If the framework is Quarkus, stop here and hand off to the `quarkus-native-and-container` skill. Container builds there need no local GraalVM.
 
