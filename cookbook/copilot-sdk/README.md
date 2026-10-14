@@ -66,6 +66,13 @@ This cookbook collects small, focused recipes showing how to accomplish common t
 
 ## Running Examples
 
+Before running examples, follow the prerequisites in your language's recipe README:
+[.NET](dotnet/recipe/README.md#prerequisites),
+[Node.js](nodejs/recipe/README.md#prerequisites),
+[Python](python/recipe/README.md#prerequisites),
+[Go](go/recipe/README.md#prerequisites), or
+[Java](java/recipe/README.md#prerequisites).
+
 ### .NET
 
 ```bash
@@ -97,9 +104,6 @@ go run <filename>.go
 ```
 
 ### Java
-
-Follow the [Java recipe prerequisites](java/recipe/README.md#prerequisites) to
-configure authentication and the CLI or platform runtime dependencies.
 
 ```bash
 cd java/recipe
