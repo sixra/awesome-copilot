@@ -26,6 +26,8 @@ Open it by asking Copilot to "open the plugin review board" (canvas id `external
   Fast-track never overrides an existing review or a bucket you chose; drag a card to *Unreviewed* to opt it
   out and have it reviewed normally. Cards show *First party* / *Third party* pills from the intake labels.
 - **Details panel** shows the AI review, the rendered issue body, and all comments.
+  Clicking outside the panel or successfully submitting an item action closes it;
+  failed actions leave it open so you can correct or retry them.
 - **Quick actions** post `/approve` (with an optional note) or `/reject <reason>` straight to the issue
   after a confirm click. The reject reason is prefilled from the AI's suggested comment.
 - **Column actions** approve, reject, or re-review every eligible item in a column, including
@@ -60,3 +62,4 @@ Run `node --experimental-vm-modules --test eng/board-state-storage.test.mjs` fro
 to check both canvases' session-scoped persistence without accessing GitHub.
 Run `node --test eng/board-bulk-actions.test.mjs` to check column confirmation, staged feedback,
 queue exclusions, and partial failures using in-process fakes.
+Run `node --test eng/board-preview.test.mjs` to check preview dismissal and in-flight actions.

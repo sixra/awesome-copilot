@@ -241,7 +241,7 @@ function renderCard(item) {
         "article",
         {
             class: item.number === selectedNumber ? "card selected" : "card",
-            draggable: !item.decision,
+            draggable: item.decision ? "false" : "true",
             dataset: { number: String(item.number) },
             tabindex: "0",
             role: "button",
@@ -402,6 +402,7 @@ async function bulkAction(columnId, kind) {
                     method: "POST", body: { number: item.number, kind, comment: item.comment },
                 });
                 completed++;
+                if (selectedNumber === item.number) closeDrawer();
                 if (result.warning) failures.push(`#${item.number}: ${result.warning}`);
             } catch (error) {
                 failures.push(`#${item.number}: ${error.message}`);
@@ -436,12 +437,14 @@ function reviewTab(item) {
                 {
                     class: "btn btn-small btn-primary",
                     type: "button",
-                    onclick: (event) =>
-                        run(
+                    onclick: async (event) => {
+                        const result = await run(
                             event.currentTarget,
                             () => api("/api/review", { method: "POST", body: { numbers: [item.number] } }),
                             (result) => result.message ?? "Review requested.",
-                        ),
+                        );
+                        if (result && selectedNumber === item.number) closeDrawer();
+                    },
                 },
                 "Review this PR",
             ),
@@ -728,12 +731,12 @@ async function submitDecision(button, kind) {
         api("/api/decision", { method: "POST", body: { number: item.number, kind, comment } }),
     );
     decisionsInFlight.delete(item.number);
-    renderDrawerHeader();
+    if (selectedNumber === item.number) renderDrawerHeader();
     button.textContent = DECISION_BUTTONS[kind];
     if (result) {
         if (result.warning) toast(result.warning, { error: true, url: result.url });
         else toast(`#${item.number}: ${result.status}.`, { url: result.url });
-        if (currentItem()) loadDetail(item.number, { force: true });
+        if (selectedNumber === item.number) closeDrawer();
     }
 }
 
@@ -778,6 +781,10 @@ el.review.addEventListener("click", (event) =>
 
 el.drawerClose.addEventListener("click", closeDrawer);
 
+document.addEventListener("pointerdown", (event) => {
+    if (selectedNumber !== null && !el.drawer.contains(event.target)) closeDrawer();
+}, true);
+
 document.addEventListener("keydown", (event) => {
     if (!el.drawer.classList.contains("open")) return;
     if (event.key === "Escape") {
@@ -806,6 +813,7 @@ el.drawerColumn.addEventListener("change", async (event) => {
     if (column === item.column) return;
     try {
         await api("/api/move", { method: "POST", body: { number: item.number, column } });
+        if (selectedNumber === item.number) closeDrawer();
     } catch (error) {
         toast(error.message, { error: true });
         event.target.value = item.column;
@@ -855,9 +863,10 @@ el.rereviewStart.addEventListener("click", async (event) => {
             }),
         (value) => value.message ?? "Re-review requested.",
     );
-    if (result) {
+    if (result && selectedNumber === item.number) {
         el.rereviewGuidance.value = "";
         el.rereviewPanel.hidden = true;
+        closeDrawer();
     }
 });
 

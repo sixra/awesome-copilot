@@ -32,6 +32,8 @@ authenticated `gh` CLI.
 - **Detail drawer** — AI review, description, conversation, changed files, and checks.
   Keyboard focus stays inside the modal drawer and returns to its card on close.
   Use Left/Right arrows or Home/End to switch detail tabs.
+  Clicking outside the drawer or successfully submitting an item action closes it;
+  failed actions leave it open so you can correct or retry them.
 - **GitHub actions** — submit feedback, request changes, close a PR, or approve it and
   enable auto-merge with a merge commit. Each action needs two clicks to confirm and
   is also recorded in local board history. Approval is pinned to the board's commit
@@ -92,5 +94,7 @@ Run `node --test eng/open-pr-board.test.mjs` from the repository root. GitHub wr
 are tested with injected in-process fakes, never the authenticated CLI.
 Run `node --test eng/board-bulk-actions.test.mjs` to check column confirmation, staged feedback,
 queue exclusions, and partial failures using in-process fakes.
+Run `node --test eng/board-preview.test.mjs` to check preview dismissal and in-flight actions.
+Run `node --test eng/open-pr-board-drag.test.mjs` to check native card dragging and transfer data.
 Run `node --experimental-vm-modules --test eng/board-state-storage.test.mjs` to check
 both canvases' session-scoped persistence without accessing GitHub.
