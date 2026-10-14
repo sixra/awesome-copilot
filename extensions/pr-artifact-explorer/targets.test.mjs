@@ -46,9 +46,31 @@ test("dot segments and garbage are rejected", () => {
     "#/issue/o%2Fr/0",
     "#/artifact/o%2Fr/0/0",
     "#/artifact/%zz/1/2",
+    "#/pull/.%2Frepo/5",
+    "#/pull/..%2Frepo/5",
+    "#/pull/owner%2F./5",
+    "#/pull/owner%2F../5",
+    "#/issue/.%2F../5",
+    "#/artifact/..%2Frepo/0/5",
+    "#/artifact/owner%2F../0/5",
+    "./repo#5",
+    "../repo#5",
+    "owner/.#5",
+    "owner/.. artifact 5",
+    "../repo artifact 5",
   ]) {
     assert.throws(() => parseTarget(bad), TargetError, bad);
   }
+  for (const text of ["show pr 5 in ./repo", "open ../repo", "owner/.. issue 4"]) {
+    let target = null;
+    try {
+      target = parseTarget(text, { defaultRepository: "github/awesome-copilot" });
+    } catch (error) {
+      assert.ok(error instanceof TargetError, text);
+    }
+    assert.ok(!target?.repository || !target.repository.split("/").some((s) => s === "." || s === ".."), text);
+  }
+  assert.equal(parseTarget("#/pull/my.org%2F.repo/5").repository, "my.org/.repo");
   assert.equal(parseTarget("#/pull/o%2Fr/5").number, 5);
   assert.throws(() => parseTarget("../x"), TargetError);
   assert.throws(() => parseTarget("hello there"), TargetError);

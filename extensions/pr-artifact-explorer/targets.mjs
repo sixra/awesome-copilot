@@ -94,10 +94,10 @@ function safeRepository(raw) {
   } catch {
     throw new TargetError("That explorer route has an invalid repository.");
   }
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
-    throw new TargetError("That explorer route has an invalid repository.");
-  }
-  return repository;
+  const match = repository.match(new RegExp(`^${REPO}$`));
+  const valid = match ? validRepository(match[1], match[2]) : null;
+  if (!valid) throw new TargetError("That explorer route has an invalid repository.");
+  return valid;
 }
 
 function safeId(raw, { allowZero = false } = {}) {
@@ -215,7 +215,8 @@ function naturalLanguage(text) {
     return { kind: "cache" };
   }
   const repoMatch = text.match(new RegExp(`(?:^|[\\s(])(${NAME}\\/${NAME})(?=$|[\\s,.;)#])`));
-  const repository = repoMatch ? repoMatch[1] : null;
+  const [repoOwner, repoName] = repoMatch ? repoMatch[1].split("/") : [];
+  const repository = repoMatch && validRepository(repoOwner, repoName) ? repoMatch[1] : null;
   const kindMatch = lower.match(/\b(pull request|pull|pr|issue|artifact)\b\s*(?:number\s*|no\.?\s*|id\s*)?#?(\d+)/);
   if (kindMatch) {
     const number = positive(kindMatch[2]);
@@ -259,7 +260,9 @@ export function parseTarget(value, { defaultRepository = null } = {}) {
     return { kind: "repository", repository: `${match[1]}/${match[2]}` };
   }
   match = input.match(new RegExp(`^${REPO}(?:\\s+|:)artifact[:\\s#]*(\\d+)$`, "i"));
-  if (match) return { kind: "artifact", repository: `${match[1]}/${match[2]}`, artifactId: Number(match[3]) };
+  if (match && validRepository(match[1], match[2])) {
+    return { kind: "artifact", repository: `${match[1]}/${match[2]}`, artifactId: Number(match[3]) };
+  }
   match = input.match(/^#(\d+)$/);
   if (match && defaultRepository) {
     return { kind: "pull", repository: defaultRepository, number: Number(match[1]), ambiguous: true };
