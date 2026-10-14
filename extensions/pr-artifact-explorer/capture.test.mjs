@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { CaptureError, ControlledBrowser, captureScreenshot, resolveViewport } from "./capture.mjs";
+import { CaptureError, ControlledBrowser, captureScreenshot, loadPlaywright, resolveViewport } from "./capture.mjs";
 
 test("viewport presets and validation", () => {
   assert.deepEqual(resolveViewport({ preset: "mobile" }).width, 390);
@@ -31,21 +31,21 @@ test("URLs with embedded credentials are refused before any browser starts", asy
   }
 });
 
-test("missing Playwright reports explicit setup instructions", async () => {
+test("legacy Playwright path variable is rejected explicitly", async () => {
   const saved = process.env.PR_ARTIFACT_EXPLORER_PLAYWRIGHT;
   process.env.PR_ARTIFACT_EXPLORER_PLAYWRIGHT = join(tmpdir(), "no-such-playwright-dir");
   try {
-    await captureScreenshot({ url: "http://127.0.0.1:9/" });
-    // Playwright may legitimately resolve from the extension folder in dev installs.
-  } catch (error) {
-    assert.ok(["playwright_missing", "chromium_missing", "navigation_failed"].includes(error.code));
-    if (error.code === "playwright_missing") assert.match(error.message, /npx playwright install chromium/);
+    await assert.rejects(loadPlaywright(), (error) => {
+      assert.equal(error.code, "playwright_config_unsupported");
+      assert.match(error.message, /no longer supported/);
+      assert.match(error.message, /npx playwright-core install chromium/);
+      return true;
+    });
   } finally {
     if (saved === undefined) delete process.env.PR_ARTIFACT_EXPLORER_PLAYWRIGHT;
     else process.env.PR_ARTIFACT_EXPLORER_PLAYWRIGHT = saved;
   }
 });
-
 test("real Chromium emulates the preset and saves a PNG", async (t) => {
   const server = createServer((req, res) => {
     res.setHeader("content-type", "text/html");

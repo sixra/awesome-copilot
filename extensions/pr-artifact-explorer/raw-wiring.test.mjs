@@ -74,6 +74,11 @@ test("capture loads Playwright without non-literal import/require calls", async 
   const src = await readFile(new URL("./capture.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(src, /\bimport\s*\(\s*[^'"\s)]/);
   assert.doesNotMatch(src, /(?<![.\w$])require\s*\(/);
+  assert.doesNotMatch(src, /createRequire/);
+  assert.match(src, /import\("playwright-core"\)/);
+  const pkg = JSON.parse(await readFile(new URL("./package.json", import.meta.url), "utf8"));
+  assert.ok(pkg.optionalDependencies["playwright-core"]);
+  assert.equal(pkg.scripts, undefined);
 });
 
 test("browser stage follows the host theme tokens", async () => {

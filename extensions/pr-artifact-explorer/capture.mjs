@@ -1,8 +1,7 @@
-import { createRequire } from "node:module";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { DATA_ROOT, EXTENSION_ROOT } from "./constants.mjs";
+import { DATA_ROOT } from "./constants.mjs";
 
 export const SCREENSHOT_ROOT = join(DATA_ROOT, "screenshots");
 let screenshotRoot = SCREENSHOT_ROOT;
@@ -15,7 +14,7 @@ export function setScreenshotRoot(dir) {
 export function getScreenshotRoot() {
   return screenshotRoot;
 }
-const SETUP_ENV = "PR_ARTIFACT_EXPLORER_PLAYWRIGHT";
+const LEGACY_SETUP_ENV = "PR_ARTIFACT_EXPLORER_PLAYWRIGHT";
 
 export const VIEWPORT_PRESETS = Object.freeze({
   mobile: { label: "Mobile", width: 390, height: 844, deviceScaleFactor: 3, isMobile: true, hasTouch: true },
@@ -33,33 +32,23 @@ export class CaptureError extends Error {
 
 export const SETUP_INSTRUCTIONS = [
   "Screenshots need Playwright with a Chromium browser. Nothing is installed automatically.",
-  `1. In the extension folder run: npm install playwright   (or set ${SETUP_ENV} to an existing playwright/playwright-core install path)`,
-  "2. Install the browser once: npx playwright install chromium",
+  "1. Install the extension dependencies in its folder: npm install   (playwright-core is an optional dependency)",
+  "2. Install the browser once: npx playwright-core install chromium",
 ].join("\n");
 
 export async function loadPlaywright() {
-  const candidates = [process.env[SETUP_ENV], EXTENSION_ROOT].filter(Boolean);
-  for (const base of candidates) {
-    for (const name of ["playwright", "playwright-core"]) {
-      try {
-        // Playwright ships CommonJS; load the user-provided install explicitly
-        // through a scoped loader rather than a dynamic import().
-        const load = createRequire(join(base, "noop.js"));
-        const mod = load(load.resolve(name, { paths: [base] }));
-        const chromium = mod.chromium ?? mod.default?.chromium;
-        if (chromium) return chromium;
-      } catch {
-        // try the next candidate
-      }
-    }
-    // The env var may point straight at a package directory.
-    try {
-      const load = createRequire(join(base, "noop.js"));
-      const mod = load(base);
-      if (mod?.chromium) return mod.chromium;
-    } catch {
-      // fall through to the setup error
-    }
+  if (process.env[LEGACY_SETUP_ENV]) {
+    throw new CaptureError(
+      "playwright_config_unsupported",
+      `${LEGACY_SETUP_ENV} is no longer supported because Explorer no longer loads Playwright from arbitrary paths. Unset it.\n${SETUP_INSTRUCTIONS}`,
+    );
+  }
+  try {
+    const mod = await import("playwright-core");
+    const chromium = mod.chromium ?? mod.default?.chromium;
+    if (chromium) return chromium;
+  } catch {
+    // reported below with setup instructions
   }
   throw new CaptureError("playwright_missing", `Playwright is not available.\n${SETUP_INSTRUCTIONS}`);
 }

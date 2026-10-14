@@ -38,7 +38,7 @@ Re-running the workflow that produced an artifact is a UI-only, user-confirmed a
 - `set_viewport { preset: native | mobile | tablet | desktop | custom, width?, height?, orientation? }` sets the emulated page size.
 - `set_zoom { zoom, fit? }` scales the view without changing the viewport.
 - `screenshot { mode?: "fresh" | "controlled", url?, preset?, width?, height?, fullPage? }` takes a real Chromium PNG saved under the session `files/artifact-explorer-screenshots` folder. `fresh` (default) renders the URL anew and is labeled `fresh-render`; `controlled` captures the live isolated Chromium page (`controlled-current`).
-- `controlled_navigate { url, preset?, ... }`, `controlled_back`, `controlled_forward`, `controlled_refresh`, `controlled_close` drive an isolated Chromium (in-memory profile, no login state) with real history; use it for sites that block iframes. Navigation failures are returned as errors, never as blank pages. If Playwright or Chromium is missing, relay the returned setup instructions to the user; never install silently.
+- `controlled_navigate { url, preset?, ... }`, `controlled_back`, `controlled_forward`, `controlled_refresh`, `controlled_close` drive an isolated Chromium (in-memory profile, no login state) with real history; use it for sites that block iframes. Navigation failures are returned as errors, never as blank pages. If Playwright or Chromium is missing, relay the returned setup instructions to the user (including a `playwright_config_unsupported` error for the retired `PR_ARTIFACT_EXPLORER_PLAYWRIGHT` variable); never install silently.
 - Pages that forbid framing (X-Frame-Options / CSP) are reported and not bypassed.
 
 ## Previewing files

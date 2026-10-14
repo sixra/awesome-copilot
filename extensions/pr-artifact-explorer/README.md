@@ -36,10 +36,11 @@ Artifact Explorer is a community-built Copilot canvas extension with the interna
 Screenshots need Playwright and a Chromium browser. Nothing is installed silently:
 
 ```text
-npm install playwright-core   # then: npx playwright install chromium
+npm install                       # in the extension folder; installs optional playwright-core
+npx playwright-core install chromium
 ```
 
-Optional environment variables: `PR_ARTIFACT_EXPLORER_PLAYWRIGHT` (path to a `playwright`/`playwright-core` package) and `PR_ARTIFACT_EXPLORER_CHROMIUM` (path to a Chromium/Chrome/Edge executable). Without a runtime the action returns explicit setup instructions. A fresh isolated profile is used for every capture; no login profile is persisted.
+Playwright is loaded lazily from the extension's own `playwright-core` dependency; loading it from arbitrary paths is not supported. The legacy `PR_ARTIFACT_EXPLORER_PLAYWRIGHT` variable is rejected with an explicit `playwright_config_unsupported` error until it is unset. Optional: `PR_ARTIFACT_EXPLORER_CHROMIUM` (path to a Chromium/Chrome/Edge executable). Without a runtime the action returns explicit setup instructions. A fresh isolated profile is used for every capture; no login profile is persisted.
 
 ## Security and local data
 
