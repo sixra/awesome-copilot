@@ -85,6 +85,6 @@ quarkus.kubernetes.env.secrets=app-secrets
 quarkus.kubernetes.resources.requests.memory=128Mi
 ```
 
-The generated Deployment includes liveness, readiness and startup probes (`/q/health/live`, `/q/health/ready`) and `envFrom.secretRef` for `env.secrets` (verified on 3.40.1). Deploy with `quarkus.kubernetes.deploy=true` or `kubectl apply -f target/kubernetes/kubernetes.yml`. Review generated YAML before applying; keep secrets out of it.
+The generated Deployment has no probes by default; with `quarkus-smallrye-health` installed it includes liveness, readiness and startup probes (`/q/health/live`, `/q/health/ready`, `/q/health/started`), and it sets `envFrom.secretRef` for `env.secrets` (verified on 3.40.1). Deploy with `quarkus.kubernetes.deploy=true` or `kubectl apply -f target/kubernetes/kubernetes.yml`. Review generated YAML before applying; keep secrets out of it.
 
 See also: native executables <https://quarkus.io/guides/building-native-image>; upgrades via `quarkus update` (<https://quarkus.io/guides/update-quarkus>); GraalVM release notes <https://www.graalvm.org/release-notes/>.

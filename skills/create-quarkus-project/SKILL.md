@@ -25,10 +25,10 @@ quarkus create app com.example:demo \
   --java=21 --maven        # or --gradle
 ```
 
-No CLI: Maven plugin (pin the version to the current release from https://quarkus.io/guides/maven-tooling, shown here as `${quarkus.version}`):
+No CLI: Maven plugin (pin the version to the current release from https://quarkus.io/guides/maven-tooling, replace `QUARKUS_VERSION` below with it):
 
 ```bash
-mvn io.quarkus.platform:quarkus-maven-plugin:${quarkus.version}:create \
+mvn io.quarkus.platform:quarkus-maven-plugin:QUARKUS_VERSION:create \
   -DprojectGroupId=com.example -DprojectArtifactId=demo \
   -Dextensions='rest-jackson,hibernate-orm-panache,jdbc-postgresql' \
   -DbuildTool=maven        # or gradle

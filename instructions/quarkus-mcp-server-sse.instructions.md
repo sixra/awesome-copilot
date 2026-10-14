@@ -1,12 +1,12 @@
 ---
 applyTo: '**/*.java, **/application*.properties, **/application*.yml, **/application*.yaml'
-description: 'Quarkus and MCP Server with HTTP SSE transport development standards and instructions'
+description: 'Quarkus MCP Server development standards and instructions, with Streamable HTTP (preferred) and legacy HTTP SSE transports'
 ---
 # Quarkus MCP Server
 
 Apply these instructions only when the project uses a Quarkus MCP Server extension (`mcp-server-http`, or the legacy `mcp-server-sse`).
 
-Build MCP servers with Java 21, Quarkus, and HTTP SSE transport.
+Build MCP servers with Java 21, Quarkus, and Streamable HTTP transport (legacy HTTP SSE is also supported).
 
 ## Stack
 

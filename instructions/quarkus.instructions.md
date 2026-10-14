@@ -1,5 +1,5 @@
 ---
-applyTo: '**/*.java, **/application*.properties, **/application*.yml, **/application*.yaml'
+applyTo: '**/*.java, **/application*.properties, **/application*.yml, **/application*.yaml, **/pom.xml, **/build.gradle, **/build.gradle.kts'
 description: 'Quarkus development standards and instructions'
 ---
 

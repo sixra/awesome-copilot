@@ -46,7 +46,7 @@ public class BookService {
 }
 ```
 
-- Put `@Transactional` on service (or resource) methods that write; it applies through the CDI proxy, so self-calls do not start transactions.
+- Put `@Transactional` on service (or resource) methods that write; ArC also intercepts self-calls, so a call to an annotated method on the same bean starts the transaction.
 - Programmatic: `QuarkusTransaction.requiringNew().call(() -> ...)` (`io.quarkus.narayana.jta`), used in the verified tests to read back committed data.
 - Reads outside a transaction work (read-only session per call); lazy associations must be fetched inside the transaction or via fetch joins/projections.
 - Tests: `@TestTransaction` rolls back (see `quarkus-dev-services-and-testing`).

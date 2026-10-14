@@ -32,7 +32,7 @@ public String flaky() { throw new IllegalStateException(); }
 String fb() { return "fallback"; }
 ```
 
-Verified: the method executed 3 times (1 + 2 retries) and the fallback value was returned. Also `@Timeout`, `@CircuitBreaker`, `@Bulkhead`, `@RateLimit` (SmallRye extension). They are CDI interceptors: they work on bean methods called through the proxy, not on self-invocation. Works with `Uni` return types (asynchronous, non-blocking). Always set a `@Timeout` on remote calls; do not retry non-idempotent operations.
+Verified: the method executed 3 times (1 + 2 retries) and the fallback value was returned. Also `@Timeout`, `@CircuitBreaker`, `@Bulkhead`, `@RateLimit` (SmallRye extension). They are CDI interceptors on bean methods; ArC also intercepts self-invocation. Works with `Uni` return types (asynchronous, non-blocking). Always set a `@Timeout` on remote calls; do not retry non-idempotent operations.
 
 ## REST Client (`quarkus-rest-client-jackson`)
 
@@ -62,4 +62,4 @@ Inject with `@RestClient EchoClient echo;` (`org.eclipse.microprofile.rest.clien
 public String slow(String k) { ... }
 ```
 
-Verified: two calls with the same key executed the method once. Configure with `quarkus.cache.caffeine."slow".maximum-size=10` and `expire-after-write=60S`. Also `@CacheInvalidate`, `@CacheInvalidateAll`, `@CacheKey`. Interceptor-based, so no effect on self-invocation. Caches are per-instance in memory; use `quarkus-redis-cache` for shared caches (not verified here).
+Verified: two calls with the same key executed the method once. Configure with `quarkus.cache.caffeine."slow".maximum-size=10` and `expire-after-write=60S`. Also `@CacheInvalidate`, `@CacheInvalidateAll`, `@CacheKey`. Interceptor-based; ArC also intercepts self-invocation. Caches are per-instance in memory; use `quarkus-redis-cache` for shared caches (not verified here).
