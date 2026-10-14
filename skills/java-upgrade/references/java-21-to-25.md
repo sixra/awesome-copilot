@@ -1,8 +1,3 @@
----
-applyTo: ['*']
-description: "Comprehensive best practices for adopting new Java 25 features since the release of Java 21."
----
-
 # Java 21 to Java 25 Upgrade Guide
 
 These instructions help GitHub Copilot assist developers in upgrading Java projects from JDK 21 to JDK 25, focusing on new language features, API changes, and best practices.

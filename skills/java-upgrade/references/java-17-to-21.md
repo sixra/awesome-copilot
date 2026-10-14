@@ -1,8 +1,3 @@
----
-applyTo: ['*']
-description: "Comprehensive best practices for adopting new Java 21 features since the release of Java 17."
----
-
 # Java 17 to Java 21 Upgrade Guide
 
 These instructions help GitHub Copilot assist developers in upgrading Java projects from JDK 17 to JDK 21, focusing on new language features, API changes, and best practices.
