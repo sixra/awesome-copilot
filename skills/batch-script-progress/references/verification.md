@@ -9,9 +9,9 @@ Use harmless inputs and the actual caller contract. Fix expectations before runn
 - **Zero items:** zero counts, start and summary, no false progress or percentage arithmetic.
 - **Unknown total:** lazy input is consumed only once; total remains unknown; no invented percentage, remaining count, or ETA.
 - **Fail-fast:** the failing item is counted once; not-started items stay unprocessed; the first failure is not lost when reporting the summary.
-- **Cancellation:** verify the supported cancellation mechanism and cleanup; do not count incomplete work as successful. Simulated cancellation is not proof of SIGINT or host cancellation behavior.
-- **Long item:** distinguish between-item cadence from mid-item notification. Verify callbacks or heartbeats with the operation still active, or report the known notification gap.
-- **Redirection:** parse stdout using its real format, retain newline-delimited diagnostics separately, and read progress before child exit. Also verify a caller that interprets stderr as failure, if present.
+- **Cancellation:** verify the supported cancellation mechanism and cleanup; do not count incomplete work as successful. For PowerShell, preserve host-managed stop behavior and do not count a host stop as an item failure. Test Ctrl+C or another real host cancellation path only when graceful handling is part of the existing contract. Simulated cancellation is not proof of SIGINT or host cancellation behavior.
+- **Long item:** distinguish between-item cadence from mid-item notification. Verify callbacks or heartbeats with the operation still active, or report the known notification gap. Keep deterministic gates in harmless fixtures or the harness; do not add test-only waits or hooks to the production path.
+- **Redirection:** parse stdout using its real format, retain newline-delimited diagnostics separately, and read progress before child exit. Also verify a caller that interprets stderr as failure, if present. If stderr is incompatible, use only an already-supported logger or sink; if none exists, stop rather than changing stdout or another stream's semantics without approval.
 - **Secrets and volume:** a synthetic secret must not appear in either stream. Failure records must not require retaining every raw exception or input in memory.
 - **Retries, transactions, or concurrency, when present:** count terminal outcomes once; distinguish attempts, submissions, and committed results. Check a rollback before accepting a success summary.
 
