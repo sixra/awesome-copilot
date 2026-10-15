@@ -13,12 +13,7 @@ description: 'Ensure that Java types are documented with Javadoc comments and fo
 
 ## Conventions
 
-- Document public and protected members; documenting package-private and private members is welcome when they are complex or not self-explanatory.
-- The first sentence is the summary and ends with a period. Do not just repeat the member name.
-- `@param name description` (lowercase start, no final period); `@param <T>` for type parameters; `@return` for non-void; `@throws` for exceptions actually thrown (checked, and unchecked that are part of the contract).
-- `{@code ...}` for inline code and `{@literal ...}` for text with `<`/`&`; `{@link Type#member}` for references; `@see` for related types.
-- `{@inheritDoc}` or no comment on overriding members; document only real behaviour differences.
-- `@since` only with the real version in which the API was introduced (check git history/release notes); `@deprecated` with a reason and the replacement (`{@link}`), together with `@Deprecated`.
+- `@since` only with the real version in which the API was introduced; `@deprecated` with a reason and replacement, together with `@Deprecated`.
 - `@author` and `@version` only if the project already uses them.
 - Code blocks, by JDK level:
   - Any JDK: `<pre>{@code ... }</pre>` (escape `@` at line start, balance braces).

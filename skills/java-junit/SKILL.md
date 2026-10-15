@@ -28,15 +28,6 @@ Source: JUnit 6.0.0 release notes (<https://docs.junit.org/6.0.0/release-notes.h
 
 Dependencies (same for 5 and 6; verified with Maven and Gradle): import `org.junit:junit-bom`, then declare `org.junit.jupiter:junit-jupiter` (aggregates api, params, engine) with `test` scope. Gradle 9 additionally **requires** `testRuntimeOnly("org.junit.platform:junit-platform-launcher")` (verified: without it the test executor fails with "Failed to load JUnit Platform") and `tasks.test { useJUnitPlatform() }`. Maven needs Surefire 3.x (verified with 3.6.0).
 
-## Test structure
-
-- One behavior per test; Arrange-Act-Assert; no logic (loops, conditionals) in tests.
-- Names: follow the project. Default `method_should_expected_when_scenario`, or sentences with `@DisplayName`. Class `FooTest` for unit tests, `FooIT` for integration tests.
-- A fresh instance is created per test method; keep tests independent of order. Use `@BeforeEach`; `@BeforeAll` must be `static` unless `@TestInstance(PER_CLASS)`.
-- `@Nested` groups scenarios per method or state; each nested class inherits the outer `@BeforeEach`.
-- `@TempDir` for files; never write into the source tree. Use `@Timeout` rather than sleeps; never `Thread.sleep` to wait for async work (latches, `CompletableFuture`, or Awaitility if the project has it).
-- Do not use `@TestMethodOrder`/`@Order` to hide inter-test dependencies.
-
 ## Assertions
 
 Match the project's library. Plain Jupiter rules: expected value first, lazy `Supplier` messages, `assertAll`, `assertThrowsExactly`, timeouts. (The separate `instructions/java-junit5-assertions.instructions.md` resource has the longer version but is not installed with this skill.) If the project uses AssertJ, prefer it for collections, strings and exceptions; patterns (soft assertions, `assertThatThrownBy`, `extracting`, `containsExactly`, `usingRecursiveComparison`) are in `references/assertj-and-mockito.md`.
@@ -51,11 +42,8 @@ Match the project's library. Plain Jupiter rules: expected value first, lazy `Su
 - Prefer a hand-written fake over a mock when the interaction is stateful.
 - Use `@ExtendWith(MockitoExtension.class)` with `@Mock`/`@InjectMocks`/`@Captor`. Strict stubs are the default there, so an unused stub fails the test (`UnnecessaryStubbingException`). Fix the test; relax with `@MockitoSettings(strictness = Strictness.LENIENT)` only for a justified shared setup.
 - Mockito 5 uses the inline mock maker by default. On JDK 21+ it self-attaches and prints "Mockito is currently self-attaching..." plus a dynamic-agent warning. Register Mockito as a `-javaagent` instead (setup for Maven and Gradle in `references/assertj-and-mockito.md`, verified on JDK 21 and 25).
+- Mockito 5 requires Java 11+. Its default inline mock maker does not work on GraalVM native image, where the subclass mock maker is appropriate (Mockito 5.0.0 release notes, <https://github.com/mockito/mockito/releases/tag/v5.0.0>).
 - Avoid `mockStatic`/`mockConstruction`; wrap the static call behind an interface.
-
-## Parameterized tests
-
-`@ParameterizedTest` with `@ValueSource`, `@NullAndEmptySource`, `@EnumSource`, `@CsvSource`, `@MethodSource` (a `static` factory returning `Stream<Arguments>`). Set `name = "..."` for readable output. Keep each case independent; do not branch on the parameter inside the test. Use `@TestFactory` only for runtime-generated cases.
 
 ## Determinism
 

@@ -50,20 +50,9 @@ This is the single rule other skills refer to by name:
 - **Production (default):** versioned migrations with Flyway or Liquibase, and `hbm2ddl.auto=validate` (or `none`). Add them when the user wants versioned migrations or the app is headed to production.
 - **Externally managed schema:** `none` (or `validate`); do not add a migration tool.
 
-## Review checklist
+## Review focus
 
-- [ ] Every `@ManyToOne`/`@OneToOne` explicitly `LAZY`.
-- [ ] No N+1 in list endpoints (statement count asserted or inspected).
-- [ ] No `FetchType.EAGER` on collections.
-- [ ] Entity ids use a sequence (or UUID) strategy; `allocationSize` consistent with the DB sequence `INCREMENT BY`.
-- [ ] `equals`/`hashCode` stable across transient -> persistent transitions.
-- [ ] Bidirectional associations have `add`/`remove` helpers; `mappedBy` on the inverse side.
-- [ ] Cascade types are the minimum needed; no `CascadeType.ALL` on shared references.
-- [ ] `@Version` on entities updated concurrently.
-- [ ] Enums stored as `STRING` (or a converter), never `ORDINAL`.
-- [ ] Money as `BigDecimal` with explicit `precision`/`scale`; time as `java.time` types (prefer UTC `Instant`/`OffsetDateTime`).
-- [ ] No open-session-in-view reliance (or a conscious decision, see fetching reference).
-- [ ] Batch settings and pool size reviewed for the workload.
+Check statement counts for N+1, explicit `LAZY` on to-one associations, sequence-based ids with matching `allocationSize`, and `equals`/`hashCode` stable across transient to persistent. Version-dependent details (Hibernate 5/6/7): `references/tooling-and-versions.md`.
 
 ## References
 

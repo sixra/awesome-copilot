@@ -14,27 +14,15 @@ Find the root cause of a Java defect with a reproducible, hypothesis-driven loop
 - Do not attach a debugger to production without explicit user instruction. Prefer reproducing locally or use read-only diagnostics (see the `java-diagnostics` skill).
 - `JAVA_TOOL_OPTIONS` is picked up by every JVM started in that environment (build tools, forked test JVMs, child processes), causing `Address already in use` clashes. Prefer scoping the flag to the one process you want to debug.
 
-## Systematic workflow
+## Method
 
-1. **Reproduce**: get a deterministic failing command or test. Record exact versions (`java -version`) and inputs.
-2. **Minimize**: shrink to the smallest failing test or input; remove unrelated config.
-3. **Read the evidence**: stack trace, logs, failing assertion (see [stack traces](references/stack-traces.md)).
-4. **Hypothesize**: write one falsifiable guess ("the cache returns a stale entry after update").
-5. **Test the hypothesis** with the least intrusive tool: a log line or logpoint, then a (conditional) breakpoint, then an exception breakpoint.
-6. **Fix and prove**: add a regression test that fails before and passes after; remove debug flags and temporary logging.
+Reproduce deterministically, minimize, read the evidence ([stack traces](references/stack-traces.md)), test one falsifiable hypothesis with the least intrusive tool (log line or logpoint before breakpoints), then add a regression test and remove debug flags and temporary logging.
 
-Change one thing at a time. If a hypothesis is falsified, discard it rather than patching around it.
+## Version-dependent behavior (verified)
 
-## Breakpoint kinds
-
-| Kind | Use when |
-|------|----------|
-| Line breakpoint | Inspect state at a known point |
-| Conditional breakpoint | Hot loop or one bad item (`order.id == 4711`); keep conditions cheap and side-effect free |
-| Logpoint (tracepoint) | Observe values without pausing or editing code (`Order {order.id} total={total}`) |
-| Exception breakpoint | Stop where an exception is first thrown, even if caught and wrapped |
-| Field watchpoint | Find who mutates a field |
-| Method breakpoint | Entry/exit of an interface method; slow, use sparingly |
+- **Helpful NullPointerException messages** (JEP 358) are off by default in JDK 14 (`-XX:+ShowCodeDetailsInExceptionMessages`) and on by default from JDK 15 (JEP 358 documents the message format). Source: <https://openjdk.org/jeps/358>.
+- JDWP bare `address=5005` binds all interfaces before JDK 9 and loopback from JDK 9 (see below).
+- Gradle `--debug-jvm` passes a bare address, so on JDK 8 it listens on all interfaces.
 
 ## Attach a debugger (JDWP)
 

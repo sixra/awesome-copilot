@@ -80,13 +80,11 @@ A successful build is not enough: many problems only appear at runtime.
 - Compare startup time and memory against the JVM run only if the user asks for it.
 - Report the exact commands run, whether the build and the run succeeded, and any remaining warnings.
 
-## Best practices
+## Pitfalls
 
-- Prefer compile-time generation (AOT, annotation processing) over runtime reflection.
-- Add a native build (and a native test run) to CI with an explicit GraalVM version.
-- Keep dependencies current; older libraries often lack metadata.
-- Treat reflection, resources, proxies, serialization and JNI as the main failure classes.
-- Do not leave debugging flags (`--report-unsupported-elements-at-runtime`, verbose output) in production builds unless justified.
+- Add a native build and native test run to CI with an explicit GraalVM version.
+- Mockito's default inline mock maker does not work on native image (Mockito 5.0.0 release notes); use the subclass mock maker for native tests.
+- Do not leave `--report-unsupported-elements-at-runtime` or verbose flags in production builds unless justified.
 
 ## References
 

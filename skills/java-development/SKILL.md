@@ -45,14 +45,12 @@ Structured concurrency (`StructuredTaskScope`) is still a **preview API** in 25 
 - Check updates with `mvn versions:display-dependency-updates` (add `-Dmaven.version.ignore` to hide alpha/beta/RC) and report them; do not apply major upgrades without asking.
 - Vulnerabilities: use what the project has (Dependabot/Renovate alerts, OWASP dependency-check, OSV-Scanner, GitHub dependency review). Suggest one if none exists; do not add it silently. Keep secrets out of scanner config; NVD-based scanners need an API key to be practical.
 
-## Core code habits
+## Version-dependent failures (verified)
 
-- **Immutability**: `final` fields, records for data carriers, `List.copyOf` in constructors/compact constructors, `List.of`/`Map.of`/`toList()` for read-only results; no setters unless needed.
-- **Null handling**: `Objects.requireNonNull(x, "x")` at API boundaries; return `Optional<T>` only for absent single results (never as a field or parameter; never `Optional<List<..>>`; return empty collections); do not call `Optional.get()` without a check, prefer `orElseThrow`/`map`.
-- **Errors**: throw exceptions that carry the cause (`new XException("msg", e)`); unchecked for programming errors, checked only when callers can recover; never swallow (`catch (Exception e) {}`) or `printStackTrace`; always use try-with-resources for `AutoCloseable`; do not log and rethrow the same exception.
-- **Logging**: depend on `org.slf4j:slf4j-api` in code; exactly one backend (e.g. Logback) at runtime in applications, none in libraries. Use placeholders (`log.info("order {} placed", id)`), never string concatenation; pass the exception as the last argument. Do not log secrets or personal data. Details: `references/quality-and-packaging.md`.
-- **Concurrency**: prefer immutable data and `java.util.concurrent` (`ExecutorService`, `CompletableFuture`, `ConcurrentHashMap`, `AtomicX`) over `synchronized`/`wait`; always close executors; for many blocking tasks on JDK 21+ use `Executors.newVirtualThreadPerTaskExecutor()` (never pool virtual threads; bound concurrency with a `Semaphore`). Name threads, set timeouts, restore the interrupt flag on `InterruptedException`.
-- **Equality/time/money**: records or explicit `equals/hashCode` together; `java.time` only (inject `Clock`); `BigDecimal` for money; `Locale.ROOT`/explicit charset for machine formats.
+- **JDK 23+ no longer runs annotation processors implicitly** (Lombok, MapStruct, Dagger...): `-proc:none` is the default unless `-processor`, `--processor-path` or `--processor-module-path` is given. Declare the processor path in the build (Maven `annotationProcessorPaths`, Gradle `annotationProcessor`) or pass `-proc:full`. JDK 21+ prints a warning when it detects implicit use; `-proc:full` is also backported to 17.0.11, 11.0.23 and 8u411. Source: <https://inside.java/2024/06/18/quality-heads-up/>.
+- **Virtual threads and `synchronized`**: on JDK 21-23 a virtual thread that blocks inside `synchronized` is pinned to its carrier; JEP 491 removes nearly all such pinning in JDK 24+. On 21-23 prefer `ReentrantLock` around blocking calls. Source: <https://openjdk.org/jeps/491>.
+- **Error Prone** on JDK 16+ needs the `--add-exports`/`--add-opens` javac flags, and on JDK 21 `-XDaddTypeAnnotationsToSymbol=true` (see the quality reference).
+- Never use a language feature newer than the project's release (see the table above).
 
 ## Static analysis and formatting (only if already present, or the user agrees)
 
