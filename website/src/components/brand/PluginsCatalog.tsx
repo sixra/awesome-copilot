@@ -20,6 +20,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { externalRepoUrl, type ExternalSource } from "../../lib/external-source";
 import { PageShell } from "./PageShell";
 import { CatalogSortControl, CATALOG_SORT_OPTIONS } from "./CatalogSortControl";
+import {
+  CatalogResourceSizeControl,
+  CATALOG_RESOURCE_SIZE_OPTIONS,
+  DEFAULT_CATALOG_RESOURCE_SIZE,
+  type CatalogResourceSize,
+} from "./CatalogResourceSizeControl";
 import { PluginsIcon } from "./PluginsIcon";
 import { daysSince, toggleValue } from "./catalogFilters";
 import { pageHref } from "./pageHref";
@@ -125,6 +131,9 @@ export function PluginsCatalog({
 }) {
   const { colorMode } = useTheme();
   const [sortMode, setSortMode] = useState<SortMode>("az");
+  const [pageSize, setPageSize] = useState<CatalogResourceSize>(
+    DEFAULT_CATALOG_RESOURCE_SIZE,
+  );
   const [currentPage, setCurrentPage] = useState(1);
   const previousPage = useRef(currentPage);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -191,7 +200,6 @@ export function PluginsCatalog({
     filters.source.length + filters.category.length + filters.size.length;
   const hasActiveFilters = activeFilterCount > 0;
 
-  const pageSize = 6;
   const pageCount = Math.max(1, Math.ceil(sortedPlugins.length / pageSize));
   const page = Math.min(currentPage, pageCount);
   const visiblePlugins = sortedPlugins.slice(
@@ -329,6 +337,17 @@ export function PluginsCatalog({
                 styles={styles}
                 onChange={(value) => {
                   setSortMode(value);
+                  setCurrentPage(1);
+                }}
+              />
+              <div className={styles.toolbarDivider} aria-hidden="true" />
+              <CatalogResourceSizeControl
+                ariaLabel="Plugins per page"
+                value={pageSize}
+                options={CATALOG_RESOURCE_SIZE_OPTIONS}
+                styles={styles}
+                onChange={(value) => {
+                  setPageSize(value);
                   setCurrentPage(1);
                 }}
               />
