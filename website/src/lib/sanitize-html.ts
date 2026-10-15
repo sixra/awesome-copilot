@@ -49,6 +49,12 @@ export function sanitizeHtml(
 ): string {
   if (!html) return html;
   ensureNoopenerHook();
+  const config = {
+    // Keep links that open in a new tab (target/rel) which some resource docs
+    // author directly as raw HTML.
+    ADD_ATTR: ["target", "rel"],
+    ...(urls ? { FORBID_ATTR: ["style"], FORBID_TAGS: ["style"] } : {}),
+  };
   if (urls) {
     DOMPurify.addHook("afterSanitizeAttributes", (node) => {
       if (
@@ -77,11 +83,7 @@ export function sanitizeHtml(
     });
   }
   try {
-    return DOMPurify.sanitize(html, {
-      // Keep links that open in a new tab (target/rel) which some resource docs
-      // author directly as raw HTML.
-      ADD_ATTR: ["target", "rel"],
-    });
+    return DOMPurify.sanitize(html, config);
   } finally {
     if (urls) DOMPurify.removeHook("afterSanitizeAttributes");
   }
