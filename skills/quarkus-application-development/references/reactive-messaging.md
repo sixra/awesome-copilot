@@ -47,7 +47,7 @@ public class Words {
 ```
 
 - Channel names link config (`mp.messaging.{incoming|outgoing}.<channel>.*`) to code. Connector (`kafka`) and serializers are inferred for common types; set `value.serializer`/`value.deserializer` for custom classes, or use the JSON serde Quarkus generates for Jackson-serializable types (not verified here; test it).
-- Annotate `@Incoming` methods that do blocking work (JDBC, Panache) with `@Blocking`; otherwise they run on the event loop.
+- Default thread follows the method signature: a synchronous method such as `void sink(String)` already runs on a worker thread, while async signatures (`Uni`, `CompletionStage`, `Multi`) default to the event loop. `@Transactional` implies blocking. Add `@Blocking` to async-signature methods that do blocking work (JDBC, Panache), and `@NonBlocking` to force the event loop.
 - Acknowledgement: payload methods are auto-acked on return; use `Message<T>` and `msg.ack()`/`nack()` for control. Add a dead-letter/failure strategy (`failure-strategy=dead-letter-queue`) for production.
 - Different channel names mapped to the same `topic` go through Kafka (verified round trip). The same channel name used for `@Outgoing` and `@Incoming` in one app is an in-memory link and never reaches the broker.
 - Verify in tests with `Awaitility` waiting on a collected list (verified); for broker-free tests add the test dependency `io.smallrye.reactive:smallrye-reactive-messaging-in-memory` and switch channels with `InMemoryConnector` (see the Quarkus Kafka/messaging guides; not verified here).

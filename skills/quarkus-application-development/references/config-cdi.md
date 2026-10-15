@@ -11,10 +11,11 @@ Sources by precedence (high to low): system properties, environment variables, `
 ```properties
 greeting.prefix=Hello
 %dev.greeting.prefix=Dev hello
-# Default for dev/test only
-app.api-key=${API_KEY:dev-only-key}
-# Prod: startup fails if API_KEY is missing
-%prod.app.api-key=${API_KEY}
+# Required in every profile (including custom ones such as staging): startup fails if API_KEY is missing
+app.api-key=${API_KEY}
+# Fallback only for dev and test
+%dev.app.api-key=${API_KEY:dev-only-key}
+%test.app.api-key=${API_KEY:dev-only-key}
 ```
 
 Verified: with these settings a `@QuarkusTest` sees `Hello` (the `%dev` value is not applied in test) and `dev-only-key`.
@@ -53,7 +54,7 @@ ArC is a build-time CDI Lite-style implementation, not full CDI: no portable ext
 - **Proxy pitfalls (verified)**: `@ApplicationScoped` beans are called through a subclass proxy; reading a public field of such a bean from outside returns the proxy's own (default) value. Expose state with methods. Avoid `final` on bean classes and methods and private no-arg constructors on normal-scoped beans.
 - **Startup logic**: `@Startup` on a bean, or `void onStart(@Observes StartupEvent e)`. Eager beans must not do slow blocking I/O on the main thread without care.
 - **Interceptors**: define an `@InterceptorBinding` annotation and an `@Interceptor` with `@Priority`; ArC applies them at build time to bean classes only (not to arbitrary objects). ArC supports intercepted self-invocation, so a bean calling its own intercepted method (`@Transactional`, `@Retry`, `@CacheResult`) still triggers the interceptor.
-- **Producers/events**: `@Produces` and `@Observes` work as usual; use `@Observes` with `@Priority`/`@ObservesAsync` for async.
+- **Producers/events**: `@Produces` and `@Observes` work as usual. `@Priority` only orders synchronous `@Observes` methods; it does not make them async. Asynchronous observers use `@ObservesAsync` and are notified only by `Event.fireAsync(...)` (which returns a `CompletionStage`); `Event.fire(...)` notifies only synchronous observers.
 - **Testing**: `@InjectMock` (`quarkus-junit-mockito`; `quarkus-junit5-mockito` on old versions) works for normal-scoped beans. See `quarkus-dev-services-and-testing`.
 - **Debugging**: the Dev UI (`/q/dev-ui`) ArC page lists beans, removed beans and observers.
 
