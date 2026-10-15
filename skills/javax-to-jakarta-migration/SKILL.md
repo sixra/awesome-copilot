@@ -12,7 +12,7 @@ argument-hint: "File, package, or module to migrate"
 
 Detecting `javax.*` imports alone does not authorize this migration; report them instead.
 
-In Spring Boot projects, the Boot BOM manages Jakarta versions: do not pin the versions below, and let the Boot version decide the Jakarta EE level (Boot 4 = Jakarta EE 11, Servlet 6.1). The table below is for EE 10 and non-Boot projects.
+In Spring Boot projects, the Boot BOM manages Jakarta versions: do not pin the versions below, and let the Boot version decide the Jakarta EE level (Boot 4 = Jakarta EE 11, Servlet 6.1). The examples below target Jakarta EE 10 (Servlet 6.0, Tomcat 10.1+) in non-Boot projects.
 
 ## Procedure
 
@@ -45,7 +45,14 @@ javax.websocket.*    → jakarta.websocket.*
 - `javax.swing.*`, `javax.xml.parsers.*` — JDK packages
 
 ### Step 2 — Update pom.xml
-Replace dependency coordinates:
+Replace dependency coordinates. Choose API versions that match the target runtime; the table below is for Jakarta EE 10 (Tomcat 10.1+, Servlet 6.0):
+
+| Target runtime | Jakarta EE | Servlet | Persistence | Validation | Annotations |
+|----------------|-----------|---------|-------------|------------|-------------|
+| Tomcat 10.0 | 9 | 5.0 | 3.0 | 3.0 | 2.0 |
+| Tomcat 10.1 | 10 | 6.0 | 3.1 | 3.0 | 2.1 |
+| Tomcat 11 | 11 | 6.1 | 3.2 | 3.1 | 3.0 |
+
 
 | Old | New |
 |-----|-----|
@@ -55,6 +62,7 @@ Replace dependency coordinates:
 | `javax.annotation:javax.annotation-api` | `jakarta.annotation:jakarta.annotation-api:2.1.1` |
 
 ### Step 3 — Update web.xml (if present)
+The `version` must match the target Servlet level (5.0 for Tomcat 10.0, 6.0 for Tomcat 10.1, 6.1 for Tomcat 11); the example below is for Servlet 6.0:
 ```xml
 <!-- Old namespace -->
 <web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee" version="4.0">
