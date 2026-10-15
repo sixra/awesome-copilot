@@ -99,12 +99,13 @@ export function renderResourceMarkdown(
   const parsed = matter(raw, {
     engines: { js: rejectJavaScript, javascript: rejectJavaScript },
   });
+  const sanitizedHtml = sanitizeHtml(
+    marked.parse(parsed.content, { async: false }) as string,
+    urls,
+  );
+  const accessibleHtml = enhanceMarkdownA11y(stripLeadingH1(sanitizedHtml));
   return {
-    markdownHtml: enhanceMarkdownA11y(
-      stripLeadingH1(
-        sanitizeHtml(marked.parse(parsed.content, { async: false }) as string, urls),
-      ),
-    ),
+    markdownHtml: sanitizeHtml(accessibleHtml, urls),
     frontmatterText: parsed.matter?.trim() ?? "",
     rawMarkdown: raw,
   };

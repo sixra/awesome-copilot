@@ -40,6 +40,15 @@ test("remote README uses the existing sanitizer, including raw HTML", () => {
   assert.match(markdownHtml, /src="https:\/\/raw.githubusercontent.com\/owner\/repo\/v1\/plugins\/example\/image.png"/);
 });
 
+test("sanitizes again after accessibility processing to prevent attribute injection", () => {
+  const { markdownHtml } = renderResourceMarkdown(
+    '<div title="<pre onmouseover=alert(1) data-x=x">Documentation</div>',
+    urls,
+  );
+  assert.match(markdownHtml, /Documentation/);
+  assert.doesNotMatch(markdownHtml, /onmouseover/i);
+});
+
 test("resolves relative Markdown links, reference images, and raw HTML links upstream", () => {
   const { markdownHtml } = renderResourceMarkdown(`[Guide](../../docs/guide.md)
 [Section](#install)
