@@ -94,7 +94,7 @@ When working with JavaDoc comments:
 **Record Enhancement**
 
 JEP 468 (`with` expressions for records) did not ship in JDK 22-25 and is not available, even with `--enable-preview`.
-- Keep using explicit "wither" methods or a copy-constructor style until the feature is delivered
+- Keep using explicit `withX` copy methods (or a copy-constructor style) until the feature is delivered
 - Example pattern:
 ```java
 public record Person(String name, int age, String email) {
@@ -289,7 +289,7 @@ When reviewing code for Java 25 upgrade:
 2. **Native Access**: Applications using JNI directly or indirectly may need `--enable-native-access` configuration
 3. **Unsafe Migration**: Don't delay migrating from sun.misc.Unsafe - deprecation warnings indicate future removal
 4. **Pattern Matching Scope**: Primitive patterns work with all primitive types, not just int
-5. **Record Enhancement**: Derived record creation (`with` expressions) is not available in any JDK 25 mode; use wither methods
+5. **Record Enhancement**: Derived record creation (`with` expressions) is not available in any JDK 25 mode; use explicit `withX` copy methods
 
 ## Performance Considerations
 

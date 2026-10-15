@@ -59,5 +59,5 @@ Fetch the page for the target version; prefer it over this skill when they confl
 - Prefer behavior-preserving refactorings; do not change public APIs unless asked.
 - Detect the project's frameworks (Spring Boot, Quarkus, Jakarta EE) and check their minimum supported Java version before raising the target.
 - Do not adopt preview features unless the user opts in and the build enables them explicitly.
-- For `javax.*` to `jakarta.*` namespace changes, use the `javax-to-jakarta-migration` skill.
+- For `javax.*` to `jakarta.*` namespace changes, use the `javax-to-jakarta-migration` skill if it is installed (`gh skills install github/awesome-copilot javax-to-jakarta-migration`); otherwise do the migration inline: update imports, `META-INF` service files and XML descriptors, and bump dependencies to Jakarta EE 9+ equivalents.
 - If the `modernize-java` plugin is installed and the user wants an automated upgrade, defer to it and use this skill for the per-version guides and the `javax` to `jakarta` safeguards.
