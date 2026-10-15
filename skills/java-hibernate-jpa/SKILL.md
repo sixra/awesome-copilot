@@ -10,7 +10,7 @@ Problem -> anti-pattern -> fix library for entity mapping and querying. Framewor
 ## First: detect the stack
 
 1. Read `pom.xml`/`build.gradle` (or the dependency tree) for `hibernate-core` and the persistence API: `jakarta.persistence` (Hibernate 6+/Jakarta EE 9+) vs `javax.persistence` (Hibernate 5, see `javax-to-jakarta-migration`).
-2. Note the Hibernate major version; behavior differs (see `references/tooling-and-versions.md`). Hibernate 6.x implements Jakarta Persistence 3.1, 7.x implements 3.2, and Hibernate 7 needs Java 17+.
+2. Note the Hibernate major version; behavior differs (see `references/tooling-and-versions.md`). Hibernate 6.0-6.1 implement Jakarta Persistence 3.0, 6.2+ implement 3.1, 7.x implements 3.2, and Hibernate 7 needs Java 17+.
 3. Note the database and whether the schema is managed by Flyway/Liquibase.
 4. Turn on SQL logging and statistics in a test (see `references/tooling-and-versions.md`) before "optimizing" anything: measure statement counts.
 

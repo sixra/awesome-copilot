@@ -86,7 +86,7 @@ Entities referenced after `clear()` are detached; reload or use `getReference`.
 
 ## Bulk operations and StatelessSession
 
-- Updates over many rows: set-based `update Order o set o.status = :s where ...` (bypasses lifecycle callbacks, `@Version` unless `versioned`, cascades, and caches; clear the context afterwards).
+- Updates over many rows: set-based `update Order o set o.status = :s where ...` (bypasses lifecycle callbacks, `@Version` unless `versioned`, and cascades; Hibernate invalidates the affected second-level cache regions itself, but managed entities in the current persistence context become stale, so flush before and clear or refresh afterwards).
 - Pure ETL/import: `StatelessSession` (no persistence context, no dirty checking, no cascade) with `insert`/`update`.
   - Hibernate 6: it bypasses the second-level cache and uses `hibernate.jdbc.batch_size` for JDBC batching.
   - Hibernate 7: it uses the second-level cache by default (disable per session if unwanted), and `hibernate.jdbc.batch_size` has no effect on it; set the batch size with `StatelessSession.setJdbcBatchSize(n)` and prefer the bulk operations `insertMultiple`/`updateMultiple`/`upsertMultiple`/`deleteMultiple`.

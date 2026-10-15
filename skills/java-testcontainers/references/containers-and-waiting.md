@@ -75,8 +75,14 @@ static ComposeContainer env = new ComposeContainer(new File("src/test/resources/
         .withExposedService("api", 8080, Wait.forHttp("/health").forStatusCode(200))
         .withExposedService("db", 5432);
 
-String host = env.getServiceHost("api", 8080);
-Integer port = env.getServicePort("api", 8080);
+env.start(); // endpoints are only available after start
+try {
+    String host = env.getServiceHost("api", 8080);
+    Integer port = env.getServicePort("api", 8080);
+    // run the test against host:port
+} finally {
+    env.stop();
+}
 ```
 
 Do not publish fixed host ports in the compose file used for tests. Prefer individual containers for one or two services (faster, typed); use Compose to reuse a multi-service definition.

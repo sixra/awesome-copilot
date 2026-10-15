@@ -68,7 +68,7 @@ class Country { ... }
 - `shared-cache-mode` `ENABLE_SELECTIVE` (cache only `@Cacheable`) is the safest.
 - Concurrency strategies: `READ_ONLY` (immutable), `NONSTRICT_READ_WRITE` (tolerates staleness), `READ_WRITE`, `TRANSACTIONAL` (JTA).
 - Query cache is rarely a win: any write to a queried table invalidates its results. Avoid by default.
-- Caches are invisible to bulk updates and native SQL writes unless you evict (`em.getEntityManagerFactory().getCache().evict(...)`); other apps writing the same tables make the cache stale.
+- Bulk HQL/JPQL DML executed through Hibernate invalidates the affected second-level and query-cache regions automatically, and native DML run through Hibernate also triggers cache cleanup (possibly all regions when query spaces are unknown). What stays stale is managed entities in the current persistence context: flush before bulk DML, then `clear()` or refresh afterwards. Writes outside Hibernate (other applications, direct JDBC) are not seen; they need a separate invalidation strategy such as `getCache().evict(...)`.
 - Multi-node deployments need a distributed or invalidating provider; local-only caches serve stale data per node.
 - Measure with statistics (`hibernate.generate_statistics`) before and after; if the hit ratio is low, remove it.
 - Cache entities by id (`find`), collections separately (`@Cache` on the collection mapping), and keep cached entities small.

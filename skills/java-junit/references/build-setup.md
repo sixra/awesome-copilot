@@ -122,7 +122,7 @@ Integration tests as a JVM Test Suite (verified; `src/integrationTest/java`):
 testing {
     suites {
         register<JvmTestSuite>("integrationTest") {
-            useJUnitJupiter()
+            useJUnitJupiter("6.0.3") // a custom suite does not inherit the unit tests' BOM; keep the versions equal
             dependencies { implementation(project()) }
             targets.all { testTask.configure { shouldRunAfter(tasks.test) } }
         }

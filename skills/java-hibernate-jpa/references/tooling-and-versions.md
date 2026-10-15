@@ -49,7 +49,7 @@ Use `EXPLAIN (ANALYZE)` on the real database for slow SQL; indexes on foreign ke
 | Topic | Hibernate 5.x | Hibernate 6.x | Hibernate 7.x |
 | --- | --- | --- | --- |
 | Namespace | `javax.persistence` (5.5+ also offers `hibernate-core-jakarta`) | `jakarta.persistence` | `jakarta.persistence` |
-| Jakarta Persistence | 2.2 | 3.0 (6.0-6.2), 3.1 (6.3+) | 3.2 |
+| Jakarta Persistence | 2.2 | 3.0 (6.0-6.1), 3.1 (6.2+) | 3.2 |
 | Java baseline | 8+ | 11+ | 17+ |
 | Query engine | HQL parser (ANTLR 2) | Rewritten (semantic query model, ANTLR 4); stricter HQL; more SQL features | Continues 6 architecture; more HQL features, stricter validation |
 | Fetch-join duplicates | Need `DISTINCT` | Auto de-duplicated | Same as 6 |

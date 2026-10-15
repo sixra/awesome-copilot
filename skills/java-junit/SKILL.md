@@ -20,7 +20,7 @@ Framework-neutral guidance for fast, deterministic unit tests. For Spring slices
 | Java baseline | 8 | **17** (verified in the published Gradle module metadata) |
 | Versioning | Platform 1.x, Jupiter 5.x, Vintage 5.x | One version number for Platform, Jupiter and Vintage |
 | API | `org.junit.jupiter.api.*` | Same packages; the Jupiter tests in this skill compile and pass unchanged on 5.14.4 and 6.0.3 |
-| Removed in 6.0 | | `MethodOrderer.Alphanumeric`, `InvocationInterceptor.interceptDynamicTest(...)`, `junit.jupiter.tempdir.scope`, `@CsvFileSource(lineSeparator)` |
+| Removed in 6.0 | | `MethodOrderer.Alphanumeric`, the deprecated two-argument `InvocationInterceptor.interceptDynamicTest(Invocation, ExtensionContext)` overload (the three-argument one remains), `junit.jupiter.tempdir.scope`, `@CsvFileSource(lineSeparator)` |
 | CSV | univocity-parsers | FastCSV: stricter parsing (no characters after a closing quote); header-field options now apply to headers |
 | Other | | `junit-jupiter-migrationsupport` deprecated; invalid enum-style config values now fail discovery; `@Nested` class order deterministic but non-obvious |
 
