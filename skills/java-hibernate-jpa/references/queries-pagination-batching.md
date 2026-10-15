@@ -5,7 +5,7 @@
 ### Offset pagination
 
 ```java
-List<Order> page = em.createQuery("select o from Order o order by o.createdAt desc, o.id desc", Order.class)
+List<Order> orders = em.createQuery("select o from Order o order by o.createdAt desc, o.id desc", Order.class)
     .setFirstResult(page * size)
     .setMaxResults(size)
     .getResultList();
@@ -27,7 +27,7 @@ Hibernate logs `HHH000104: firstResult/maxResults specified with collection fetc
 Fix (two queries):
 
 ```java
-List<Long> ids = em.createQuery("select o.id from Order o order by o.createdAt desc, o.id desc", Long.class)
+List<Long> ids = em.createQuery("select o.id from Order o where exists (select 1 from o.lines) order by o.createdAt desc, o.id desc", Long.class)
     .setMaxResults(20).getResultList();
 
 List<Order> orders = em.createQuery(
@@ -35,7 +35,7 @@ List<Order> orders = em.createQuery(
     Order.class).setParameter("ids", ids).getResultList();
 ```
 
-Alternatives: fetch only to-one associations in the paged query and rely on `@BatchSize`/`default_batch_fetch_size` for collections; or use a DTO projection. Fetch joins on `@ManyToOne` are safe with pagination.
+The `exists` filter matches the inner `join fetch`, which drops orders without lines; use `left join fetch` and drop the filter to keep them. Alternatives: fetch only to-one associations in the paged query and rely on `@BatchSize`/`default_batch_fetch_size` for collections; or use a DTO projection. Fetch joins on `@ManyToOne` are safe with pagination.
 
 ### Keyset (seek) pagination
 

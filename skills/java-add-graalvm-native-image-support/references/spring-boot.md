@@ -5,7 +5,7 @@ Spring Boot 3.x and later supports GraalVM native images through Spring AOT. Che
 ## How it works
 
 - The Spring Boot Maven plugin / Gradle plugin run **AOT processing** at build time, generating bean definitions and runtime hints.
-- `spring-boot-starter-parent` defines a `native` profile that applies the Native Build Tools plugin, so you normally add nothing to the POM.
+- `spring-boot-starter-parent` defines a `native` profile that configures `native-maven-plugin` and `spring-boot-maven-plugin` (the `process-aot` execution) only in `pluginManagement`, so versions and configuration are inherited but the plugins are not applied. Projects created with start.spring.io already declare both in `<build><plugins>`; for an existing project lacking `org.graalvm.buildtools:native-maven-plugin`, declare it and `spring-boot-maven-plugin` without versions or configuration. Verified in the `spring-boot-starter-parent` 3.5.0 POM.
 - With Gradle, applying the `org.graalvm.buildtools.native` plugin next to `org.springframework.boot` activates AOT tasks (`processAot`, `processTestAot`).
 - Without the Spring parent (custom parent / BOM import), add the Native Build Tools plugin yourself, following `build-tools.md`, and declare `process-aot` for the Spring Boot plugin.
 

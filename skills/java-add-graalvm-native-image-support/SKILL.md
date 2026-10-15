@@ -41,7 +41,7 @@ If the framework is Quarkus, stop here and hand off to the `quarkus-native-and-c
 
 Per framework:
 
-- **Spring Boot**: with Maven, `spring-boot-starter-parent` already defines the `native` profile; with Gradle, apply `org.graalvm.buildtools.native` next to `org.springframework.boot`; a custom parent needs the plugin added by hand. Do not duplicate configuration the parent already provides. See [references/spring-boot.md](references/spring-boot.md).
+- **Spring Boot**: with Maven, `spring-boot-starter-parent` only manages the native plugins' versions and configuration in its `native` profile, so declare `native-maven-plugin` and `spring-boot-maven-plugin` in `<build><plugins>` if missing (no versions needed); with Gradle, apply `org.graalvm.buildtools.native` next to `org.springframework.boot`; a custom parent needs the plugin added by hand. Do not duplicate configuration the parent already provides. See [references/spring-boot.md](references/spring-boot.md).
 - **Quarkus**: hand off to the `quarkus-native-and-container` skill.
 - **Micronaut**: built in via the Micronaut build plugins. See [references/micronaut.md](references/micronaut.md).
 - **Plain Java** (or any project without a framework plugin): add the GraalVM Native Build Tools plugin. See [references/build-tools.md](references/build-tools.md). Resolve the plugin version at run time from Maven Central (`org.graalvm.buildtools:native-maven-plugin`) or the Gradle Plugin Portal (`org.graalvm.buildtools.native`) and pin it in the build file; do not copy a version from memory.

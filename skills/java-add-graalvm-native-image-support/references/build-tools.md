@@ -1,6 +1,6 @@
 # Build tool setup (Maven and Gradle)
 
-Use the GraalVM Native Build Tools plugin for plain Java projects. Quarkus and Micronaut projects get native support (or an equivalent) from their own plugins; do not add it again there. Spring Boot with Maven and `spring-boot-starter-parent` also gets it through the `native` profile, but Spring Boot with Gradle, or Maven with a custom parent, needs the plugin applied explicitly (see `spring-boot.md`).
+Use the GraalVM Native Build Tools plugin for plain Java projects. Quarkus and Micronaut projects get native support (or an equivalent) from their own plugins; do not add it again there. Spring Boot with Maven and `spring-boot-starter-parent` inherits its version and configuration through the parent's `native` profile (`pluginManagement`), but you must still declare `native-maven-plugin` and `spring-boot-maven-plugin` in `<build><plugins>` if absent (no version needed); Spring Boot with Spring Boot with Gradle, or Maven with a custom parent, needs the plugin applied explicitly (see `spring-boot.md`).
 
 ## Versions
 
