@@ -7,8 +7,8 @@ Extension: `quarkus-oidc` (bearer token for services, authorization code flow fo
 With `quarkus-oidc` and no `quarkus.oidc.auth-server-url`, dev/test mode starts Keycloak and imports a `quarkus` realm with users `alice` (admin, user) and `bob` (user), client `quarkus-app`. First start is slow (about 50 s with image pull). Customize roles:
 
 ```properties
-quarkus.oidc.devservices.roles.alice=admin,user
-quarkus.oidc.devservices.roles.bob=user
+quarkus.keycloak.devservices.roles.alice=admin,user
+quarkus.keycloak.devservices.roles.bob=user
 ```
 
 Dev UI (`/q/dev-ui`, OpenID Connect card) can log in and obtain tokens. For production set `%prod.quarkus.oidc.auth-server-url=${OIDC_URL}`, `%prod.quarkus.oidc.client-id`, and `credentials.secret` from env/secret store; never in git.
@@ -35,12 +35,10 @@ public class SecuredResource {
 
 Verified results: no token gives 401; a token for `alice` gets 200 on `/secure/admin`; `bob` gets 403 there and 200 on `/secure/me`.
 
-- Secure by default: add `quarkus.security.jaxrs.deny-unannotated-endpoints=true` so every endpoint needs an explicit annotation (`@PermitAll`, `@Authenticated`, `@RolesAllowed`). Not verified here.
-- Path-based: `quarkus.http.auth.permission.protected.paths=/api/*` + `quarkus.http.auth.permission.protected.policy=authenticated`.
+- Secure by default: `quarkus.security.jaxrs.deny-unannotated-endpoints=true` (not verified here).
 - Fine-grained checks: `@PermissionsAllowed("read")` with a `SecurityIdentity` permission checker, or `@PermissionChecker` methods (`quarkus-security`); or inject `SecurityIdentity` and check `identity.hasRole(...)`. Not verified here.
 - JWT claims: inject `org.eclipse.microprofile.jwt.JsonWebToken` (with `quarkus-oidc`, `@Inject JsonWebToken jwt; jwt.getClaim("email")`). Role claim location defaults to Keycloak's `realm_access`; override with `quarkus.oidc.roles.role-claim-path`.
 - Calling downstream services with the user's token: `quarkus-rest-client-oidc-token-propagation`; with the service's own identity: `quarkus-rest-client-oidc-filter`. Not verified here.
-- Enable HTTPS and avoid disabling TLS verification (`quarkus.oidc.tls.verification=none`) outside dev.
 
 ## Testing
 

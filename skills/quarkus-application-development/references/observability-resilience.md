@@ -22,7 +22,7 @@ Prometheus scrape at `/q/metrics`. Inject `MeterRegistry` for custom meters (`re
 
 ## OpenTelemetry (`quarkus-opentelemetry`)
 
-Traces (and, in recent versions, metrics/logs) are enabled with the extension; HTTP, REST Client, JDBC (with `quarkus.datasource.jdbc.telemetry=true`) and messaging are instrumented. Point it at a collector with `quarkus.otel.exporter.otlp.endpoint=http://collector:4317` (verified only that without a collector the app logs "Failed to export ... Connection refused" to `localhost:4317` but works). Add custom spans with `@WithSpan` or inject `Tracer`. In dev mode, Quarkus Dev Services for observability (Grafana LGTM, `quarkus-observability-devservices-lgtm`) can supply a backend; not verified here. Do not set both Micrometer and OTel metrics export without a reason.
+Only traces are on by default. Metrics and logs are tech preview and disabled at build time: set `quarkus.otel.metrics.enabled=true` and `quarkus.otel.logs.enabled=true` to export them (checked against the Quarkus OpenTelemetry guide). HTTP, REST Client, JDBC (with `quarkus.datasource.jdbc.telemetry=true`) and messaging are instrumented. Point it at a collector with `quarkus.otel.exporter.otlp.endpoint=http://collector:4317` (verified only that without a collector the app logs "Failed to export ... Connection refused" to `localhost:4317` but works). Add custom spans with `@WithSpan` or inject `Tracer`. In dev mode, Quarkus Dev Services for observability (Grafana LGTM, `quarkus-observability-devservices-lgtm`) can supply a backend; not verified here. Do not set both Micrometer and OTel metrics export without a reason.
 
 ## Fault tolerance (`quarkus-smallrye-fault-tolerance`)
 

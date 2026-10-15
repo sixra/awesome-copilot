@@ -6,7 +6,7 @@ Add `quarkus-oidc`. In dev/test, Dev Services starts a Keycloak container when `
 
 ```properties
 %prod.quarkus.oidc.auth-server-url=${OIDC_URL}
-quarkus.oidc.client-id=${OIDC_CLIENT_ID}
+%prod.quarkus.oidc.client-id=${OIDC_CLIENT_ID}
 quarkus.oidc.application-type=service
 ```
 
@@ -26,11 +26,3 @@ Or path rules:
 quarkus.http.auth.permission.secured.paths=/api/*
 quarkus.http.auth.permission.secured.policy=authenticated
 ```
-
-## Hardening checklist
-
-- Secure by default; explicitly `@PermitAll` public endpoints.
-- Enable HTTPS in production (usually TLS terminated at the ingress); set `quarkus.http.cors.*` narrowly.
-- Keep secrets out of `application.properties`.
-- Expose `/q/health` and metrics only internally; restrict Dev UI (`/q/dev-ui` is dev mode only).
-- In tests, use `@TestSecurity(user = "alice", roles = "admin")` (`quarkus-test-security`).

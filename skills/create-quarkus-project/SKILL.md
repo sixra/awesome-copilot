@@ -66,11 +66,6 @@ src/test/java/...          # @QuarkusTest / @QuarkusIntegrationTest
 
 Generated tests include a `*IT` class that Maven skips by default (`<skipITs>true</skipITs>` in the template); run it with `./mvnw verify -DskipITs=false` or `-Dnative`. Dev mode gives live reload, Dev UI at http://localhost:8080/q/dev-ui, Dev Services (auto containers), and continuous testing (press `r`). Package: `./mvnw package` (runnable `target/quarkus-app/quarkus-run.jar`).
 
-## Conventions for generated code
-
-- Constructor injection, `@ApplicationScoped` beans, records for DTOs, `@ConfigMapping` for grouped config.
-- Keep the wrapper (`mvnw`/`gradlew`) committed; keep versions in the BOM.
-
 ## References
 
 - [Configuration](references/configuration.md)

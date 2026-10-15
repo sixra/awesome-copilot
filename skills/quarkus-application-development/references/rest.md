@@ -35,10 +35,6 @@ public class GreetingResource {
 
 - Invalid bodies return 400 automatically with a violation report; no extra code needed. Test: `given().contentType("application/json").body("{\"name\":\"\"}").post("/greetings")` returns 400.
 - `@ServerExceptionMapper` methods live in the resource class (local) or in any CDI bean (global). A classic `ExceptionMapper<T>` provider with `@Provider` also works; prefer the annotation form.
-- Return `RestResponse<T>` (typed) rather than `Response` when you need status/headers; return the plain type for 200.
-- Keep entities out of the API surface: map to records.
-- Keep a single global mapper for unexpected `RuntimeException` that logs and returns a generic body; never leak stack traces.
-- Path/query params: `@PathParam`, `@RestQuery`, `@RestHeader` (Quarkus REST shortcuts that need no name when it matches the parameter name).
 
 ## OpenAPI
 

@@ -18,18 +18,10 @@ Quarkus REST picks the execution thread from the method signature (verified on 3
 
 **Virtual threads**: `@RunOnVirtualThread` needs Java 21+. Beware of pinning (`synchronized` blocks around blocking calls) and thread-local reliance; use for blocking I/O heavy endpoints, not CPU work.
 
-## Mutiny basics
+## Mutiny gotchas
 
-```java
-@GET @Path("/uni")
-public Uni<String> uni() { return Uni.createFrom().item(() -> "x"); }
-```
-
-- `Uni<T>`: 0..1 item (async result); `Multi<T>`: stream with back-pressure.
-- Transform with `onItem().transform(...)`/`map`, chain async with `onItem().transformToUni(...)`, recover with `onFailure().recoverWithItem(...)`, timeouts with `ifNoItem().after(...)`.
-- Nothing runs until subscribed; returning a `Uni` from a resource subscribes it.
-- Avoid `await().indefinitely()` outside tests or `@Blocking` code.
-- `Uni.createFrom().item(supplier)` executes the supplier on the subscribing thread (event loop for REST), so keep the supplier non-blocking (verified: ran on the event loop).
+- Nothing runs until subscribed; returning a `Uni` from a resource subscribes it. Avoid `await().indefinitely()` outside tests or `@Blocking` code.
+- `Uni.createFrom().item(supplier)` runs the supplier on the subscribing thread (the event loop for REST), so keep it non-blocking (verified).
 
 ## SmallRye Reactive Messaging with Kafka
 
