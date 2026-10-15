@@ -93,7 +93,12 @@ export function renderResourceMarkdown(
   raw: string,
   urls?: { linkBaseUrl: string; imageBaseUrl: string },
 ): { markdownHtml: string; frontmatterText: string; rawMarkdown: string } {
-  const parsed = matter(raw);
+  const rejectJavaScript = () => {
+    throw new Error("JavaScript frontmatter is not supported");
+  };
+  const parsed = matter(raw, {
+    engines: { js: rejectJavaScript, javascript: rejectJavaScript },
+  });
   return {
     markdownHtml: enhanceMarkdownA11y(
       stripLeadingH1(

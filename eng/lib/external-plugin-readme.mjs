@@ -13,25 +13,26 @@ export async function fetchExternalPluginReadme(
   const { repo, path: pluginPath = "", sha, ref } = source;
   const revision = sha || ref || "HEAD";
   const folder = pluginPath === "/" ? "" : pluginPath;
-  if (
-    typeof repo !== "string" ||
-    !/^[A-Za-z0-9_-][A-Za-z0-9._-]*\/[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(repo) ||
-    typeof revision !== "string" ||
-    !/^(?!\/)(?!.*\.\.)(?!.*\/\/)(?!.*\/$)[A-Za-z0-9._/+-]+$/.test(revision) ||
-    revision.split("/").includes(".") ||
-    typeof folder !== "string" ||
-    folder.includes("//") ||
-    folder.endsWith("/") ||
-    folder.split("/").some((part) => part === "." || part === "..") ||
-    /[\\?#]/.test(folder) ||
-    folder.startsWith("/")
-  ) {
-    throw new Error("Invalid GitHub source for external plugin README");
-  }
-
-  const locator = encodeURIComponent(revision);
-  const roots = folder ? [folder, ""] : [""];
   try {
+    if (
+      typeof repo !== "string" ||
+      !/^[A-Za-z0-9_-][A-Za-z0-9._-]*\/[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(repo) ||
+      typeof revision !== "string" ||
+      !revision.trim() ||
+      revision.split("/").some((part) => part === "." || part === "..") ||
+      /[\x00-\x1f\x7f]/.test(revision) ||
+      typeof folder !== "string" ||
+      folder.includes("//") ||
+      folder.endsWith("/") ||
+      folder.split("/").some((part) => part === "." || part === "..") ||
+      /[\\?#]/.test(folder) ||
+      folder.startsWith("/")
+    ) {
+      throw new Error("Invalid GitHub source for external plugin README");
+    }
+
+    const locator = encodeURIComponent(revision);
+    const roots = folder ? [folder, ""] : [""];
     for (const root of roots) {
       for (const name of README_NAMES) {
         const file = [...(root ? root.split("/") : []), name]

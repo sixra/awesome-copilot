@@ -56,7 +56,15 @@ export function sanitizeHtml(
       const value = node.getAttribute(attribute);
       if (!value || value.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(value)) return;
       const base = attribute === "href" ? urls.linkBaseUrl : urls.imageBaseUrl;
-      const resolved = new URL(value, base);
+      let resolved: URL;
+      if (value.startsWith("/") && !value.startsWith("//")) {
+        const root = new URL(base);
+        // GitHub blob URLs include /blob/; raw-content URLs do not.
+        root.pathname = root.pathname.split("/").slice(0, attribute === "href" ? 5 : 4).join("/") + "/";
+        resolved = new URL(value.slice(1), root);
+      } else {
+        resolved = new URL(value, base);
+      }
       if (resolved.protocol === "https:" || resolved.protocol === "http:") {
         node.setAttribute(attribute, resolved.href);
       }

@@ -49,11 +49,62 @@ test("resolves relative Markdown links, reference images, and raw HTML links ups
 
 <a href="./LICENSE">License</a>
 <img src="/assets/logo.png">
+[Root guide](/docs/guide.md)
+[External](//example.com/docs)
+![External image](//example.com/image.png)
 `, urls);
   assert.match(markdownHtml, /href="https:\/\/github.com\/owner\/repo\/blob\/v1\/docs\/guide.md"/);
   assert.match(markdownHtml, /href="#install"/);
   assert.match(markdownHtml, /src="https:\/\/raw.githubusercontent.com\/owner\/repo\/v1\/plugins\/example\/assets\/preview.png"/);
   assert.match(markdownHtml, /href="https:\/\/github.com\/owner\/repo\/blob\/v1\/plugins\/example\/LICENSE"/);
+  assert.match(markdownHtml, /src="https:\/\/raw.githubusercontent.com\/owner\/repo\/v1\/assets\/logo.png"/);
+  assert.match(markdownHtml, /href="https:\/\/github.com\/owner\/repo\/blob\/v1\/docs\/guide.md"/);
+  assert.match(markdownHtml, /href="https:\/\/example.com\/docs"/);
+  assert.match(markdownHtml, /src="https:\/\/example.com\/image.png"/);
+});
+
+test("rejects both JavaScript frontmatter language names without executing code", () => {
+  for (const language of ["js", "javascript"]) {
+    const sentinel = `readmeFrontmatterExecuted_${language}`;
+    assert.equal(globalThis[sentinel], undefined);
+    assert.throws(() => renderResourceMarkdown(
+      `---${language}\n(globalThis.${sentinel} = true, {})\n---\n## Body`,
+      urls,
+    ), /JavaScript frontmatter is not supported/);
+    assert.equal(globalThis[sentinel], undefined);
+  }
+});
+
+test("keeps YAML and JSON frontmatter supported", () => {
+  for (const frontmatter of ["\ntitle: Plugin", 'json\n{"title":"Plugin"}']) {
+    const result = renderResourceMarkdown(`---${frontmatter}\n---\n## Body`, urls);
+    assert.match(result.markdownHtml, /Body/);
+    assert.doesNotMatch(result.markdownHtml, /title/);
+  }
+});
+
+test("root-relative URLs preserve an encoded tag and repository revision", () => {
+  const { markdownHtml } = renderResourceMarkdown("[Guide](/docs/guide.md)\n![Logo](/logo.png)", {
+    linkBaseUrl: urls.linkBaseUrl.replace("/v1/", "/refs%2Ftags%2Fradius%400.2.1/"),
+    imageBaseUrl: urls.imageBaseUrl.replace("/v1/", "/refs%2Ftags%2Fradius%400.2.1/"),
+  });
+  assert.match(markdownHtml, /href="https:\/\/github.com\/owner\/repo\/blob\/refs%2Ftags%2Fradius%400\.2\.1\/docs\/guide.md"/);
+  assert.match(markdownHtml, /src="https:\/\/raw.githubusercontent.com\/owner\/repo\/refs%2Ftags%2Fradius%400\.2\.1\/logo.png"/);
+});
+
+test("catalog records omit README bodies while detail data retains them", async () => {
+  const { plugins } = await server.ssrLoadModule("/src/lib/site-data.ts");
+  const data = JSON.parse(fs.readFileSync(path.join(website, "public", "data", "plugins.json"), "utf8"));
+  assert.ok(data.items.some((item) => item.readme?.markdown));
+  assert.equal(plugins.length, data.items.length);
+  assert.ok(plugins.every((item) => !Object.hasOwn(item, "readme")));
+});
+
+test("generated catalog does not send README bodies to the browser", () => {
+  const html = fs.readFileSync(path.join(website, "dist", "plugins", "index.html"), "utf8");
+  const island = html.match(/<astro-island\b[^>]*component-export="PluginsCatalog"[^>]*>/)?.[0];
+  assert.ok(island, "plugin catalog must be hydrated");
+  assert.doesNotMatch(island, /&quot;readme&quot;:/);
 });
 
 test("relative URL rewriting does not leak into local rendering", () => {

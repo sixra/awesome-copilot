@@ -287,8 +287,11 @@ revision use the repository's default branch (`HEAD`).
 The build tries `README.md`, `readme.md`, and `Readme.md` in the plugin directory,
 then the repository root. Keep that README current upstream; pinned listings show
 documentation for the listed revision, so updating the listing refreshes its docs.
-Relative links and images resolve against the upstream README. Remote Markdown
-uses the same HTML sanitizer as local documentation and is never executed.
+Relative links and images resolve against the upstream README; paths beginning
+with a single `/` resolve from the repository root at the same revision.
+Remote Markdown uses the same HTML sanitizer as local documentation. JavaScript
+frontmatter is rejected before it can execute, and README bodies are excluded
+from the catalog page's client-side data.
 
 Downloads are limited to GitHub's raw-content host, six plugins at a time, with
 a ten-second timeout per request and a 512 KiB limit per README. Missing READMEs

@@ -45,6 +45,14 @@ test("encodes refs and path segments", async () => {
   assert.equal(f.calls[0], "https://raw.githubusercontent.com/owner/repo/refs%2Ftags%2Fv1%2Bdocs/plugin%20docs/README.md");
 });
 
+test("accepts ref-only package-style tags used by the catalog", async () => {
+  const f = fixture([new Response("# Radius")]);
+  const result = await fetchExternalPluginReadme({ ...source, ref: "radius@0.2.1" }, f.options);
+  assert.equal(result.markdown, "# Radius");
+  assert.match(f.calls[0], /\/radius%400\.2\.1\/plugins\/example\/README\.md$/);
+  assert.deepEqual(f.warnings, []);
+});
+
 test("tries common Markdown filename casing before the repository root", async () => {
   const f = fixture([undefined, new Response("# Lowercase")]);
   assert.equal((await fetchExternalPluginReadme(source, f.options)).markdown, "# Lowercase");
@@ -87,9 +95,11 @@ test("does not fetch non-GitHub sources or malformed GitHub paths", async () => 
   const f = fixture([]);
   assert.equal(await fetchExternalPluginReadme({ source: "git" }, f.options), null);
   for (const overrides of [{ repo: "../bad" }, { repo: "host/repo/extra" }, { path: "../outside" }, { path: "/outside" }, { path: "a\\b" }, { path: null }, { path: "a//b" }, { ref: "../main" }, { ref: "." }]) {
-    await assert.rejects(fetchExternalPluginReadme({ ...source, ...overrides }, f.options), /Invalid GitHub source/);
+    assert.equal(await fetchExternalPluginReadme({ ...source, ...overrides }, f.options), null);
   }
   assert.deepEqual(f.calls, []);
+  assert.equal(f.warnings.length, 9);
+  assert.ok(f.warnings.every((message) => message.includes("Invalid GitHub source")));
 });
 
 test("loads only external plugins with bounded concurrency", async (t) => {
