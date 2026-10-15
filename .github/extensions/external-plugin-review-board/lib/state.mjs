@@ -27,7 +27,7 @@ export function reviewBlockedReason(labels = []) {
     if (labels.includes("requires-submitter-fixes")) {
         return "Submitter fixes required. Check the intake feedback on the issue; AI review and approval are unavailable until intake marks it ready-for-review.";
     }
-    if (labels.includes("awaiting-review")) {
+    if (labels.some((label) => PENDING_INTAKE_LABELS.includes(label))) {
         return "Automated intake is pending. AI review and approval are unavailable until intake marks it ready-for-review.";
     }
     if (!labels.includes("ready-for-review")) {
