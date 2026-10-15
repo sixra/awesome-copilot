@@ -51,7 +51,7 @@ public class BookService {
 
 - Put `@Transactional` on service (or resource) methods that write; ArC also intercepts self-calls, so a call to an annotated method on the same bean starts the transaction.
 - Programmatic: `QuarkusTransaction.requiringNew().call(() -> ...)` (`io.quarkus.narayana.jta`), used in the verified tests to read back committed data.
-- Reads outside a transaction work (read-only session per call); lazy associations must be fetched inside the transaction or via fetch joins/projections.
+- Reads outside a transaction work only inside an active CDI request context (e.g. an HTTP request) with `quarkus.hibernate-orm.request-scoped.enabled` left at its default `true`; in background tasks, scheduled jobs or messaging consumers wrap the read in a transaction (`@Transactional` or `QuarkusTransaction`); lazy associations must be fetched inside the transaction or via fetch joins/projections.
 - Tests: `@TestTransaction` rolls back (see `quarkus-dev-services-and-testing`).
 - Do not use `open-in-view`-style patterns; map to DTO records before returning from a resource.
 
@@ -61,7 +61,7 @@ public class BookService {
 
 ## Reactive (Hibernate Reactive) tradeoff
 
-`quarkus-hibernate-reactive-panache` with `Uni`-based APIs and Vert.x SQL clients (`quarkus-reactive-pg-client`) fits fully reactive stacks, but: separate extension set from ORM (do not mix both for the same datasource), more limited feature set, harder debugging, no `@Transactional` blocking style (use `@WithTransaction`/`@WithSession`), and Java 21+ virtual threads give most of the scalability benefit with the simpler blocking ORM. Default to blocking ORM + `@RunOnVirtualThread` where concurrency matters; pick Hibernate Reactive only when the whole call chain is non-blocking. Not verified in this skill's build.
+`quarkus-hibernate-reactive-panache` with `Uni`-based APIs and Vert.x SQL clients (`quarkus-reactive-pg-client`) fits fully reactive stacks, but: separate extension set from ORM (both can coexist, including on the default datasource with JDBC and reactive URLs, but they have separate persistence contexts, so keep each method on one stack), more limited feature set, harder debugging, no `@Transactional` blocking style (use `@WithTransaction`/`@WithSession`), and Java 21+ virtual threads give most of the scalability benefit with the simpler blocking ORM. Default to blocking ORM + `@RunOnVirtualThread` where concurrency matters; pick Hibernate Reactive only when the whole call chain is non-blocking. Not verified in this skill's build.
 
 ## REST Data Panache
 

@@ -9,7 +9,7 @@ description: 'Quarkus development standards and instructions'
 ## Dependencies and build
 
 - Add features through Quarkus extensions (`./mvnw quarkus:add-extension -Dextensions=...` or `quarkus extension add`), versions managed by the platform BOM.
-- Use Quarkus REST (`quarkus-rest`, `quarkus-rest-jackson`) for new code, not the legacy RESTEasy Classic (`quarkus-resteasy*`).
+- Use Quarkus REST (`quarkus-rest`, `quarkus-rest-jackson`) for new projects and explicit migrations. In an existing RESTEasy Classic (`quarkus-resteasy*`) project keep that stack: the two are incompatible and mixing them fails the build.
 - Use `./mvnw quarkus:dev` (or `./gradlew quarkusDev`) for development; keep the Maven/Gradle wrapper.
 
 ## CDI and code

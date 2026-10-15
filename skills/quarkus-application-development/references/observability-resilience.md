@@ -53,7 +53,7 @@ Inject with `@RestClient EchoClient echo;` (`org.eclipse.microprofile.rest.clien
 
 ## Scheduler (`quarkus-scheduler`)
 
-`@Scheduled(every = "1s")` or `@Scheduled(cron = "{app.cron}")` on a bean method (verified: ticks incremented). Use `concurrentExecution = SKIP` to avoid overlaps. The scheduler is per instance; in a cluster use the `quarkus-quartz` extension with a JDBC store, or a distributed lock, to run a job once. Scheduled methods run on a worker thread unless `@NonBlocking`/returns `Uni`; use `@RunOnVirtualThread` for blocking IO.
+`@Scheduled(every = "1s")` or `@Scheduled(cron = "{app.cron}")` on a bean method (verified: ticks incremented). Use `concurrentExecution = SKIP` to avoid overlaps. The scheduler is per instance; in a cluster use the `quarkus-quartz` extension with a shared JDBC store and `quarkus.quartz.clustered=true` (it defaults to `false`, so a JDBC store alone leaves schedulers uncoordinated), or a distributed lock, to run a job once. Scheduled methods run on a worker thread unless `@NonBlocking`/returns `Uni`; use `@RunOnVirtualThread` for blocking IO.
 
 ## Cache (`quarkus-cache`)
 

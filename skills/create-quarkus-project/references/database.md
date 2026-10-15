@@ -53,4 +53,6 @@ For production use Flyway (`quarkus-flyway`) or Liquibase (`quarkus-liquibase`):
 quarkus.flyway.migrate-at-start=true
 ```
 
+With PostgreSQL, Flyway also needs the database-specific module `org.flywaydb:flyway-database-postgresql` (managed by the Quarkus BOM) next to `quarkus-flyway`; without it startup fails because Flyway cannot handle PostgreSQL.
+
 Place scripts in `src/main/resources/db/migration` (`V1__init.sql`). Flyway also gets a Dev Services-provided datasource automatically.
