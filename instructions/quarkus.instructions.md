@@ -24,7 +24,7 @@ description: 'Quarkus development standards and instructions'
 
 - Return explicit status codes and map errors centrally rather than try/catch in each resource. In Quarkus REST projects use `RestResponse`/`Response`, `@ResponseStatus` and `@ServerExceptionMapper`; in RESTEasy Classic projects these are unavailable, so use Jakarta REST `Response` and an `ExceptionMapper` annotated `@Provider`.
 - Validate input with Hibernate Validator (`quarkus-hibernate-validator`, `@Valid`).
-- Add `quarkus-smallrye-health` and metrics (`quarkus-micrometer`) for production services; expose them only to trusted networks.
+- Add `quarkus-smallrye-health` and metrics (`quarkus-micrometer-registry-prometheus`, or another Micrometer registry extension; `quarkus-micrometer` alone exports nothing) for production services; expose them only to trusted networks.
 
 ## Data
 

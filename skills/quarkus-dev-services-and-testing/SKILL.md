@@ -15,7 +15,7 @@ In dev and test modes Quarkus starts containers (PostgreSQL, MySQL, Kafka, Redis
 # Global switch
 quarkus.devservices.enabled=true
 %dev.quarkus.datasource.devservices.image-name=postgres:17
-# Reuse container across restarts
+# Reuse container across restarts (also requires testcontainers.reuse.enable=true in ~/.testcontainers.properties)
 quarkus.datasource.devservices.reuse=true
 # Fixed port (optional)
 quarkus.datasource.devservices.port=5432
