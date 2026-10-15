@@ -49,9 +49,9 @@ jdtls itself needs a recent JDK (**21 or newer** for current releases) on `JAVA_
 | Linux   | `brew install jdtls` (Homebrew on Linux), a distro package if available, or download a release from https://download.eclipse.org/jdtls/milestones/, extract it, and put its `bin/` on `PATH` |
 | Windows | Download from https://download.eclipse.org/jdtls/milestones/, extract, and add `bin\` to `PATH` (or use WSL with the Linux steps) |
 
-Windows note: the `bin/jdtls` wrapper is a Python 3.9+ script with no `.exe`/`.cmd` extension, so Windows cannot launch `jdtls` from `PATH` directly. Either use WSL, or configure the LSP `command` as `python` with `bin\jdtls.py` (full path) as the first argument followed by the other args, or launch the server JAR directly as described in the jdtls README.
+Windows note: the `bin/jdtls` wrapper is a Python 3.9+ script with no `.exe`/`.cmd` extension, so Windows cannot launch `jdtls` from `PATH` directly. Either use WSL, or configure the LSP `command` as `python` with the full path to the extensionless `bin\jdtls` launcher as the first argument followed by the other args (`jdtls.py` next to it is only the implementation module; running it directly does nothing), or launch the server JAR directly as described in the jdtls README.
 
-The wrapper script (`jdtls`, or `jdtls.py` on manual installs, which requires Python 3) speaks stdio by default, so no `--stdio` argument is needed.
+The wrapper script (the `jdtls` launcher, which requires Python 3 and imports `jdtls.py`) speaks stdio by default, so no `--stdio` argument is needed.
 
 ### Config snippet
 

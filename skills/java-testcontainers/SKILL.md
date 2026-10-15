@@ -20,7 +20,7 @@ Run real dependencies (databases, brokers, caches) in Docker for integration tes
 - Module container classes moved to per-module packages, e.g. `org.testcontainers.postgresql.PostgreSQLContainer` (1.x: `org.testcontainers.containers.PostgreSQLContainer`). Core classes (`GenericContainer`, `Network`, `wait.strategy.*`) remain under `org.testcontainers.containers`.
 - Module container classes are no longer generic: `PostgreSQLContainer`, not `PostgreSQLContainer<?>`.
 - Use a BOM to keep versions aligned: `org.testcontainers:testcontainers-bom:2.0.5` (verify the current release on Maven Central).
-- Docker Compose: use `ComposeContainer` (Compose v2); the old `DockerComposeContainer` is gone.
+- Docker Compose: use `ComposeContainer` (Compose v2); `DockerComposeContainer` is still present in 2.0.5 (older API); prefer `ComposeContainer`.
 
 ```xml
 <dependencyManagement>

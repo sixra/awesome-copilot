@@ -46,8 +46,8 @@ Problem -> anti-pattern -> fix library for entity mapping and querying. Framewor
 
 This is the single rule other skills refer to by name:
 
-- **Prototype/local:** `hbm2ddl.auto=update` (or `create-drop` for throwaway tests) is acceptable.
-- **Production (default):** versioned migrations with Flyway or Liquibase, and `hbm2ddl.auto=validate` (or `none`). Add them when the user wants versioned migrations or the app is headed to production.
+- **Prototype/local:** `hibernate.hbm2ddl.auto=update` (or `create-drop` for throwaway tests) is acceptable.
+- **Production (default):** versioned migrations with Flyway or Liquibase, and `hibernate.hbm2ddl.auto=validate` (or `none`). Add them when the user wants versioned migrations or the app is headed to production.
 - **Externally managed schema:** `none` (or `validate`); do not add a migration tool.
 
 ## Review focus

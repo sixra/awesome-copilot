@@ -15,15 +15,15 @@
 | Out of memory during build | native build needs several GB | raise container/CI memory; `-J-Xmx<size>` as a build arg; close other processes |
 | Build very slow | normal for full optimization | `-O b` for dev only; use CI caching; build only in a profile |
 | Binary behaves differently from JVM | build-time initialization, missing metadata, no dynamic class loading | native tests; tracing agent over the full test suite |
-| Large binary | many dependencies | review dependencies; `-Os`; check `--emit build-report` |
+| Large binary | many dependencies | review dependencies; `-Os`; on Oracle GraalVM check `--emit build-report` (not available in Community Edition) |
 | Dynamic class loading, `Class.forName` on unknown names, agents, `MethodHandles` tricks | not supported in native images | refactor to static registration |
 
 ## Diagnosis workflow
 
 1. Run the build with `-H:+ReportExceptionStackTraces` for the full error.
-2. Add `--emit build-report` to see what pulled classes in.
+2. On Oracle GraalVM, add `--emit build-report` to see what pulled classes in (Build Report is not available in GraalVM Community Edition; use the standard build output there).
 3. For runtime errors, run the same scenario with the tracing agent on the JVM and diff the output against your metadata.
-4. Use the GraalVM Dashboard / build report to find which dependency causes the size or initialization problem.
+4. On Oracle GraalVM, use the build report to find which dependency causes the size or initialization problem.
 
 ## Cautions
 
