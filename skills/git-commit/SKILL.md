@@ -24,7 +24,7 @@ Make Git commits that follow the [Conventional Commits 1.0.0](https://www.conven
 - Write the summary in the imperative mood: "add", not "added" or "adds".
 - Keep the first line at 72 characters or less. Do not put a period at the end.
 - In the body, tell what changed and why.
-- Write each footer as `Token: value`, for example `Refs: #456` or `Closes: #123`. In a token, use `-` in place of a space.
+- Write each footer as `Token: value` or `Token #value`, for example `Refs: #456` or `Closes #123`. Conventional Commits accepts the two forms, but Git reads only `Token: value` as a trailer. In a token, use `-` in place of a space.
 
 ## Types
 
