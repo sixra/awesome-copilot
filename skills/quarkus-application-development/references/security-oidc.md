@@ -37,7 +37,7 @@ Verified results: no token gives 401; a token for `alice` gets 200 on `/secure/a
 
 - Secure by default: `quarkus.security.jaxrs.deny-unannotated-endpoints=true` (not verified here).
 - Fine-grained checks: `@PermissionsAllowed("read")` with a `SecurityIdentity` permission checker, or `@PermissionChecker` methods (`quarkus-security`); or inject `SecurityIdentity` and check `identity.hasRole(...)`. Not verified here.
-- JWT claims: inject `org.eclipse.microprofile.jwt.JsonWebToken` (with `quarkus-oidc`, `@Inject JsonWebToken jwt; jwt.getClaim("email")`). Role claim location defaults to Keycloak's `realm_access`; override with `quarkus.oidc.roles.role-claim-path`.
+- JWT claims: inject `org.eclipse.microprofile.jwt.JsonWebToken` (with `quarkus-oidc`, `@Inject JsonWebToken jwt; jwt.getClaim("email")`). Default role lookup: a `groups` claim wins if present; otherwise Keycloak's `realm_access/roles`, and `resource_access/<quarkus.oidc.client-id>/roles` when a client id is configured (a token with non-empty `groups` uses those even if realm roles exist). Override with `quarkus.oidc.roles.role-claim-path`.
 - Calling downstream services with the user's token: `quarkus-rest-client-oidc-token-propagation`; with the service's own identity: `quarkus-rest-client-oidc-filter`. Not verified here.
 
 ## Testing
