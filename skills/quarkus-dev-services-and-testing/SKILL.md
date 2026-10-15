@@ -12,11 +12,15 @@ Check the project's Quarkus version first. Framework-neutral Testcontainers usag
 In dev and test modes Quarkus starts containers (PostgreSQL, MySQL, Kafka, Redis, Keycloak, ...) automatically when the related extension is present and no connection is configured (Docker or Podman required).
 
 ```properties
-quarkus.devservices.enabled=true                      # global switch
+# Global switch
+quarkus.devservices.enabled=true
 %dev.quarkus.datasource.devservices.image-name=postgres:17
-quarkus.datasource.devservices.reuse=true             # reuse container across restarts
-quarkus.datasource.devservices.port=5432              # fixed port (optional)
-quarkus.kafka.devservices.shared=true                 # share between apps in dev mode
+# Reuse container across restarts
+quarkus.datasource.devservices.reuse=true
+# Fixed port (optional)
+quarkus.datasource.devservices.port=5432
+# Share between apps in dev mode
+quarkus.kafka.devservices.shared=true
 ```
 
 Disable one with `quarkus.<ext>.devservices.enabled=false`; configuring a URL/host explicitly also disables it. Dev UI (`/q/dev-ui`) lists running services.

@@ -11,8 +11,10 @@ Sources by precedence (high to low): system properties, environment variables, `
 ```properties
 greeting.prefix=Hello
 %dev.greeting.prefix=Dev hello
-app.api-key=${API_KEY:dev-only-key}      # default for dev/test only
-%prod.app.api-key=${API_KEY}             # prod: startup fails if API_KEY is missing
+# Default for dev/test only
+app.api-key=${API_KEY:dev-only-key}
+# Prod: startup fails if API_KEY is missing
+%prod.app.api-key=${API_KEY}
 ```
 
 Verified: with these settings a `@QuarkusTest` sees `Hello` (the `%dev` value is not applied in test) and `dev-only-key`.

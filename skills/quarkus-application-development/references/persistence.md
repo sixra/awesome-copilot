@@ -6,11 +6,14 @@ Core JPA mapping, associations, N+1 and query design: use the `java-hibernate-jp
 
 ```properties
 # No URL/credentials in %dev/%test: PostgreSQL Dev Service starts automatically (Docker/Podman)
-quarkus.hibernate-orm.schema-management.strategy=drop-and-create   # dev/test only
+# Safe default for every profile (including custom ones such as staging); use Flyway/Liquibase for real schemas
+quarkus.hibernate-orm.schema-management.strategy=none
+# Recreate the schema only in dev and test
+%dev.quarkus.hibernate-orm.schema-management.strategy=drop-and-create
+%test.quarkus.hibernate-orm.schema-management.strategy=drop-and-create
 %prod.quarkus.datasource.jdbc.url=${DB_URL}
 %prod.quarkus.datasource.username=${DB_USER}
 %prod.quarkus.datasource.password=${DB_PASSWORD}
-%prod.quarkus.hibernate-orm.schema-management.strategy=none        # use Flyway/Liquibase
 ```
 
 `schema-management.strategy` verified on 3.40.1 and 3.27.6 (older docs use `quarkus.hibernate-orm.database.generation`; keep the project's form). Persistence units are configured in `application.properties`, not `persistence.xml`. Entities need no registration if they are in the application module.
