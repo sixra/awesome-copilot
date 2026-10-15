@@ -2,7 +2,7 @@
 
 ## Configuration
 
-Sources by precedence (high to low): system properties, environment variables, `.env` file (dev), `config/application.properties` next to the app, `application.properties` in the jar, MicroProfile defaults. Env var mapping: uppercase, non-alphanumerics become `_` (`greeting.max-length` -> `GREETING_MAX_LENGTH`).
+Sources by precedence (high to low): system properties, environment variables, `.env` file in the working directory (loaded for packaged apps too, so do not ship it to production; put dev-only values under `%dev.`/`%test.` keys), `config/application.properties` next to the app, `application.properties` in the jar, MicroProfile defaults. Env var mapping: uppercase, non-alphanumerics become `_` (`greeting.max-length` -> `GREETING_MAX_LENGTH`).
 
 ### Profiles
 

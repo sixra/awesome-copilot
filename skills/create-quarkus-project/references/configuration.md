@@ -29,4 +29,4 @@ Inject it via the constructor. Use `@ConfigProperty(name = "app.name")` only for
 
 ## Secrets
 
-Never commit secrets. Use `${DB_PASSWORD}` expressions, env vars, Kubernetes secrets, or a vault extension. Keep a `.env` file (git-ignored) for local overrides.
+Never commit secrets. Use `${DB_PASSWORD}` expressions, env vars, Kubernetes secrets, or a vault extension. Keep a `.env` file (git-ignored) for local overrides; Quarkus also loads it from the working directory of a packaged app, so never deploy it.
