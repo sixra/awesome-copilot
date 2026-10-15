@@ -72,11 +72,11 @@ Dockerfiles for manual builds live in `src/main/docker` (`Dockerfile.jvm`, `Dock
 ## Kubernetes / OpenShift
 
 ```bash
-quarkus extension add kubernetes     # or openshift
+quarkus extension add kubernetes     # or: quarkus extension add openshift
 ./mvnw package
 ```
 
-Manifests are generated in `target/kubernetes/kubernetes.yml` (and `.json`). Customize via properties:
+Manifests are generated in `target/kubernetes/kubernetes.yml` (and `.json`) for the `kubernetes` extension, and in `target/kubernetes/openshift.yml` for `openshift`. Customize via properties; the prefix follows the target (`quarkus.kubernetes.*` for Kubernetes, `quarkus.openshift.*` for OpenShift):
 
 ```properties
 quarkus.kubernetes.replicas=2
@@ -85,6 +85,6 @@ quarkus.kubernetes.env.secrets=app-secrets
 quarkus.kubernetes.resources.requests.memory=128Mi
 ```
 
-The generated Deployment has no probes by default; with `quarkus-smallrye-health` installed it includes liveness, readiness and startup probes (`/q/health/live`, `/q/health/ready`, `/q/health/started`), and it sets `envFrom.secretRef` for `env.secrets` (verified on 3.40.1). Deploy with `quarkus.kubernetes.deploy=true` or `kubectl apply -f target/kubernetes/kubernetes.yml`. Review generated YAML before applying; keep secrets out of it.
+The generated Deployment has no probes by default; with `quarkus-smallrye-health` installed it includes liveness, readiness and startup probes (`/q/health/live`, `/q/health/ready`, `/q/health/started`), and it sets `envFrom.secretRef` for `env.secrets` (verified on 3.40.1). Deploy with `quarkus.kubernetes.deploy=true` or `kubectl apply -f target/kubernetes/kubernetes.yml`. On OpenShift use the same properties under `quarkus.openshift.*`, expose the service with a Route via `quarkus.openshift.route.expose=true` (Kubernetes uses `quarkus.kubernetes.ingress.expose=true` instead), and apply with `oc apply -f target/kubernetes/openshift.yml` (or `quarkus.openshift.deploy=true`). Review generated YAML before applying; keep secrets out of it.
 
 See also: native executables <https://quarkus.io/guides/building-native-image>; upgrades via `quarkus update` (<https://quarkus.io/guides/update-quarkus>); GraalVM release notes <https://www.graalvm.org/release-notes/>.
