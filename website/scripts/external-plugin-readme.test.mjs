@@ -19,8 +19,7 @@ after(async () => {
   process.chdir(originalCwd);
 });
 const { renderResourceMarkdown, readResourceMarkdown } = await server.ssrLoadModule("/src/lib/detail-page.ts");
-const { buildDetailToc } = await server.ssrLoadModule("/src/lib/detail-toc.ts");
-const { sanitizeHtml } = await server.ssrLoadModule("/src/lib/sanitize-html.ts");
+const { finalizePluginReadme } = await server.ssrLoadModule("/src/lib/plugin-readme.ts");
 const urls = {
   linkBaseUrl: "https://github.com/owner/repo/blob/v1/plugins/example/README.md",
   imageBaseUrl: "https://raw.githubusercontent.com/owner/repo/v1/plugins/example/README.md",
@@ -60,10 +59,20 @@ test("sanitizes the final HTML after table-of-contents processing", () => {
     '<div title="<h2 onmouseover=alert(1) data-x=x>Heading</h2>">Documentation</div>\n\n<style>body{background:red}</style>\n<div style="position:fixed">Overlay</div>',
     urls,
   );
-  const { html } = buildDetailToc(markdownHtml);
-  const finalHtml = sanitizeHtml(html, urls);
+  const finalHtml = finalizePluginReadme(markdownHtml, urls);
   assert.match(finalHtml, /Documentation/);
   assert.doesNotMatch(finalHtml, /onmouseover|<style\b|style=/i);
+});
+
+test("final URL rewriting failures leave README empty for the source fallback", () => {
+  const warnings = [];
+  const markdownHtml = renderResourceMarkdown(
+    `<div title="<h2>Heading</h2><a href='//['>Link</a>">Documentation</div>`,
+    urls,
+  ).markdownHtml;
+  const finalHtml = finalizePluginReadme(markdownHtml, urls, (error) => warnings.push(error));
+  assert.equal(finalHtml, "");
+  assert.equal(warnings.length, 1);
 });
 
 test("resolves relative Markdown links, reference images, and raw HTML links upstream", () => {
@@ -144,10 +153,7 @@ test("relative URL rewriting does not leak into local rendering", () => {
     renderResourceMarkdown('<img src="./image.png" srcset="./image-2x.png 2x">').markdownHtml,
     /srcset="\.\/image-2x\.png 2x"/,
   );
-  assert.match(
-    sanitizeHtml('<div style="color:red"><style>body { color: red; }</style>Local</div>'),
-    /style="color:red"|<style>/,
-  );
+  assert.match(finalizePluginReadme('<div style="color:red"><style>body { color: red; }</style>Local</div>'), /style="color:red"|<style>/);
   assert.match(renderResourceMarkdown("---\ntitle: Plugin\n---\n## Body", urls).markdownHtml, /Body/);
   assert.throws(() => renderResourceMarkdown("---\ntitle: [\n---\n# Broken", urls));
 });

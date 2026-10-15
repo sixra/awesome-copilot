@@ -1,11 +1,10 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { PluginDetail } from "../../components/brand/PluginDetail";
-import { buildDetailToc } from "../../components/brand/DetailChassis";
 import pluginsData from "../../../public/data/plugins.json";
 import { searchIndex } from "../../lib/site-data";
 import { formatLastUpdated, readResourceMarkdown, renderResourceMarkdown } from "../../lib/detail-page";
-import { sanitizeHtml } from "../../lib/sanitize-html";
+import { finalizePluginReadme } from "../../lib/plugin-readme";
 import { externalRepoUrl, type ExternalSource } from "../../lib/external-source";
 
 const GITHUB_TREE = "https://github.com/github/awesome-copilot/tree/main";
@@ -75,10 +74,13 @@ if (item.external && item.readme) {
 
 // Send only rendered, sanitized HTML to the client, not the remote Markdown.
 const { readme, ...detailItem } = item;
-const { html: tocHtml } = buildDetailToc(markdownHtml);
-const html = sanitizeHtml(tocHtml, item.external && item.readme
-  ? { linkBaseUrl: item.readme.sourceUrl, imageBaseUrl: item.readme.rawUrl }
-  : undefined);
+const html = finalizePluginReadme(
+  markdownHtml,
+  item.external && item.readme
+    ? { linkBaseUrl: item.readme.sourceUrl, imageBaseUrl: item.readme.rawUrl }
+    : undefined,
+  (error) => console.warn(`[plugin/${item.id}] Could not finalize README:`, error),
+);
 
 const githubUrl = item.external
   ? externalRepoUrl(item.source, [item.repository, item.homepage, GITHUB_TREE])
