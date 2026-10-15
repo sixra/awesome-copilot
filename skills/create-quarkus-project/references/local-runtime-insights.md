@@ -11,5 +11,5 @@ Rules for the agent:
 To install its agent skill (after consent):
 
 ```bash
-gh skill install jdubois/boot-ui skills/bootui
+gh skill install jdubois/boot-ui bootui
 ```

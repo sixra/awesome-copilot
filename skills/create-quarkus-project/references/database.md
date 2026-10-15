@@ -53,6 +53,8 @@ For production use Flyway (`quarkus-flyway`) or Liquibase (`quarkus-liquibase`):
 quarkus.flyway.migrate-at-start=true
 ```
 
+When adopting Flyway or Liquibase, remove every Hibernate schema-recreation override (such as the `%dev` `drop-and-create` above) and set `quarkus.hibernate-orm.schema-management.strategy=none` (or `validate`) so the migration tool alone manages the schema; otherwise Hibernate can drop and recreate the migrated tables.
+
 With PostgreSQL, Flyway also needs the database-specific module `org.flywaydb:flyway-database-postgresql` (managed by the Quarkus BOM) next to `quarkus-flyway`; without it startup fails because Flyway cannot handle PostgreSQL.
 
 Place scripts in `src/main/resources/db/migration` (`V1__init.sql`). Flyway also gets a Dev Services-provided datasource automatically.
