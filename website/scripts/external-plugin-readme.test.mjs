@@ -19,6 +19,8 @@ after(async () => {
   process.chdir(originalCwd);
 });
 const { renderResourceMarkdown, readResourceMarkdown } = await server.ssrLoadModule("/src/lib/detail-page.ts");
+const { buildDetailToc } = await server.ssrLoadModule("/src/lib/detail-toc.ts");
+const { sanitizeHtml } = await server.ssrLoadModule("/src/lib/sanitize-html.ts");
 const urls = {
   linkBaseUrl: "https://github.com/owner/repo/blob/v1/plugins/example/README.md",
   imageBaseUrl: "https://raw.githubusercontent.com/owner/repo/v1/plugins/example/README.md",
@@ -33,11 +35,13 @@ test("remote README uses the existing sanitizer, including raw HTML", () => {
 <img src="image.png" onerror="readmeAttack()">
 <a href="javascript:readmeAttack()">Unsafe</a>
 <a href="https://example.com/docs" target="_blank">Safe</a>
+<picture><source srcset="./dark.png 1x"><img src="./image.png" srcset="./image-2x.png 2x"></picture>
 `, urls);
   assert.match(markdownHtml, /Documentation/);
   assert.doesNotMatch(markdownHtml, /<h1\b|<script\b|onerror|javascript:|readmeAttack/);
   assert.match(markdownHtml, /rel="noopener noreferrer"/);
   assert.match(markdownHtml, /src="https:\/\/raw.githubusercontent.com\/owner\/repo\/v1\/plugins\/example\/image.png"/);
+  assert.doesNotMatch(markdownHtml, /srcset=/);
 });
 
 test("sanitizes again after accessibility processing to prevent attribute injection", () => {
@@ -47,6 +51,17 @@ test("sanitizes again after accessibility processing to prevent attribute inject
   );
   assert.match(markdownHtml, /Documentation/);
   assert.doesNotMatch(markdownHtml, /onmouseover/i);
+});
+
+test("sanitizes the final HTML after table-of-contents processing", () => {
+  const { markdownHtml } = renderResourceMarkdown(
+    '<div title="<h2 onmouseover=alert(1) data-x=x>Heading</h2>">Documentation</div>',
+    urls,
+  );
+  const { html } = buildDetailToc(markdownHtml);
+  const finalHtml = sanitizeHtml(html);
+  assert.match(finalHtml, /Documentation/);
+  assert.doesNotMatch(finalHtml, /onmouseover/i);
 });
 
 test("resolves relative Markdown links, reference images, and raw HTML links upstream", () => {
@@ -123,6 +138,10 @@ test("relative URL rewriting does not leak into local rendering", () => {
     linkBaseUrl: "invalid URL",
   }));
   assert.match(renderResourceMarkdown("[Local](./guide.md)").markdownHtml, /href="\.\/guide.md"/);
+  assert.match(
+    renderResourceMarkdown('<img src="./image.png" srcset="./image-2x.png 2x">').markdownHtml,
+    /srcset="\.\/image-2x\.png 2x"/,
+  );
   assert.match(renderResourceMarkdown("---\ntitle: Plugin\n---\n## Body", urls).markdownHtml, /Body/);
   assert.throws(() => renderResourceMarkdown("---\ntitle: [\n---\n# Broken", urls));
 });

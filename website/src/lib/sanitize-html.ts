@@ -51,6 +51,12 @@ export function sanitizeHtml(
   ensureNoopenerHook();
   if (urls) {
     DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+      if (
+        (node.nodeName === "IMG" || node.nodeName === "SOURCE") &&
+        node.hasAttribute("srcset")
+      ) {
+        node.removeAttribute("srcset");
+      }
       const attribute = node.nodeName === "A" ? "href" : node.nodeName === "IMG" ? "src" : null;
       if (!attribute) return;
       const value = node.getAttribute(attribute);

@@ -5,6 +5,7 @@ import { buildDetailToc } from "../../components/brand/DetailChassis";
 import pluginsData from "../../../public/data/plugins.json";
 import { searchIndex } from "../../lib/site-data";
 import { formatLastUpdated, readResourceMarkdown, renderResourceMarkdown } from "../../lib/detail-page";
+import { sanitizeHtml } from "../../lib/sanitize-html";
 import { externalRepoUrl, type ExternalSource } from "../../lib/external-source";
 
 const GITHUB_TREE = "https://github.com/github/awesome-copilot/tree/main";
@@ -74,7 +75,8 @@ if (item.external && item.readme) {
 
 // Send only rendered, sanitized HTML to the client, not the remote Markdown.
 const { readme, ...detailItem } = item;
-const { html } = buildDetailToc(markdownHtml);
+const { html: tocHtml } = buildDetailToc(markdownHtml);
+const html = sanitizeHtml(tocHtml);
 
 const githubUrl = item.external
   ? externalRepoUrl(item.source, [item.repository, item.homepage, GITHUB_TREE])
