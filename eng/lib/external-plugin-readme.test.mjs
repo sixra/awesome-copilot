@@ -1,113 +1,114 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { test } from "node:test";
-import { externalPluginReadme } from "./external-plugin-readme.mjs";
+import { fetchExternalPluginReadme, loadExternalPluginReadmes } from "./external-plugin-readme.mjs";
 
-function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "external-readme-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const folder = path.join(root, "docs", "external-plugins", "example-plugin");
-  fs.mkdirSync(folder, { recursive: true });
-  return { root, folder, readme: path.join(folder, "README.md") };
+const source = { source: "github", repo: "owner/repo", path: "plugins/example", ref: "v1.0.0" };
+
+function fixture(responses) {
+  const calls = [];
+  const warnings = [];
+  return {
+    calls,
+    warnings,
+    options: {
+      warn: (message) => warnings.push(message),
+      fetchImpl: async (url, options) => {
+        calls.push(url);
+        assert.equal(options.redirect, "error");
+        assert.ok(options.signal);
+        const response = responses.shift();
+        if (response instanceof Error) throw response;
+        return response ?? new Response("", { status: 404 });
+      },
+    },
+  };
 }
 
-test("associates a reviewed README without altering the source listing", (t) => {
-  const { root, readme } = fixture(t);
-  fs.writeFileSync(readme, "# Example\n\nReviewed documentation.");
-  assert.equal(externalPluginReadme(root, "example-plugin"),
-    "docs/external-plugins/example-plugin/README.md");
+test("infers the plugin README and prefers the listing SHA to its ref", async () => {
+  const f = fixture([new Response("# Plugin")]);
+  const result = await fetchExternalPluginReadme({ ...source, sha: "a".repeat(40) }, f.options);
+  assert.equal(result.markdown, "# Plugin");
+  assert.equal(result.rawUrl, `https://raw.githubusercontent.com/owner/repo/${"a".repeat(40)}/plugins/example/README.md`);
+  assert.equal(result.sourceUrl, `https://github.com/owner/repo/blob/${"a".repeat(40)}/plugins/example/README.md`);
+  assert.deepEqual(f.warnings, []);
 });
 
-test("missing documentation retains the fallback, including missing parent folders", (t) => {
-  const { root } = fixture(t);
-  assert.equal(externalPluginReadme(root, "example-plugin"), null);
-  assert.equal(externalPluginReadme(root, "another-plugin"), null);
-  assert.equal(externalPluginReadme(path.join(root, "missing"), "example-plugin"), null);
+test("uses a root path and HEAD for an unpinned listing", async () => {
+  const f = fixture([new Response("# Root")]);
+  await fetchExternalPluginReadme({ source: "github", repo: "owner/repo", path: "/" }, f.options);
+  assert.deepEqual(f.calls, ["https://raw.githubusercontent.com/owner/repo/HEAD/README.md"]);
 });
 
-test("does not discover a built-in plugin README as external documentation", (t) => {
-  const { root } = fixture(t);
-  const local = path.join(root, "plugins", "example-plugin");
-  fs.mkdirSync(local, { recursive: true });
-  fs.writeFileSync(path.join(local, "README.md"), "# Built-in");
-  assert.equal(externalPluginReadme(root, "example-plugin"), null);
+test("encodes refs and path segments", async () => {
+  const f = fixture([new Response("# Plugin")]);
+  await fetchExternalPluginReadme({ ...source, path: "plugin docs", ref: "refs/tags/v1+docs" }, f.options);
+  assert.equal(f.calls[0], "https://raw.githubusercontent.com/owner/repo/refs%2Ftags%2Fv1%2Bdocs/plugin%20docs/README.md");
 });
 
-test("rejects names that could escape or ambiguously map into the documentation folder", (t) => {
-  const { root } = fixture(t);
-  for (const name of ["../example", "..", "/example", "a\\b", "a/b", "", "UPPER", "a..b", "a--b", "a".repeat(65), null]) {
-    assert.throws(() => externalPluginReadme(root, name), /Invalid external plugin name/);
+test("tries common Markdown filename casing before the repository root", async () => {
+  const f = fixture([undefined, new Response("# Lowercase")]);
+  assert.equal((await fetchExternalPluginReadme(source, f.options)).markdown, "# Lowercase");
+  assert.match(f.calls[1], /plugins\/example\/readme\.md$/);
+  const root = fixture([undefined, undefined, undefined, new Response("# Root")]);
+  await fetchExternalPluginReadme(source, root.options);
+  assert.match(root.calls[3], /v1\.0\.0\/README\.md$/);
+});
+
+test("logs missing READMEs and retains a null fallback without changing revision", async () => {
+  const f = fixture([]);
+  assert.equal(await fetchExternalPluginReadme(source, f.options), null);
+  assert.equal(f.calls.length, 6);
+  assert.ok(f.calls.every((url) => url.includes("/v1.0.0/")));
+  assert.match(f.warnings[0], /No Markdown README found/);
+});
+
+test("logs HTTP, timeout, and network failures without trying another revision", async () => {
+  for (const response of [new Response("", { status: 403 }), new Response("", { status: 500 }), new Error("Timed out"), new Error("Network unavailable")]) {
+    const f = fixture([response]);
+    assert.equal(await fetchExternalPluginReadme(source, f.options), null);
+    assert.equal(f.calls.length, 1);
+    assert.match(f.warnings[0], /Could not load/);
   }
 });
 
-test("supports permitted dots and single-character plugin names", (t) => {
-  const { root } = fixture(t);
-  for (const name of ["a", "a.b"]) {
-    const folder = path.join(root, "docs", "external-plugins", name);
-    fs.mkdirSync(folder);
-    fs.writeFileSync(path.join(folder, "README.md"), "# Documentation");
-    assert.equal(externalPluginReadme(root, name), `docs/external-plugins/${name}/README.md`);
+test("limits declared and streamed response sizes and rejects empty files", async () => {
+  for (const response of [
+    new Response("large", { headers: { "content-length": String(512 * 1024 + 1) } }),
+    new Response("x".repeat(512 * 1024 + 1)),
+    new Response(" \n"),
+  ]) {
+    const f = fixture([response]);
+    assert.equal(await fetchExternalPluginReadme(source, f.options), null);
+    assert.equal(f.warnings.length, 1);
   }
 });
 
-test("rejects directories masquerading as a README", (t) => {
-  const { root, readme } = fixture(t);
-  fs.mkdirSync(readme);
-  assert.throws(() => externalPluginReadme(root, "example-plugin"), /regular file/);
-});
-
-test("rejects empty bodies and invalid YAML frontmatter", (t) => {
-  const { root, readme } = fixture(t);
-  for (const content of [" \n", "---\ntitle: Example\n---\n", "---\ntitle: [\n---\n# Example"]) {
-    fs.writeFileSync(readme, content);
-    assert.throws(() => externalPluginReadme(root, "example-plugin"));
+test("does not fetch non-GitHub sources or malformed GitHub paths", async () => {
+  const f = fixture([]);
+  assert.equal(await fetchExternalPluginReadme({ source: "git" }, f.options), null);
+  for (const overrides of [{ repo: "../bad" }, { repo: "host/repo/extra" }, { path: "../outside" }, { path: "/outside" }, { path: "a\\b" }, { path: null }, { path: "a//b" }, { ref: "../main" }, { ref: "." }]) {
+    await assert.rejects(fetchExternalPluginReadme({ ...source, ...overrides }, f.options), /Invalid GitHub source/);
   }
-  fs.writeFileSync(readme, "---\ntitle: Example\n---\n# Example");
-  assert.ok(externalPluginReadme(root, "example-plugin"));
+  assert.deepEqual(f.calls, []);
 });
 
-test("rejects symlinked documentation directories, even when the target exists", (t) => {
-  const { root, folder } = fixture(t);
-  const target = path.join(root, "outside");
-  fs.mkdirSync(target);
-  fs.writeFileSync(path.join(target, "README.md"), "# Outside");
-  fs.rmdirSync(folder);
-  fs.symlinkSync(target, folder, "junction");
-  assert.throws(() => externalPluginReadme(root, "example-plugin"), /regular file/);
-});
-
-test("rejects broken symlinked documentation directories", (t) => {
-  const { root, folder } = fixture(t);
-  fs.rmdirSync(folder);
-  fs.symlinkSync(path.join(root, "missing-target"), folder, "junction");
-  assert.throws(() => externalPluginReadme(root, "example-plugin"), /regular file/);
-});
-
-test("reports unreadable files instead of treating them as missing", (t) => {
-  const { root, readme } = fixture(t);
-  fs.writeFileSync(readme, "# Example");
-  t.mock.method(fs, "readFileSync", () => {
-    throw Object.assign(new Error("Access denied"), { code: "EACCES" });
+test("loads only external plugins with bounded concurrency", async (t) => {
+  let active = 0;
+  let maximum = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    active++;
+    maximum = Math.max(maximum, active);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    active--;
+    return new Response("# Remote");
   });
-  assert.throws(() => externalPluginReadme(root, "example-plugin"), /Access denied/);
-});
-
-test("rejects symlinked README files without following the target", (t) => {
-  const { root, readme } = fixture(t);
-  const originalStat = fs.lstatSync;
-  t.mock.method(fs, "lstatSync", (file, ...args) => {
-    if (file === readme) return { isSymbolicLink: () => true };
-    return originalStat(file, ...args);
-  });
-  assert.throws(() => externalPluginReadme(root, "example-plugin"), /regular file/);
-});
-
-test("reports directory access errors instead of treating them as missing", (t) => {
-  const { root } = fixture(t);
-  t.mock.method(fs, "lstatSync", () => {
-    throw Object.assign(new Error("Directory access denied"), { code: "EACCES" });
-  });
-  assert.throws(() => externalPluginReadme(root, "example-plugin"), /Directory access denied/);
+  const plugins = [
+    { id: "built-in", readmeFile: "plugins/built-in/README.md" },
+    ...Array.from({ length: 14 }, () => ({ external: true, source })),
+  ];
+  await loadExternalPluginReadmes(plugins);
+  assert.equal(plugins[0].readme, undefined);
+  assert.equal(plugins[0].readmeFile, "plugins/built-in/README.md");
+  assert.ok(plugins.slice(1).every((plugin) => plugin.readme.markdown === "# Remote"));
+  assert.equal(maximum, 6);
 });

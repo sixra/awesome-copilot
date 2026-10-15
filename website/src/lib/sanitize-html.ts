@@ -3,8 +3,8 @@
  *
  * `marked` allows raw HTML to pass through untouched, and the resulting string
  * is injected via `set:html` / `innerHTML` on the resource detail pages and in
- * the client-side file browser. Even though the markdown we render originates
- * from this repository, a compromised or malicious resource file could
+ * the client-side file browser. Markdown may come from this repository or an
+ * external plugin's repository, so a compromised or malicious file could
  * otherwise introduce persistent XSS. Sanitizing the generated HTML gives us
  * defense-in-depth on both the server (build time) and the client.
  *
@@ -43,12 +43,32 @@ function ensureNoopenerHook(): void {
  * stripping scripts, event handlers, and dangerous URL schemes while keeping
  * the formatting tags GitHub-flavored markdown commonly emits.
  */
-export function sanitizeHtml(html: string): string {
+export function sanitizeHtml(
+  html: string,
+  urls?: { linkBaseUrl: string; imageBaseUrl: string },
+): string {
   if (!html) return html;
   ensureNoopenerHook();
-  return DOMPurify.sanitize(html, {
-    // Keep links that open in a new tab (target/rel) which some resource docs
-    // author directly as raw HTML.
-    ADD_ATTR: ["target", "rel"],
-  });
+  if (urls) {
+    DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+      const attribute = node.nodeName === "A" ? "href" : node.nodeName === "IMG" ? "src" : null;
+      if (!attribute) return;
+      const value = node.getAttribute(attribute);
+      if (!value || value.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(value)) return;
+      const base = attribute === "href" ? urls.linkBaseUrl : urls.imageBaseUrl;
+      const resolved = new URL(value, base);
+      if (resolved.protocol === "https:" || resolved.protocol === "http:") {
+        node.setAttribute(attribute, resolved.href);
+      }
+    });
+  }
+  try {
+    return DOMPurify.sanitize(html, {
+      // Keep links that open in a new tab (target/rel) which some resource docs
+      // author directly as raw HTML.
+      ADD_ATTR: ["target", "rel"],
+    });
+  } finally {
+    if (urls) DOMPurify.removeHook("afterSanitizeAttributes");
+  }
 }

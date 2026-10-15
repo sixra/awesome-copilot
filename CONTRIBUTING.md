@@ -276,29 +276,29 @@ When a pull request updates `plugins/external.json` (for example, version update
    - `requires-submitter-fixes` when quality checks fail due to plugin issues
    - `awaiting-review` when checks cannot complete because of infrastructure/transient errors
 
-##### Optional website README
+##### Website README
 
-An external plugin can display a README on its Awesome Copilot detail page.
-Include `docs/external-plugins/<plugin-name>/README.md` in the plugin's contribution
-PR, where `<plugin-name>` exactly matches its name in `plugins/external.json`.
-For an already listed plugin, this can be part of its update PR. New listings
-must still go through the external plugin issue review workflow above.
+External plugin detail pages load their README from GitHub during website data
+generation. No documentation copy or extra listing field is needed in this repo.
+The source comes from `plugins/external.json`: `source.repo`, `source.path`, and
+the revision in `source.sha` (preferred) or `source.ref`. Listings without either
+revision use the repository's default branch (`HEAD`).
 
-This is a reviewed documentation copy, not an installable local plugin. In the PR
-description, link to the upstream README at an immutable commit and identify the
-version documented. The README itself can be copied unchanged.
-Use absolute HTTPS links for upstream documentation and images. Keep the copy
-current through reviewed PRs; the website does not fetch remote README content.
-The build rejects symlinked, unreadable, empty, or invalid-frontmatter README files.
-Rendered Markdown uses the website's existing HTML sanitizer.
+The build tries `README.md`, `readme.md`, and `Readme.md` in the plugin directory,
+then the repository root. Keep that README current upstream; pinned listings show
+documentation for the listed revision, so updating the listing refreshes its docs.
+Relative links and images resolve against the upstream README. Remote Markdown
+uses the same HTML sanitizer as local documentation and is never executed.
 
-No listing field or local `plugin.json` is needed. External plugins without this
-file retain the generic documentation notice and link to their source repository.
+Downloads are limited to GitHub's raw-content host, six plugins at a time, with
+a ten-second timeout per request and a 512 KiB limit per README. Missing READMEs
+or download/rendering errors are logged and leave a source-repository link on
+the page instead of failing the entire website build.
 
-Run `node --test eng/lib/external-plugin-readme.test.mjs` to check file association.
+Run `node --test eng/lib/external-plugin-readme.test.mjs` to check retrieval.
 After `npm run website:build`, run
-`node --test website/scripts/external-plugin-readme.test.mjs` to check the rendered
-Excel MCP page, other plugins' fallback, and Markdown sanitization.
+`node --test website/scripts/external-plugin-readme.test.mjs` to check remote
+Markdown rendering, relative URLs, sanitization, and the generated plugin pages.
 
 ##### Maintainer review responsibilities
 

@@ -4,7 +4,7 @@ import { PluginDetail } from "../../components/brand/PluginDetail";
 import { buildDetailToc } from "../../components/brand/DetailChassis";
 import pluginsData from "../../../public/data/plugins.json";
 import { searchIndex } from "../../lib/site-data";
-import { formatLastUpdated, readResourceMarkdown } from "../../lib/detail-page";
+import { formatLastUpdated, readResourceMarkdown, renderResourceMarkdown } from "../../lib/detail-page";
 import { externalRepoUrl, type ExternalSource } from "../../lib/external-source";
 
 const GITHUB_TREE = "https://github.com/github/awesome-copilot/tree/main";
@@ -22,6 +22,7 @@ interface PluginItem {
   description?: string;
   path: string;
   readmeFile?: string | null;
+  readme?: { markdown: string; sourceUrl: string; rawUrl: string } | null;
   version?: string | null;
   tags?: string[];
   itemCount?: number;
@@ -55,16 +56,24 @@ const { item, previous, next } = Astro.props as {
   next?: PluginItem;
 };
 
-// External plugins can opt into a reviewed local README without vendoring
-// their installation source. Listings without one retain the empty body.
-const { markdownHtml } = item.readmeFile
+let { markdownHtml } = item.readmeFile
   ? readResourceMarkdown(item.readmeFile)
   : { markdownHtml: "" };
 
-if (item.external && item.readmeFile && !markdownHtml.trim()) {
-  throw new Error(`External plugin README did not render any content: ${item.readmeFile}`);
+if (item.external && item.readme) {
+  try {
+    ({ markdownHtml } = renderResourceMarkdown(item.readme.markdown, {
+      linkBaseUrl: item.readme.sourceUrl,
+      imageBaseUrl: item.readme.rawUrl,
+    }));
+    if (!markdownHtml.trim()) throw new Error("README rendered no content");
+  } catch (error) {
+    console.warn(`[plugin/${item.id}] Could not render external README:`, error);
+  }
 }
 
+// Send only rendered, sanitized HTML to the client, not the remote Markdown.
+const { readme, ...detailItem } = item;
 const { html } = buildDetailToc(markdownHtml);
 
 const githubUrl = item.external
@@ -99,7 +108,7 @@ const siblingOf = (sibling?: PluginItem) =>
 >
   <PluginDetail
     client:load
-    item={item}
+    item={detailItem}
     markdownHtml={html}
     githubUrl={githubUrl}
     installCommand={installCommand}

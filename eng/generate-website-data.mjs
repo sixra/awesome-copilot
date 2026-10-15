@@ -26,7 +26,7 @@ import {
   parseYamlFile,
 } from "./yaml-parser.mjs";
 import { readExternalPlugins } from "./external-plugin-validation.mjs";
-import { externalPluginReadme } from "./lib/external-plugin-readme.mjs";
+import { loadExternalPluginReadmes } from "./lib/external-plugin-readme.mjs";
 import {
   readExtensionPluginOwners,
   resolveExtensionPluginName,
@@ -676,7 +676,6 @@ function generatePluginsData(gitDates, resourceIndex = {}) {
             name: ext.name,
             description: ext.description || "",
             path: `plugins/${ext.name}`,
-            readmeFile: externalPluginReadme(ROOT_FOLDER, ext.name),
             version: normalizeText(ext.version, null),
             tags: tags,
             itemCount: 0,
@@ -699,7 +698,7 @@ function generatePluginsData(gitDates, resourceIndex = {}) {
         );
       }
     } catch (e) {
-      throw new Error(`Failed to load external plugins: ${e.message}`, { cause: e });
+      console.warn(`Failed to parse external plugins: ${e.message}`);
     }
   }
 
@@ -1724,6 +1723,7 @@ async function main() {
     extensions,
   });
   const pluginsData = generatePluginsData(gitDates, resourceIndex);
+  await loadExternalPluginReadmes(pluginsData.items);
   const plugins = pluginsData.items;
   console.log(
     `✓ Generated ${plugins.length} plugins (${pluginsData.filters.tags.length} tags)`
