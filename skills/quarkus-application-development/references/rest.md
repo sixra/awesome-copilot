@@ -18,7 +18,7 @@ public class GreetingResource {
 
     @POST
     @Operation(summary = "Create a greeting")          // org.eclipse.microprofile.openapi.annotations
-    public Greeting create(@Valid GreetingRequest req) { return new Greeting(config.prefix() + " " + req.name()); }
+    public Greeting create(@Valid @NotNull GreetingRequest req) { return new Greeting(config.prefix() + " " + req.name()); }
 
     @GET @Path("/{name}")
     public Greeting get(@PathParam("name") String name) {
@@ -33,7 +33,7 @@ public class GreetingResource {
 }
 ```
 
-- Invalid bodies return 400 automatically with a violation report; no extra code needed. Test: `given().contentType("application/json").body("{\"name\":\"\"}").post("/greetings")` returns 400.
+- Invalid bodies return 400 automatically with a violation report; `@NotNull` makes a JSON `null` body a 400 too, since `@Valid` skips null. Test: `given().contentType("application/json").body("{\"name\":\"\"}").post("/greetings")` returns 400.
 - `@ServerExceptionMapper` methods live in the resource class (local) or in any CDI bean (global). A classic `ExceptionMapper<T>` provider with `@Provider` also works; prefer the annotation form.
 
 ## OpenAPI

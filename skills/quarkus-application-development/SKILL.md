@@ -35,7 +35,7 @@ Scope: application code inside an existing Quarkus project. Project creation is 
 
 - Quarkus resolves CDI at build time: an unused bean may be removed. Beans only looked up programmatically need `@Unremovable`.
 - Do not read or write public fields of a normal-scoped bean (`@ApplicationScoped`) from another bean or test: you hit the client proxy, not the instance (verified: a counter field read through the proxy returned 0). Use methods.
-- Do not block on the event loop (`@NonBlocking` methods, `Uni`/`Multi` return types running on I/O threads). Add `@Blocking` or `@RunOnVirtualThread` (see `references/reactive-messaging.md`).
+- Do not block on the event loop (`@NonBlocking` methods, `Uni`/`Multi` return types running on I/O threads). Remove any existing `@NonBlocking` from the method (combining it with `@Blocking` or `@RunOnVirtualThread` fails the build), then add `@Blocking` or `@RunOnVirtualThread` (see `references/reactive-messaging.md`).
 - Changes to build-time properties need a rebuild; run-time properties can be overridden by env vars (`QUARKUS_DATASOURCE_JDBC_URL`).
 - Do not configure URLs for databases/brokers/Keycloak in `%dev`/`%test`: that disables Dev Services.
 - `drop-and-create` schema management is for dev/test only; use Flyway or Liquibase for production.
