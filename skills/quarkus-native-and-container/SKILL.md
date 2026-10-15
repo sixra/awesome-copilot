@@ -5,7 +5,7 @@ description: 'Build Quarkus native executables (Mandrel/GraalVM), fix native fai
 
 # Quarkus Native and Container
 
-Check the project's Quarkus version first. For generic (non-Quarkus) GraalVM work, use the `java-add-graalvm-native-image-support` skill instead.
+Check the project's Quarkus version first. For generic (non-Quarkus) GraalVM work, use the optional `java-add-graalvm-native-image-support` skill if installed (otherwise see the GraalVM docs, <https://www.graalvm.org/latest/reference-manual/native-image/>).
 
 ## Native build
 

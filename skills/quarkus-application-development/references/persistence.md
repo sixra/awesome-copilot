@@ -1,6 +1,6 @@
 # Persistence: Hibernate ORM with Panache
 
-Core JPA mapping, associations, N+1 and query design: use the `java-hibernate-jpa` skill. This file covers Quarkus specifics. Extensions: `quarkus-hibernate-orm-panache` + a JDBC driver such as `quarkus-jdbc-postgresql`.
+Core JPA mapping, associations, N+1 and query design: use the optional `java-hibernate-jpa` skill if it is installed; otherwise follow the Hibernate ORM guide (<https://quarkus.io/guides/hibernate-orm>). This file covers Quarkus specifics. Extensions: `quarkus-hibernate-orm-panache` + a JDBC driver such as `quarkus-jdbc-postgresql`.
 
 ## Config
 

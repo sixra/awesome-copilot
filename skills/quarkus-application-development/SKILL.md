@@ -5,7 +5,7 @@ description: 'Write Quarkus application code: REST with Quarkus REST, validation
 
 # Quarkus Application Development
 
-Scope: application code inside an existing Quarkus project. Project creation is `create-quarkus-project`; Dev Services and tests are `quarkus-dev-services-and-testing`; native and container images are `quarkus-native-and-container`; core JPA mapping and query design is `java-hibernate-jpa`.
+Scope: application code inside an existing Quarkus project. Project creation is `create-quarkus-project`; Dev Services and tests are `quarkus-dev-services-and-testing`; native and container images are `quarkus-native-and-container`; core JPA mapping and query design can use the optional `java-hibernate-jpa` skill if installed (otherwise see the Hibernate ORM guide, <https://quarkus.io/guides/hibernate-orm>, and the Jakarta Persistence docs).
 
 ## Agent rules
 

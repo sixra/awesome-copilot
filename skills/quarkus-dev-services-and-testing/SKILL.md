@@ -5,7 +5,7 @@ description: 'Quarkus Dev Services and testing: zero-config containers, @Quarkus
 
 # Quarkus Dev Services and Testing
 
-Check the project's Quarkus version first. Framework-neutral Testcontainers usage belongs to the `java-testcontainers` skill; this skill covers only Quarkus-specific features.
+Check the project's Quarkus version first. Framework-neutral Testcontainers usage can use the optional `java-testcontainers` skill if installed (otherwise see <https://java.testcontainers.org/>); this skill covers only Quarkus-specific features.
 
 ## Dev Services
 
