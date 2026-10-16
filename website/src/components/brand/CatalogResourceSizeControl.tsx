@@ -1,5 +1,12 @@
 import { CheckIcon, ChevronDownIcon } from "@primer/octicons-react";
 import { clsx } from "clsx";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type SyntheticEvent,
+} from "react";
 
 export type CatalogResourceSizeOption<T extends number> = {
   value: T;
@@ -30,6 +37,12 @@ type CatalogResourceSizeControlProps<T extends number> = {
   value: T;
 };
 
+/**
+ * The toolbar's page-size menu. `<details>` only gives a disclosure, so this
+ * adds the menu button keyboard pattern on top: opening moves focus to the
+ * selected size, arrow keys and Home/End move between sizes, Escape closes the
+ * menu and returns focus to the trigger, and Tab or a click outside closes it.
+ */
 export function CatalogResourceSizeControl<T extends number>({
   ariaLabel,
   onChange,
@@ -37,21 +50,101 @@ export function CatalogResourceSizeControl<T extends number>({
   styles,
   value,
 }: CatalogResourceSizeControlProps<T>) {
-  const selectedLabel =
-    options.find((option) => option.value === value)?.label ?? String(value);
+  const menuRef = useRef<HTMLDetailsElement>(null);
+  const triggerRef = useRef<HTMLElement>(null);
+  const [open, setOpen] = useState(false);
+  const selectedIndex = options.findIndex((option) => option.value === value);
+  const selectedLabel = options[selectedIndex]?.label ?? String(value);
+
+  const menuItems = () =>
+    Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitemradio"]',
+      ) ?? [],
+    );
+
+  const closeMenu = (restoreFocus: boolean) => {
+    if (menuRef.current) menuRef.current.open = false;
+    if (restoreFocus) triggerRef.current?.focus();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const menu = menuRef.current;
+      if (menu && !menu.contains(event.target as Node)) menu.open = false;
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
+
+  const handleToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
+    const isOpen = event.currentTarget.open;
+    setOpen(isOpen);
+    if (isOpen) menuItems()[Math.max(selectedIndex, 0)]?.focus();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDetailsElement>) => {
+    const menu = event.currentTarget;
+    if (!menu.open) {
+      // Arrow keys open the menu from the trigger, as they do on a select.
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        menu.open = true;
+      }
+      return;
+    }
+
+    const items = menuItems();
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number;
+    switch (event.key) {
+      case "Escape":
+        event.preventDefault();
+        closeMenu(true);
+        return;
+      case "Tab":
+        // Let focus move on to the next control; just close behind it.
+        closeMenu(false);
+        return;
+      case "ArrowDown":
+        next = (current + 1) % items.length;
+        break;
+      case "ArrowUp":
+        next = current <= 0 ? items.length - 1 : current - 1;
+        break;
+      case "Home":
+        next = 0;
+        break;
+      case "End":
+        next = items.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    items[next]?.focus();
+  };
 
   return (
     <div className={styles.sortControl}>
       <span className={styles.sortLabel}>Resource page size:</span>
-      <details className={styles.sortMenu}>
+      <details
+        ref={menuRef}
+        className={styles.sortMenu}
+        onToggle={handleToggle}
+        onKeyDown={handleKeyDown}
+      >
         <summary
+          ref={triggerRef}
           className={styles.sortTrigger}
+          aria-haspopup="menu"
           aria-label={`Resource page size: ${selectedLabel} (${ariaLabel})`}
         >
           {selectedLabel}
           <ChevronDownIcon size={16} className={styles.sortChevron} />
         </summary>
-        <div className={styles.sortOverlay} role="menu">
+        <div className={styles.sortOverlay} role="menu" aria-label={ariaLabel}>
           {options.map((option) => (
             <button
               key={option.value}
@@ -62,9 +155,9 @@ export function CatalogResourceSizeControl<T extends number>({
                 styles.sortOption,
                 value === option.value && styles.sortOptionActive,
               )}
-              onClick={(event) => {
+              onClick={() => {
                 onChange(option.value);
-                event.currentTarget.closest("details")?.removeAttribute("open");
+                closeMenu(true);
               }}
             >
               {option.label}
