@@ -46,7 +46,7 @@ export function CatalogResourceSizeControl<T extends number>({
       <details className={styles.sortMenu}>
         <summary
           className={styles.sortTrigger}
-          aria-label={`${ariaLabel}: ${selectedLabel}`}
+          aria-label={`Resource page size: ${selectedLabel} (${ariaLabel})`}
         >
           {selectedLabel}
           <ChevronDownIcon size={16} className={styles.sortChevron} />
