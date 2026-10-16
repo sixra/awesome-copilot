@@ -1,5 +1,9 @@
 # Working with Multiple Sessions
 
+> **Demo permissions:** These examples use `PermissionHandler.APPROVE_ALL` only
+> for isolated, trusted demonstrations. Replace it with a restrictive permission
+> handler before using untrusted prompts or workspaces.
+
 Manage multiple independent conversations simultaneously.
 
 > **Runnable example:** [recipe/MultipleSessions.java](recipe/MultipleSessions.java)

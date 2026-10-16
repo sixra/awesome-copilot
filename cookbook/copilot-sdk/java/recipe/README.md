@@ -22,10 +22,15 @@ scoop install jbang
 
 For other installation methods, see the [JBang installation guide](https://www.jbang.dev/download/).
 
-For the default child-process transport, either add the matching
-`copilot-sdk-java-runtime` classifier with JBang's `--deps` option (see
-[In-Process Runtime](../in-process-runtime.md#prerequisites) for classifiers), or
-use an installed Copilot CLI by setting `COPILOT_CLI_PATH` before launching Java:
+The default child-process transport spawns the `copilot-runtime`
+(`copilot-runtime.exe` on Windows) wrapper from the platform's runtime-classifier
+JAR. Add `com.github:copilot-sdk-java-runtime:1.0.21:<classifier>` with JBang's
+`--deps` option (see [In-Process Runtime](../in-process-runtime.md#prerequisites)
+for published classifiers). This transport does not require JNA.
+
+Alternatively, explicitly select an external Copilot CLI executable. Having
+`copilot` on `PATH` alone is insufficient. For these recipes, set
+`COPILOT_CLI_PATH` before launching Java:
 
 ```bash
 export COPILOT_CLI_PATH="$(command -v copilot)"
@@ -35,8 +40,21 @@ export COPILOT_CLI_PATH="$(command -v copilot)"
 $env:COPILOT_CLI_PATH = (Get-Command copilot -ErrorAction Stop).Source
 ```
 
-The in-process recipe additionally resolves JNA and requires a native runtime
-artifact matching your platform. It does not need a separate CLI process.
+Applications can instead use `CopilotClientOptions.setCliPath(...)` (including
+`setCliPath("copilot")` to select a PATH-installed executable). For subprocess
+executable selection, the programmatic path takes precedence over
+`COPILOT_CLI_PATH`, which takes precedence over the classifier-provided wrapper.
+An external CLI replaces the need for the runtime-classifier JAR in subprocess
+mode. Configure a supported authentication source before model requests; no
+particular credential file is required, and `COPILOT_HOME` is optional.
+
+The in-process recipe uses the same runtime-classifier JAR differently: it loads
+the `runtime.node` native library through JNA instead of spawning the wrapper.
+JNA must be declared explicitly and is tested here at 5.19.1. This transport needs
+neither an external CLI nor a separate runtime process. A classpath containing the
+SDK, matching runtime-classifier JAR, and JNA can serve either transport; merely
+adding these dependencies does not select in-process mode. These runtime and
+authentication rules also apply to Maven/Gradle applications.
 
 ## Running Examples
 
@@ -81,9 +99,9 @@ jbang RalphLoop.java PROMPT_build.md 20
 
 ## Safety & Prerequisites
 
-The examples use `PermissionHandler.APPROVE_ALL` for brevity. This gives the agent
-permission to use tools without asking you; test in an isolated workspace and
-replace it with a restrictive handler before processing untrusted prompts.
+The examples use `PermissionHandler.APPROVE_ALL` only for isolated, trusted
+demonstrations. This gives the agent permission to use tools without asking you;
+replace it with a restrictive handler before using untrusted prompts or workspaces.
 
 <details>
 <summary><strong>Managing Local Files</strong> - Test on disposable copies</summary>
@@ -193,15 +211,18 @@ of 20 tools.
 <summary><strong>In-Process Runtime</strong> - Requires native dependencies</summary>
 
 Choose the classifier for your operating system and architecture. For example,
-on Apple Silicon, check local startup and shutdown without sending a model request:
+on Apple Silicon, check native startup and an in-process ping round trip over
+FFI without authenticating or making a model request:
 
 ```bash
 jbang --deps com.github:copilot-sdk-java-runtime:1.0.21:darwin-arm64 InProcessRuntime.java --ping
 ```
 
-Omit `--ping` to create a session and send the greeting. See
+The recipe then exercises the normal client shutdown path; this does not prove
+that every native teardown phase succeeded. Omit `--ping` to create a session
+and send the greeting. See
 [In-Process Runtime](../in-process-runtime.md) for dependencies, experimental API
-opt-in, supported platforms, and process-wide limitations.
+opt-in, published platform classifiers, tested coverage, and process-wide limitations.
 </details>
 
 ## Why JBang?

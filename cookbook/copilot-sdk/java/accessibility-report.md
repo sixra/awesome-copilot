@@ -1,5 +1,9 @@
 # Generating Accessibility Reports
 
+> **Demo permissions:** These examples use `PermissionHandler.APPROVE_ALL` only
+> for isolated, trusted demonstrations. Replace it with a restrictive permission
+> handler before using untrusted prompts or workspaces.
+
 Build a CLI tool that analyzes web page accessibility using the Playwright MCP server and generates detailed WCAG-compliant reports with optional test generation.
 
 > **Runnable example:** [recipe/AccessibilityReport.java](recipe/AccessibilityReport.java)

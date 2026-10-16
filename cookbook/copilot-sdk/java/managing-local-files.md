@@ -1,5 +1,9 @@
 # Grouping Files by Metadata
 
+> **Demo permissions:** These examples use `PermissionHandler.APPROVE_ALL` only
+> for isolated, trusted demonstrations. Replace it with a restrictive permission
+> handler before using untrusted prompts or workspaces.
+
 Use Copilot to intelligently organize files in a folder based on their metadata.
 
 > **Runnable example:** [recipe/ManagingLocalFiles.java](recipe/ManagingLocalFiles.java)

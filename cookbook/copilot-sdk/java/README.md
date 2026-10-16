@@ -16,7 +16,7 @@ Examples target the official SDK 1.0.21 and Java 17 or later. SDK 1.x uses
 - [PR Visualization](pr-visualization.md): Generate interactive PR age charts using GitHub MCP Server.
 - [Persisting Sessions](persisting-sessions.md): Save and resume sessions across restarts.
 - [Accessibility Report](accessibility-report.md): Generate WCAG accessibility reports using the Playwright MCP server.
-- [In-Process Runtime](in-process-runtime.md): Run the native Copilot runtime inside the JVM instead of launching a separate CLI process.
+- [In-Process Runtime](in-process-runtime.md): Load the native Copilot runtime library into the JVM process instead of spawning a separate runtime process.
 
 ## Contributing
 

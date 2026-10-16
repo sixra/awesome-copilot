@@ -28,6 +28,7 @@ public class InProcessRuntime {
             if (args.length == 1) {
                 var response = client.ping("in-process recipe").get(30, TimeUnit.SECONDS);
                 System.out.println(response.message());
+                client.stop().get(30, TimeUnit.SECONDS);
                 return;
             }
 
@@ -40,6 +41,8 @@ public class InProcessRuntime {
                     .get(60, TimeUnit.SECONDS);
                 System.out.println(response.getData().content());
             }
+
+            client.stop().get(30, TimeUnit.SECONDS);
         }
     }
 }

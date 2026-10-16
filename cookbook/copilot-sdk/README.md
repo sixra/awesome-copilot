@@ -54,15 +54,15 @@ This cookbook collects small, focused recipes showing how to accomplish common t
 - [PR Visualization](java/pr-visualization.md): Generate interactive PR age charts using GitHub MCP Server.
 - [Persisting Sessions](java/persisting-sessions.md): Save and resume sessions across restarts.
 - [Accessibility Report](java/accessibility-report.md): Generate WCAG accessibility reports using the Playwright MCP server.
-- [In-Process Runtime](java/in-process-runtime.md): Run the native Copilot runtime inside the JVM instead of launching a separate CLI process.
+- [In-Process Runtime](java/in-process-runtime.md): Load the native Copilot runtime library into the JVM process instead of spawning a separate runtime process.
 
 ## How to Use
 
 - Browse your language section above and open the recipe links
 - Each recipe includes runnable examples in a `recipe/` subfolder with language-specific tooling
-- See existing examples and tests in the official SDK repository for working references:
-  - [Node.js example](https://github.com/github/copilot-sdk/blob/main/nodejs/examples/basic-example.ts)
-  - E2E tests: [Go](https://github.com/github/copilot-sdk/tree/main/go/internal/e2e), [Python](https://github.com/github/copilot-sdk/tree/main/python/e2e), [Node.js](https://github.com/github/copilot-sdk/tree/main/nodejs/test/e2e), [.NET](https://github.com/github/copilot-sdk/tree/main/dotnet/test/Harness), [Java](https://github.com/github/copilot-sdk/tree/main/java/sdk/src/test/java/com/github/copilot/e2e)
+- See existing examples and tests at the official SDK repository's `java/v1.0.21` tag for version-specific references:
+  - [Node.js example](https://github.com/github/copilot-sdk/blob/java/v1.0.21/nodejs/examples/basic-example.ts)
+  - E2E tests: [Go](https://github.com/github/copilot-sdk/tree/java/v1.0.21/go/internal/e2e), [Python](https://github.com/github/copilot-sdk/tree/java/v1.0.21/python/e2e), [Node.js](https://github.com/github/copilot-sdk/tree/java/v1.0.21/nodejs/test/e2e), [.NET](https://github.com/github/copilot-sdk/tree/java/v1.0.21/dotnet/test/Harness), [Java](https://github.com/github/copilot-sdk/tree/java/v1.0.21/java/sdk/src/test/java/com/github/copilot/e2e)
 
 ## Running Examples
 

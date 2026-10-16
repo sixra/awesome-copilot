@@ -1,5 +1,9 @@
 # Session Persistence and Resumption
 
+> **Demo permissions:** These examples use `PermissionHandler.APPROVE_ALL` only
+> for isolated, trusted demonstrations. Replace it with a restrictive permission
+> handler before using untrusted prompts or workspaces.
+
 Save and restore conversation sessions across application restarts.
 
 > **Runnable example:** [recipe/PersistingSessions.java](recipe/PersistingSessions.java)
