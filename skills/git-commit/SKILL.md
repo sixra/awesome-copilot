@@ -78,9 +78,10 @@ If there are no changes, tell the user. Do not make an empty commit.
 
 ### 3. Stage the files
 
-Put one logical change in each commit. If the staged files contain more than one change, stage only the files for one change:
+Put one logical change in each commit. If the staged files contain more than one change, first unstage the files of the other changes. Then stage the files for this change:
 
 ```bash
+git reset -q -- path/to/other-file1 path/to/other-file2
 git add -- path/to/file1 path/to/file2
 git add -- '*.test.*'
 git add -- src/components/
