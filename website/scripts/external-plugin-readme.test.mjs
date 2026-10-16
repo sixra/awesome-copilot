@@ -25,6 +25,17 @@ const urls = {
   imageBaseUrl: "https://raw.githubusercontent.com/owner/repo/v1/plugins/example/README.md",
 };
 
+function renderExternalReadme(markdown, readmeUrls, warn = () => {}) {
+  let markdownHtml = "";
+  try {
+    markdownHtml = renderResourceMarkdown(markdown, readmeUrls).markdownHtml;
+    if (!markdownHtml.trim()) throw new Error("README rendered no content");
+  } catch {
+    markdownHtml = "";
+  }
+  return finalizePluginReadme(markdownHtml, readmeUrls, warn);
+}
+
 test("remote README uses the existing sanitizer, including raw HTML", () => {
   const { markdownHtml } = renderResourceMarkdown(`# Plugin
 
@@ -66,13 +77,18 @@ test("sanitizes the final HTML after table-of-contents processing", () => {
 
 test("final URL rewriting failures leave README empty for the source fallback", () => {
   const warnings = [];
-  const markdownHtml = renderResourceMarkdown(
+  const finalHtml = renderExternalReadme(
     `<div title="<h2>Heading</h2><a href='//['>Link</a>">Documentation</div>`,
     urls,
-  ).markdownHtml;
-  const finalHtml = finalizePluginReadme(markdownHtml, urls, (error) => warnings.push(error));
+    (error) => warnings.push(error),
+  );
   assert.equal(finalHtml, "");
   assert.equal(warnings.length, 1);
+});
+
+test("rendering errors leave README empty for the source fallback", () => {
+  const finalHtml = renderExternalReadme("---\ntitle: [\n---\n# Broken", urls);
+  assert.equal(finalHtml, "");
 });
 
 test("resolves relative Markdown links, reference images, and raw HTML links upstream", () => {
@@ -173,14 +189,16 @@ test("generated external pages render remote READMEs or the source fallback", ()
     assert.match(html, /Review the source before installing/);
     if (item.readme) {
       assert.match(item.readme.rawUrl, /^https:\/\/raw\.githubusercontent\.com\//);
-      const { markdownHtml } = renderResourceMarkdown(item.readme.markdown, {
+      const renderedHtml = renderExternalReadme(item.readme.markdown, {
         linkBaseUrl: item.readme.sourceUrl,
         imageBaseUrl: item.readme.rawUrl,
       });
-      if (markdownHtml.trim()) {
+      if (renderedHtml.trim()) {
         assert.ok(!html.includes("A README could not be loaded."), item.id);
-        const paragraph = markdownHtml.match(/<p(?:\s[^>]*)?>[\s\S]*?<\/p>/)?.[0];
+        const paragraph = renderedHtml.match(/<p(?:\s[^>]*)?>[\s\S]*?<\/p>/)?.[0];
         if (paragraph) assert.ok(html.includes(paragraph), `${item.id}: upstream README content missing`);
+      } else {
+        assert.ok(html.includes("A README could not be loaded."), item.id);
       }
     } else {
       assert.ok(html.includes("A README could not be loaded."), item.id);
