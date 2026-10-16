@@ -37,8 +37,14 @@ export COPILOT_CLI_PATH="$(command -v copilot)"
 ```
 
 ```powershell
-$env:COPILOT_CLI_PATH = (Get-Command copilot -ErrorAction Stop).Source
+Get-Command copilot -ErrorAction Stop | Out-Null
+$env:COPILOT_CLI_PATH = "copilot"
 ```
+
+On Windows, keep the bare command name so the SDK can resolve a native executable
+or launch an npm CMD shim through `cmd /c`. Do not pass the absolute path returned
+by PowerShell's `Get-Command`: it may point to `copilot.ps1`, which Java's
+`ProcessBuilder` cannot execute directly.
 
 Applications can instead use `CopilotClientOptions.setCliPath(...)` (including
 `setCliPath("copilot")` to select a PATH-installed executable). For subprocess
