@@ -348,6 +348,45 @@ class MarkdownToWordTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "timed out after 5s"):
                     markdown_to_word._run_command(["mmdc"], timeout=5.0)
 
+    def test_preserves_multi_paragraph_list_items_and_atomic_publication(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "continuation-lists.md"
+            output = root / "continuation-lists.docx"
+            source.write_text(
+                "# Multi-Paragraph Lists\n\n"
+                "1. Ordered first paragraph\n\n"
+                "   Ordered continuation paragraph\n\n"
+                "2. Ordered second item\n\n"
+                "- Bullet first paragraph\n\n"
+                "  Bullet continuation paragraph\n",
+                encoding="utf-8",
+            )
+            convert_markdown(source, output, "mmdc")
+            with ZipFile(output) as docx:
+                document_xml = etree.fromstring(docx.read("word/document.xml"))
+            entries = [
+                (
+                    paragraph.xpath("string(./*[local-name()='pPr']/*[local-name()='pStyle']/@*[local-name()='val'])"),
+                    "".join(paragraph.xpath(".//*[local-name()='t']/text()")),
+                )
+                for paragraph in document_xml.xpath(".//*[local-name()='p']")
+            ]
+            self.assertIn(("ListContinue", "1. Ordered first paragraph"), entries)
+            self.assertIn(("ListContinue", "Ordered continuation paragraph"), entries)
+            self.assertIn(("ListContinue", "2. Ordered second item"), entries)
+            self.assertNotIn(("ListContinue", "3. Ordered second item"), entries)
+            self.assertIn(("ListBullet", "Bullet first paragraph"), entries)
+            self.assertIn(("ListContinue", "Bullet continuation paragraph"), entries)
+
+            staged = root / "staged.docx"
+            staged.write_bytes(b"new content")
+            conflict_target = root / "conflict.docx"
+            conflict_target.write_bytes(b"existing content")
+            with self.assertRaisesRegex(FileExistsError, "refusing to overwrite"):
+                markdown_to_word._publish_docx_exclusively(staged, conflict_target)
+            self.assertEqual(conflict_target.read_bytes(), b"existing content")
+
 
 @unittest.skipUnless(os.environ.get("MERMAID_CLI"), "set MERMAID_CLI to run real-renderer coverage")
 class RealMermaidRendererTests(unittest.TestCase):

@@ -194,6 +194,9 @@ def _new_paragraph(document: Any, list_stack: list[dict[str, Any]], quote_depth:
         depth = min(len(list_stack), 3)
         suffix = f" {depth}" if depth > 1 else ""
         current_list = list_stack[-1]
+        if current_list.get("item_continuation", False):
+            return document.add_paragraph(style=f"List Continue{suffix}")
+        current_list["item_continuation"] = True
         if current_list["ordered"]:
             paragraph = document.add_paragraph(style=f"List Continue{suffix}")
             run = paragraph.add_run(f"{current_list['next_number']}. ")
@@ -343,8 +346,15 @@ def _convert_blocks(
                 {
                     "ordered": token_type == "ordered_list_open",
                     "next_number": start_number,
+                    "item_continuation": False,
                 }
             )
+        elif token_type == "list_item_open":
+            if list_stack:
+                list_stack[-1]["item_continuation"] = False
+        elif token_type == "list_item_close":
+            if list_stack:
+                list_stack[-1]["item_continuation"] = False
         elif token_type in {"bullet_list_close", "ordered_list_close"}:
             if list_stack:
                 list_stack.pop()
@@ -548,7 +558,9 @@ def convert_markdown(
         document.add_heading(title, level=0)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory(prefix="markdown-to-word-mermaid-") as temporary_directory:
+    with tempfile.TemporaryDirectory(
+        prefix=".markdown-to-word-mermaid-", dir=output_path.parent
+    ) as temporary_directory:
         temp_root = Path(temporary_directory)
         staged_docx = temp_root / "staged-output.docx"
         diagram_count = _convert_blocks(
@@ -557,9 +569,31 @@ def convert_markdown(
         document.save(staged_docx)
         svg_paths = [temp_root / f"diagram-{number}" / "diagram.svg" for number in range(1, diagram_count + 1)]
         _inject_svg_parts(staged_docx, svg_paths, temp_root=temp_root)
-        if output_path.exists():
-            raise FileExistsError(f"Output file already exists; refusing to overwrite it: {output_path}")
-        shutil.move(str(staged_docx), str(output_path))
+        _publish_docx_exclusively(staged_docx, output_path)
+
+
+def _publish_docx_exclusively(staged_docx: Path, output_path: Path) -> None:
+    try:
+        os.link(staged_docx, output_path)
+    except FileExistsError as error:
+        raise FileExistsError(
+            f"Output file already exists; refusing to overwrite it: {output_path}"
+        ) from error
+    except OSError:
+        try:
+            fd = os.open(output_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+        except FileExistsError as error:
+            raise FileExistsError(
+                f"Output file already exists; refusing to overwrite it: {output_path}"
+            ) from error
+        try:
+            with os.fdopen(fd, "wb") as destination_stream, staged_docx.open("rb") as source_stream:
+                shutil.copyfileobj(source_stream, destination_stream)
+        except BaseException:
+            output_path.unlink(missing_ok=True)
+            raise
+    else:
+        staged_docx.unlink(missing_ok=True)
 
 
 def main() -> int:
