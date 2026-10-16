@@ -16,7 +16,7 @@ import {
   useTheme,
 } from "@primer/react-brand";
 import { clsx } from "clsx";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { PageShell } from "./PageShell";
 import { CatalogSortControl, CATALOG_SORT_OPTIONS } from "./CatalogSortControl";
@@ -29,7 +29,7 @@ import {
 import { daysSince, toggleValue, updatedBuckets, updatedBucketOf } from "./catalogFilters";
 import { pageHref } from "./pageHref";
 import { downloadFile } from "./resourceActions";
-import { getScrollBehavior } from "./scrollBehavior";
+import { scrollToCatalogStart } from "./scrollBehavior";
 import type { SearchItem } from "./searchIndex";
 import styles from "./styles/agents.module.css";
 
@@ -127,7 +127,6 @@ export function AgentsCatalog({
     DEFAULT_CATALOG_RESOURCE_SIZE,
   );
   const [currentPage, setCurrentPage] = useState(1);
-  const previousPage = useRef(currentPage);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
   const [expandedGroups, setExpandedGroups] = useState<
@@ -199,18 +198,6 @@ export function AgentsCatalog({
   const pageCount = Math.max(1, Math.ceil(sortedAgents.length / pageSize));
   const page = Math.min(currentPage, pageCount);
   const visibleAgents = sortedAgents.slice((page - 1) * pageSize, page * pageSize);
-
-  useEffect(() => {
-    if (previousPage.current === currentPage) return;
-    previousPage.current = currentPage;
-    const frame = window.requestAnimationFrame(() => {
-      const catalog = document.getElementById("catalog");
-      if (!catalog) return;
-      catalog.scrollIntoView({ behavior: getScrollBehavior(), block: "start" });
-      catalog.focus({ preventScroll: true });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [currentPage]);
 
   return (
     <PageShell
@@ -485,7 +472,9 @@ export function AgentsCatalog({
             currentPage={page}
             onPageChange={(e, n) => {
               e.preventDefault();
+              if (n === page) return;
               setCurrentPage(n);
+              scrollToCatalogStart();
             }}
           />
         </Stack>

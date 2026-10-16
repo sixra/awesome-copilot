@@ -15,7 +15,7 @@ import {
   useTheme,
 } from "@primer/react-brand";
 import { clsx } from "clsx";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { externalRepoUrl, type ExternalSource } from "../../lib/external-source";
 import { PageShell } from "./PageShell";
@@ -31,7 +31,7 @@ import { daysSince, toggleValue } from "./catalogFilters";
 import { pageHref } from "./pageHref";
 import type { SearchItem } from "./searchIndex";
 import styles from "./styles/plugins.module.css";
-import { getScrollBehavior } from "./scrollBehavior";
+import { scrollToCatalogStart } from "./scrollBehavior";
 
 const CONTRIBUTE_URL =
   "https://github.com/github/awesome-copilot/blob/main/docs/README.plugins.md#how-to-contribute";
@@ -135,7 +135,6 @@ export function PluginsCatalog({
     DEFAULT_CATALOG_RESOURCE_SIZE,
   );
   const [currentPage, setCurrentPage] = useState(1);
-  const previousPage = useRef(currentPage);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
@@ -206,18 +205,6 @@ export function PluginsCatalog({
     (page - 1) * pageSize,
     page * pageSize,
   );
-
-  useEffect(() => {
-    if (previousPage.current === currentPage) return;
-    previousPage.current = currentPage;
-    const frame = window.requestAnimationFrame(() => {
-      const catalog = document.getElementById("catalog");
-      if (!catalog) return;
-      catalog.scrollIntoView({ behavior: getScrollBehavior(), block: "start" });
-      catalog.focus({ preventScroll: true });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [currentPage]);
 
   return (
     <PageShell
@@ -433,7 +420,9 @@ export function PluginsCatalog({
             currentPage={page}
             onPageChange={(e, n) => {
               e.preventDefault();
+              if (n === page) return;
               setCurrentPage(n);
+              scrollToCatalogStart();
             }}
           />
         </Stack>

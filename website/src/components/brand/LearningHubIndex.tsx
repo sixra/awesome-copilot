@@ -34,7 +34,7 @@ import { LearningHubIcon } from "./LearningHubIcon";
 import { PageShell } from "./PageShell";
 import { ScrambleText } from "./ScrambleText";
 import { pageHref } from "./pageHref";
-import { getScrollBehavior } from "./scrollBehavior";
+import { scrollToCatalogStart } from "./scrollBehavior";
 import type { SearchItem } from "./searchIndex";
 import { contributorsTotal as siteContributorsTotal } from "../../lib/site-data";
 
@@ -876,18 +876,7 @@ function LearningHubIndexBody({
               e.preventDefault();
               if (n === page) return;
               setCurrentPage(n);
-              // Scroll and focus here, not in a currentPage effect: the hero
-              // search also resets the page on each keystroke, and an effect
-              // would pull focus out of the search input.
-              window.requestAnimationFrame(() => {
-                const catalog = document.getElementById("catalog");
-                if (!catalog) return;
-                catalog.scrollIntoView({
-                  behavior: getScrollBehavior(),
-                  block: "start",
-                });
-                catalog.focus({ preventScroll: true });
-              });
+              scrollToCatalogStart();
             }}
           />
         </Stack>

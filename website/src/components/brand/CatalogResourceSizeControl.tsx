@@ -78,10 +78,18 @@ export function CatalogResourceSizeControl<T extends number>({
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [open]);
 
+  const focusSelectedItem = () =>
+    menuItems()[Math.max(selectedIndex, 0)]?.focus();
+
   const handleToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
     const isOpen = event.currentTarget.open;
     setOpen(isOpen);
-    if (isOpen) menuItems()[Math.max(selectedIndex, 0)]?.focus();
+    // The toggle event lands a task after the menu opens, so leave focus alone
+    // if an arrow key has already moved it to an item.
+    const focusInMenu = menuItems().some(
+      (item) => item === document.activeElement,
+    );
+    if (isOpen && !focusInMenu) focusSelectedItem();
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDetailsElement>) => {
@@ -91,6 +99,7 @@ export function CatalogResourceSizeControl<T extends number>({
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
         menu.open = true;
+        focusSelectedItem();
       }
       return;
     }

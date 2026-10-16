@@ -42,7 +42,7 @@ import {
 import { pageHref } from "./pageHref";
 import type { SearchItem } from "./searchIndex";
 import styles from "./styles/extensions.module.css";
-import { getScrollBehavior } from "./scrollBehavior";
+import { scrollToCatalogStart } from "./scrollBehavior";
 
 const CONTRIBUTE_URL =
   "https://github.com/github/awesome-copilot/blob/main/CONTRIBUTING.md#adding-canvas-extensions";
@@ -156,7 +156,6 @@ export function ExtensionsCatalog({
     DEFAULT_CATALOG_RESOURCE_SIZE,
   );
   const [currentPage, setCurrentPage] = useState(1);
-  const previousPage = React.useRef(currentPage);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const copyTimer = React.useRef<number | undefined>(undefined);
@@ -247,18 +246,6 @@ export function ExtensionsCatalog({
     (page - 1) * pageSize,
     page * pageSize,
   );
-
-  React.useEffect(() => {
-    if (previousPage.current === currentPage) return;
-    previousPage.current = currentPage;
-    const frame = window.requestAnimationFrame(() => {
-      const catalog = document.getElementById("catalog");
-      if (!catalog) return;
-      catalog.scrollIntoView({ behavior: getScrollBehavior(), block: "start" });
-      catalog.focus({ preventScroll: true });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [currentPage]);
 
   return (
     <PageShell
@@ -513,7 +500,9 @@ export function ExtensionsCatalog({
             currentPage={page}
             onPageChange={(e, n) => {
               e.preventDefault();
+              if (n === page) return;
               setCurrentPage(n);
+              scrollToCatalogStart();
             }}
           />
         </Stack>
