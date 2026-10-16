@@ -19,22 +19,11 @@ after(async () => {
   process.chdir(originalCwd);
 });
 const { renderResourceMarkdown, readResourceMarkdown } = await server.ssrLoadModule("/src/lib/detail-page.ts");
-const { finalizePluginReadme } = await server.ssrLoadModule("/src/lib/plugin-readme.ts");
+const { finalizePluginReadme, renderPluginReadme } = await server.ssrLoadModule("/src/lib/plugin-readme.ts");
 const urls = {
   linkBaseUrl: "https://github.com/owner/repo/blob/v1/plugins/example/README.md",
   imageBaseUrl: "https://raw.githubusercontent.com/owner/repo/v1/plugins/example/README.md",
 };
-
-function renderExternalReadme(markdown, readmeUrls, warn = () => {}) {
-  let markdownHtml = "";
-  try {
-    markdownHtml = renderResourceMarkdown(markdown, readmeUrls).markdownHtml;
-    if (!markdownHtml.trim()) throw new Error("README rendered no content");
-  } catch {
-    markdownHtml = "";
-  }
-  return finalizePluginReadme(markdownHtml, readmeUrls, warn);
-}
 
 test("remote README uses the existing sanitizer, including raw HTML", () => {
   const { markdownHtml } = renderResourceMarkdown(`# Plugin
@@ -77,7 +66,7 @@ test("sanitizes the final HTML after table-of-contents processing", () => {
 
 test("final URL rewriting failures leave README empty for the source fallback", () => {
   const warnings = [];
-  const finalHtml = renderExternalReadme(
+  const finalHtml = renderPluginReadme(
     `<div title="<h2>Heading</h2><a href='//['>Link</a>">Documentation</div>`,
     urls,
     (error) => warnings.push(error),
@@ -87,7 +76,7 @@ test("final URL rewriting failures leave README empty for the source fallback", 
 });
 
 test("rendering errors leave README empty for the source fallback", () => {
-  const finalHtml = renderExternalReadme("---\ntitle: [\n---\n# Broken", urls);
+  const finalHtml = renderPluginReadme("---\ntitle: [\n---\n# Broken", urls, () => {});
   assert.equal(finalHtml, "");
 });
 
@@ -189,7 +178,7 @@ test("generated external pages render remote READMEs or the source fallback", ()
     assert.match(html, /Review the source before installing/);
     if (item.readme) {
       assert.match(item.readme.rawUrl, /^https:\/\/raw\.githubusercontent\.com\//);
-      const renderedHtml = renderExternalReadme(item.readme.markdown, {
+      const renderedHtml = renderPluginReadme(item.readme.markdown, {
         linkBaseUrl: item.readme.sourceUrl,
         imageBaseUrl: item.readme.rawUrl,
       });

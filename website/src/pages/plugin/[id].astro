@@ -3,8 +3,8 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 import { PluginDetail } from "../../components/brand/PluginDetail";
 import pluginsData from "../../../public/data/plugins.json";
 import { searchIndex } from "../../lib/site-data";
-import { formatLastUpdated, readResourceMarkdown, renderResourceMarkdown } from "../../lib/detail-page";
-import { finalizePluginReadme } from "../../lib/plugin-readme";
+import { formatLastUpdated, readResourceMarkdown } from "../../lib/detail-page";
+import { finalizePluginReadme, renderPluginReadme } from "../../lib/plugin-readme";
 import { externalRepoUrl, type ExternalSource } from "../../lib/external-source";
 
 const GITHUB_TREE = "https://github.com/github/awesome-copilot/tree/main";
@@ -61,26 +61,19 @@ let { markdownHtml } = item.readmeFile
   : { markdownHtml: "" };
 
 if (item.external && item.readme) {
-  try {
-    ({ markdownHtml } = renderResourceMarkdown(item.readme.markdown, {
+  markdownHtml = renderPluginReadme(
+    item.readme.markdown,
+    {
       linkBaseUrl: item.readme.sourceUrl,
       imageBaseUrl: item.readme.rawUrl,
-    }));
-    if (!markdownHtml.trim()) throw new Error("README rendered no content");
-  } catch (error) {
-    console.warn(`[plugin/${item.id}] Could not render external README:`, error);
-  }
+    },
+    (error) => console.warn(`[plugin/${item.id}] Could not render external README:`, error),
+  );
 }
 
 // Send only rendered, sanitized HTML to the client, not the remote Markdown.
 const { readme, ...detailItem } = item;
-const html = finalizePluginReadme(
-  markdownHtml,
-  item.external && item.readme
-    ? { linkBaseUrl: item.readme.sourceUrl, imageBaseUrl: item.readme.rawUrl }
-    : undefined,
-  (error) => console.warn(`[plugin/${item.id}] Could not finalize README:`, error),
-);
+const html = item.external ? markdownHtml : finalizePluginReadme(markdownHtml);
 
 const githubUrl = item.external
   ? externalRepoUrl(item.source, [item.repository, item.homepage, GITHUB_TREE])
