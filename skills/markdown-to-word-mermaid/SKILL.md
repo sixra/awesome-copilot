@@ -66,15 +66,16 @@ python scripts/markdown_to_word.py input.md --output output.docx --mermaid-cli .
 Selecting an installed font:
 
 ```sh
-python scripts/markdown_to_word.py input.md --output output.docx --font-family "Noto Sans JP"
+python scripts/markdown_to_word.py input.md --output output.docx --font-family "Noto Sans JP" --timeout 120
 ```
 
 For a reproducible example, convert [assets/example.md](assets/example.md) to a new output path. It includes English and Japanese labels, multiple diagrams, and a tall diagram.
 
 ## Conversion behavior
 
-- Headings, paragraphs, emphasis, lists, blockquotes, tables, and code blocks become Word content.
-- Each Mermaid fence renders to SVG and a 3x PNG. Office SVG extensions reference the SVG; the normal image reference retains the PNG fallback.
+- Headings, paragraphs, emphasis, lists (preserving ordered list start numbers and separate list boundaries), blockquotes, tables, and code blocks become Word content.
+- Each Mermaid fence renders to SVG and a 3x PNG with a per-command timeout (default: 120 seconds). Office SVG extensions reference the SVG; the normal image reference retains the PNG fallback, and drawing metadata (`title` and `descr`) includes the section heading or Mermaid `accTitle`/`accDescr` plus the diagram type.
+- Output DOCX files are staged and SVG-injected inside a temporary directory before moving to the destination path so failed runs never leave partial files behind.
 - The selected font is applied to Word paragraph styles and Mermaid's font configuration. Code runs use Consolas. Fonts are not embedded; unavailable fonts may be substituted.
 - `htmlLabels: false` is set globally and for flowcharts to avoid HTML `foreignObject` labels that Office may not display. Check actual SVG output for unsupported constructs.
 - Diagrams are centered, keep their aspect ratio, and use a non-splitting paragraph. Diagrams occupying at least 70% of the page body height start on a new page. Oversized diagrams are scaled to the page body height. Large diagrams generate a readability warning.
@@ -90,14 +91,13 @@ For a reproducible example, convert [assets/example.md](assets/example.md) to a 
 
 ## Verification
 
-Run both existing test suites from the skill directory:
+Run the test suite from the skill directory:
 
 ```sh
 python -m unittest discover -s tests -v
-python -m unittest discover -s scripts/tests -v
 ```
 
-The ordinary suite mocks Mermaid rendering. To run the real-renderer test as well, set `MERMAID_CLI` to the CLI executable's absolute path, then run the first command again. On Windows PowerShell:
+The ordinary suite mocks Mermaid rendering. To run the real-renderer test as well, set `MERMAID_CLI` to the CLI executable's absolute path, then run the command again. On Windows PowerShell:
 
 ```powershell
 $env:MERMAID_CLI = (Join-Path $env:APPDATA "npm\mmdc.cmd")
@@ -114,7 +114,7 @@ Before reporting completion:
 - If Word or the actual renderer was unavailable, state which checks were not performed.
 
 For contribution scope, evaluation cases, and a draft submission description, see [references/publication.md](references/publication.md). That file is maintainer guidance, not permission to publish.
-
+scope notes, evaluation cases, and verification criteria, see [references/publication.md](references/publication.md)
 ## Gotchas
 
 - `mmdc.cmd` needs Windows command handling; pass its path with `--mermaid-cli` rather than rewriting the script.

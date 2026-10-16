@@ -76,11 +76,21 @@ def _puppeteer_config(directory: Path) -> list[str]:
     return ["-p", str(config_path)]
 
 
-def _run_command(command: list[str]) -> None:
+def _run_command(command: list[str], *, timeout: float = 120.0) -> None:
     if os.name == "nt" and Path(command[0]).suffix.lower() in {".cmd", ".bat"}:
         command_line = subprocess.list2cmdline(command)
         command = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", command_line]
-    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(f"Mermaid rendering timed out after {timeout:g}s.") from error
     if result.returncode:
         details = result.stderr.strip() or result.stdout.strip()
         raise RuntimeError(f"Mermaid rendering failed (exit {result.returncode}): {details}")
@@ -89,6 +99,8 @@ def _run_command(command: list[str]) -> None:
 def _render_mermaid(
     code: str, diagram_number: int, temp_root: Path, cli: str,
     font_family: str = "Noto Sans JP",
+    *,
+    timeout: float = 120.0,
 ) -> tuple[Path, Path, float, float]:
     diagram_dir = temp_root / f"diagram-{diagram_number}"
     diagram_dir.mkdir()
@@ -101,8 +113,8 @@ def _render_mermaid(
     config_path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
 
     common = ["-i", str(source_path), "-c", str(config_path), *_puppeteer_config(diagram_dir)]
-    _run_command([cli, *common, "-o", str(svg_path), "-e", "svg"])
-    _run_command([cli, *common, "-o", str(png_path), "-e", "png", "-s", "3"])
+    _run_command([cli, *common, "-o", str(svg_path), "-e", "svg"], timeout=timeout)
+    _run_command([cli, *common, "-o", str(png_path), "-e", "png", "-s", "3"], timeout=timeout)
 
     if not svg_path.is_file() or not png_path.is_file():
         raise RuntimeError("Mermaid CLI completed without producing both SVG and PNG outputs.")
@@ -175,15 +187,47 @@ def _add_inline_content(paragraph: Any, tokens: list[Any], *, header: bool = Fal
                 paragraph.add_run(f" ({source})")
 
 
-def _new_paragraph(document: Any, list_stack: list[bool], quote_depth: int) -> Any:
+def _new_paragraph(document: Any, list_stack: list[dict[str, Any]], quote_depth: int) -> Any:
     if quote_depth:
         return document.add_paragraph(style="Quote")
     if list_stack:
         depth = min(len(list_stack), 3)
         suffix = f" {depth}" if depth > 1 else ""
-        kind = "Number" if list_stack[-1] else "Bullet"
-        return document.add_paragraph(style=f"List {kind}{suffix}")
+        current_list = list_stack[-1]
+        if current_list["ordered"]:
+            paragraph = document.add_paragraph(style=f"List Continue{suffix}")
+            run = paragraph.add_run(f"{current_list['next_number']}. ")
+            run.bold = False
+            current_list["next_number"] += 1
+            return paragraph
+        return document.add_paragraph(style=f"List Bullet{suffix}")
     return document.add_paragraph()
+
+
+def _diagram_description(code: str, diagram_number: int, current_heading: str | None) -> tuple[str, str]:
+    acc_title = re.search(r"(?m)^\s*accTitle\s*:\s*(.+?)\s*$", code)
+    acc_descr = re.search(r"(?m)^\s*accDescr\s*:\s*(.+?)\s*$", code)
+    first_statement = next(
+        (
+            line.strip()
+            for line in code.splitlines()
+            if line.strip() and not line.strip().startswith("%%")
+        ),
+        "diagram",
+    )
+    diagram_kind = first_statement.split()[0]
+    title = (
+        acc_title.group(1)
+        if acc_title
+        else f"{current_heading} — Mermaid diagram {diagram_number}"
+        if current_heading
+        else f"Mermaid diagram {diagram_number}"
+    )
+    if acc_descr:
+        description = f"{title}: {acc_descr.group(1)} ({diagram_kind}; vector SVG)."
+    else:
+        description = f"{title} ({diagram_kind}; vector SVG)."
+    return title, description
 
 
 def _add_code_block(document: Any, content: str) -> None:
@@ -201,6 +245,9 @@ def _add_diagram(
     diagram_number: int,
     svg_width: float,
     svg_height: float,
+    *,
+    code: str = "",
+    current_heading: str | None = None,
 ) -> None:
     section = document.sections[-1]
     available_width = section.page_width - section.left_margin - section.right_margin
@@ -224,9 +271,10 @@ def _add_diagram(
         paragraph.paragraph_format.page_break_before = True
     run = paragraph.add_run()
     picture = run.add_picture(str(png_path), width=Emu(round(width)), height=Emu(round(height)))
+    title, description = _diagram_description(code, diagram_number, current_heading)
     picture._inline.docPr.set("name", f"mermaid-svg-{diagram_number}")
-    picture._inline.docPr.set("title", f"Mermaid diagram {diagram_number}")
-    picture._inline.docPr.set("descr", f"Mermaid diagram {diagram_number}; vector SVG.")
+    picture._inline.docPr.set("title", title)
+    picture._inline.docPr.set("descr", description)
 
 
 def _render_table(document: Any, tokens: list[Any], start: int) -> int:
@@ -266,12 +314,16 @@ def _render_table(document: Any, tokens: list[Any], start: int) -> int:
 def _convert_blocks(
     document: Any, markdown_text: str, temp_root: Path, cli_name: str,
     font_family: str = "Noto Sans JP",
+    *,
+    timeout: float = 120.0,
 ) -> int:
     parser = MarkdownIt("commonmark").enable("table")
     tokens = parser.parse(markdown_text)
-    list_stack: list[bool] = []
+    list_stack: list[dict[str, Any]] = []
     quote_depth = 0
     current_paragraph = None
+    in_heading = False
+    current_heading: str | None = None
     diagram_number = 0
     cli: str | None = None
     index = 0
@@ -285,7 +337,14 @@ def _convert_blocks(
             current_paragraph = None
             continue
         if token_type in {"bullet_list_open", "ordered_list_open"}:
-            list_stack.append(token_type == "ordered_list_open")
+            start_attr = token.attrGet("start") if token_type == "ordered_list_open" else None
+            start_number = int(start_attr) if start_attr and str(start_attr).isdigit() else 1
+            list_stack.append(
+                {
+                    "ordered": token_type == "ordered_list_open",
+                    "next_number": start_number,
+                }
+            )
         elif token_type in {"bullet_list_close", "ordered_list_close"}:
             if list_stack:
                 list_stack.pop()
@@ -299,21 +358,36 @@ def _convert_blocks(
             level = int(token.tag[1])
             current_paragraph = document.add_paragraph(style=f"Heading {level}")
             current_paragraph.paragraph_format.keep_with_next = True
+            in_heading = True
         elif token_type == "inline":
             if current_paragraph is None:
                 current_paragraph = _new_paragraph(document, list_stack, quote_depth)
             _add_inline_content(current_paragraph, token.children or [])
-        elif token_type == "paragraph_close" or token_type == "heading_close":
+            if in_heading and token.content.strip():
+                current_heading = token.content.strip()
+        elif token_type == "paragraph_close":
             current_paragraph = None
+        elif token_type == "heading_close":
+            current_paragraph = None
+            in_heading = False
         elif token_type == "fence":
             if token.info.strip().split(maxsplit=1)[0:1] == ["mermaid"]:
                 diagram_number += 1
                 if cli is None:
                     cli = _resolve_cli(cli_name)
                 svg_path, png_path, svg_width, svg_height = _render_mermaid(
-                    token.content, diagram_number, temp_root, cli, font_family
+                    token.content, diagram_number, temp_root, cli, font_family, timeout=timeout
                 )
-                _add_diagram(document, svg_path, png_path, diagram_number, svg_width, svg_height)
+                _add_diagram(
+                    document,
+                    svg_path,
+                    png_path,
+                    diagram_number,
+                    svg_width,
+                    svg_height,
+                    code=token.content,
+                    current_heading=current_heading,
+                )
             else:
                 _add_code_block(document, token.content)
             current_paragraph = None
@@ -342,7 +416,9 @@ def _svg_relationship_id(rels_root: Any) -> str:
     return f"rId{max(numbers, default=0) + 1}"
 
 
-def _inject_svg_parts(docx_path: Path, svg_paths: list[Path]) -> None:
+def _inject_svg_parts(
+    docx_path: Path, svg_paths: list[Path], *, temp_root: Path | None = None
+) -> None:
     if not svg_paths:
         return
 
@@ -351,7 +427,11 @@ def _inject_svg_parts(docx_path: Path, svg_paths: list[Path]) -> None:
         "asvg": SVG_NAMESPACE,
         "wp": WORD_DRAWING_NAMESPACE,
     }
-    temporary_docx = docx_path.with_name(f"{docx_path.stem}.tmp{docx_path.suffix}")
+    temporary_docx = (
+        temp_root / "injected-output.docx"
+        if temp_root is not None
+        else docx_path.with_name(f"{docx_path.stem}.tmp{docx_path.suffix}")
+    )
     with zipfile.ZipFile(docx_path, "r") as source, zipfile.ZipFile(
         temporary_docx, "w", compression=zipfile.ZIP_DEFLATED
     ) as target:
@@ -438,7 +518,7 @@ def _extract_frontmatter(markdown_text: str) -> tuple[str | None, str]:
 
 def convert_markdown(
     input_path: Path, output_path: Path, cli_name: str,
-    *, font_family: str = "Noto Sans JP",
+    *, font_family: str = "Noto Sans JP", timeout: float = 120.0,
 ) -> None:
     input_path = input_path.resolve()
     output_path = output_path.resolve()
@@ -453,6 +533,8 @@ def convert_markdown(
     font_family = font_family.strip()
     if not font_family:
         raise ValueError("Font family must not be empty.")
+    if timeout <= 0:
+        raise ValueError("Timeout must be greater than zero.")
 
     title, markdown_text = _extract_frontmatter(input_path.read_text(encoding="utf-8-sig"))
     document = Document()
@@ -468,10 +550,16 @@ def convert_markdown(
 
     with tempfile.TemporaryDirectory(prefix="markdown-to-word-mermaid-") as temporary_directory:
         temp_root = Path(temporary_directory)
-        diagram_count = _convert_blocks(document, markdown_text, temp_root, cli_name, font_family)
-        document.save(output_path)
+        staged_docx = temp_root / "staged-output.docx"
+        diagram_count = _convert_blocks(
+            document, markdown_text, temp_root, cli_name, font_family, timeout=timeout
+        )
+        document.save(staged_docx)
         svg_paths = [temp_root / f"diagram-{number}" / "diagram.svg" for number in range(1, diagram_count + 1)]
-        _inject_svg_parts(output_path, svg_paths)
+        _inject_svg_parts(staged_docx, svg_paths, temp_root=temp_root)
+        if output_path.exists():
+            raise FileExistsError(f"Output file already exists; refusing to overwrite it: {output_path}")
+        shutil.move(str(staged_docx), str(output_path))
 
 
 def main() -> int:
@@ -482,11 +570,18 @@ def main() -> int:
     parser.add_argument("--output", type=Path, help="Output DOCX path")
     parser.add_argument("--mermaid-cli", default="mmdc", help="Mermaid CLI executable (default: mmdc)")
     parser.add_argument("--font-family", default="Noto Sans JP", help="Installed font for text and diagrams (default: Noto Sans JP)")
+    parser.add_argument("--timeout", type=float, default=120.0, help="Per-command Mermaid CLI timeout in seconds (default: 120)")
     args = parser.parse_args()
     output_path = args.output or args.input.with_suffix(".docx")
 
     try:
-        convert_markdown(args.input, output_path, args.mermaid_cli, font_family=args.font_family)
+        convert_markdown(
+            args.input,
+            output_path,
+            args.mermaid_cli,
+            font_family=args.font_family,
+            timeout=args.timeout,
+        )
     except (FileNotFoundError, OSError, RuntimeError, ValueError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1

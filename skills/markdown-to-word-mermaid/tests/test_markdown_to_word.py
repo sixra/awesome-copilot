@@ -9,6 +9,7 @@ import sys
 import struct
 import zlib
 import json
+import subprocess
 from unittest.mock import patch
 from zipfile import ZipFile
 
@@ -16,6 +17,7 @@ from lxml import etree
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
+import markdown_to_word
 from markdown_to_word import convert_markdown
 
 
@@ -52,7 +54,7 @@ class MarkdownToWordTests(unittest.TestCase):
             )
             commands: list[list[str]] = []
 
-            def fake_command(command: list[str]) -> None:
+            def fake_command(command: list[str], **_: object) -> None:
                 commands.append(command)
                 config_path = Path(command[command.index("-c") + 1])
                 config = json.loads(config_path.read_text(encoding="utf-8"))
@@ -223,6 +225,128 @@ class MarkdownToWordTests(unittest.TestCase):
                 plain_output = root / "plain.docx"
                 convert_markdown(plain_source, plain_output, "mmdc")
                 self.assertTrue(plain_output.is_file())
+
+    def test_existing_output_is_preserved_without_rendering(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            input_path = directory / "input.md"
+            output_path = directory / "input.docx"
+            original_output = b"existing document"
+            input_path.write_text("# Input\n", encoding="utf-8")
+            output_path.write_bytes(original_output)
+
+            with (
+                patch.object(markdown_to_word, "Document") as document,
+                patch.object(markdown_to_word, "_convert_blocks") as render,
+                self.assertRaisesRegex(FileExistsError, "refusing to overwrite"),
+            ):
+                convert_markdown(input_path, output_path, "mmdc")
+
+            document.assert_not_called()
+            render.assert_not_called()
+            self.assertEqual(output_path.read_bytes(), original_output)
+
+    def test_injection_failure_does_not_leave_output_or_adjacent_temp_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "input.md"
+            output = root / "output.docx"
+            adjacent_tmp = root / "output.tmp.docx"
+            adjacent_tmp.write_bytes(b"preexisting adjacent file")
+            source.write_text("```mermaid\nflowchart LR\nA --> B\n```\n", encoding="utf-8")
+
+            def fake_command(command: list[str], **_: object) -> None:
+                output_path = Path(command[command.index("-o") + 1])
+                if output_path.suffix == ".svg":
+                    output_path.write_text(
+                        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><text>Node</text></svg>',
+                        encoding="utf-8",
+                    )
+                else:
+                    output_path.write_bytes(png_data())
+
+            with (
+                patch("markdown_to_word._resolve_cli", return_value="mmdc"),
+                patch("markdown_to_word._run_command", side_effect=fake_command),
+                patch("markdown_to_word._inject_svg_parts", side_effect=RuntimeError("SVG injection failed")),
+                self.assertRaisesRegex(RuntimeError, "SVG injection failed"),
+            ):
+                convert_markdown(source, output, "mmdc")
+
+            self.assertFalse(output.exists())
+            self.assertEqual(adjacent_tmp.read_bytes(), b"preexisting adjacent file")
+
+    def test_preserves_ordered_list_start_and_separate_list_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "lists.md"
+            output = root / "lists.docx"
+            source.write_text(
+                "# Lists\n\n"
+                "5. Fifth item\n"
+                "6. Sixth item\n\n"
+                "Intervening paragraph.\n\n"
+                "1. Restarted first\n"
+                "2. Restarted second\n",
+                encoding="utf-8",
+            )
+            convert_markdown(source, output, "mmdc")
+            with ZipFile(output) as docx:
+                document_xml = etree.fromstring(docx.read("word/document.xml"))
+            paragraphs = [
+                "".join(paragraph.xpath(".//*[local-name()='t']/text()"))
+                for paragraph in document_xml.xpath(".//*[local-name()='p']")
+            ]
+            self.assertIn("5. Fifth item", paragraphs)
+            self.assertIn("6. Sixth item", paragraphs)
+            self.assertIn("1. Restarted first", paragraphs)
+            self.assertIn("2. Restarted second", paragraphs)
+
+    def test_populates_contextual_diagram_alt_text_and_enforces_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "alt.md"
+            output = root / "alt.docx"
+            source.write_text(
+                "## Approval Flow\n\n"
+                "```mermaid\n"
+                "flowchart LR\n"
+                "  accTitle: Release Gate\n"
+                "  accDescr: Validates package before release\n"
+                "  A --> B\n"
+                "```\n",
+                encoding="utf-8",
+            )
+
+            def fake_command(command: list[str], **_: object) -> None:
+                output_path = Path(command[command.index("-o") + 1])
+                if output_path.suffix == ".svg":
+                    output_path.write_text(
+                        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><text>Gate</text></svg>',
+                        encoding="utf-8",
+                    )
+                else:
+                    output_path.write_bytes(png_data())
+
+            with (
+                patch("markdown_to_word._resolve_cli", return_value="mmdc"),
+                patch("markdown_to_word._run_command", side_effect=fake_command),
+            ):
+                convert_markdown(source, output, "mmdc")
+
+            with ZipFile(output) as docx:
+                document_xml = etree.fromstring(docx.read("word/document.xml"))
+            doc_pr = document_xml.xpath(".//*[local-name()='docPr' and @name='mermaid-svg-1']")[0]
+            self.assertEqual(doc_pr.get("title"), "Release Gate")
+            self.assertIn("Validates package before release", doc_pr.get("descr", ""))
+            self.assertIn("flowchart", doc_pr.get("descr", ""))
+
+            with patch(
+                "markdown_to_word.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd=["mmdc"], timeout=5.0),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "timed out after 5s"):
+                    markdown_to_word._run_command(["mmdc"], timeout=5.0)
 
 
 @unittest.skipUnless(os.environ.get("MERMAID_CLI"), "set MERMAID_CLI to run real-renderer coverage")
