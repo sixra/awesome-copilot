@@ -348,6 +348,77 @@ class MarkdownToWordTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "timed out after 5s"):
                     markdown_to_word._run_command(["mmdc"], timeout=5.0)
 
+    @unittest.skipUnless(os.name == "nt", "Windows command-shim coverage")
+    def test_windows_mermaid_cli_avoids_shell_for_ampersand_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory) / "R&D"
+            shim = root / "node_modules" / ".bin" / "mmdc.cmd"
+            entry_point = root / "node_modules" / "@mermaid-js" / "mermaid-cli" / "src" / "cli.js"
+            node = root / "node.exe"
+            shim.parent.mkdir(parents=True)
+            entry_point.parent.mkdir(parents=True)
+            shim.touch()
+            entry_point.touch()
+            node.touch()
+            commands: list[tuple[list[str], dict[str, object]]] = []
+
+            def fake_run(command: list[str], **kwargs: object) -> object:
+                commands.append((command, kwargs))
+                output_path = Path(command[command.index("-o") + 1])
+                if output_path.suffix == ".svg":
+                    output_path.write_text(
+                        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"/>',
+                        encoding="utf-8",
+                    )
+                else:
+                    output_path.write_bytes(png_data())
+
+                class Result:
+                    returncode = 0
+                    stdout = ""
+                    stderr = ""
+
+                return Result()
+
+            with patch(
+                "markdown_to_word.shutil.which",
+                side_effect=lambda name: str(node) if name == "node" else None,
+            ), patch("markdown_to_word.subprocess.run", side_effect=fake_run):
+                markdown_to_word._render_mermaid("flowchart LR\nA --> B", 1, root, str(shim))
+
+            self.assertEqual(len(commands), 2)
+            for command, kwargs in commands:
+                self.assertEqual(command[:2], [str(node), str(entry_point)])
+                self.assertNotIn("cmd.exe", command[0].lower())
+                self.assertFalse(kwargs.get("shell", False))
+                self.assertIn("R&D", command[command.index("-o") + 1])
+
+    def test_hard_link_failure_never_exposes_a_partial_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            staged = root / "staged.docx"
+            output = root / "output.docx"
+            staged.write_bytes(b"complete document")
+
+            with patch("markdown_to_word.os.link", side_effect=OSError("hard links unavailable")):
+                if os.name == "nt":
+                    markdown_to_word._publish_docx_exclusively(staged, output)
+                    self.assertEqual(output.read_bytes(), b"complete document")
+                    self.assertFalse(staged.exists())
+                    second_staged = root / "second-staged.docx"
+                    second_staged.write_bytes(b"replacement document")
+                    with patch(
+                        "markdown_to_word.os.link",
+                        side_effect=OSError("hard links unavailable"),
+                    ), self.assertRaisesRegex(FileExistsError, "refusing to overwrite"):
+                        markdown_to_word._publish_docx_exclusively(second_staged, output)
+                    self.assertEqual(output.read_bytes(), b"complete document")
+                else:
+                    with self.assertRaisesRegex(OSError, "Cannot publish DOCX atomically"):
+                        markdown_to_word._publish_docx_exclusively(staged, output)
+                    self.assertFalse(output.exists())
+                    self.assertEqual(staged.read_bytes(), b"complete document")
+
     def test_preserves_multi_paragraph_list_items_and_atomic_publication(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

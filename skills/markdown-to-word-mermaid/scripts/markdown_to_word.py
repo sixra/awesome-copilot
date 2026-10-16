@@ -56,6 +56,26 @@ def _resolve_cli(cli_name: str) -> str:
     )
 
 
+def _command_prefix(cli: str) -> list[str]:
+    cli_path = Path(cli)
+    if os.name != "nt" or cli_path.suffix.lower() not in {".cmd", ".bat"}:
+        return [cli]
+    node = shutil.which("node")
+    if node is None:
+        raise FileNotFoundError("Node.js is required to invoke Mermaid CLI without a shell on Windows.")
+    for directory in cli_path.resolve().parents:
+        candidates = (
+            directory / "@mermaid-js/mermaid-cli/src/cli.js",
+            directory / "node_modules/@mermaid-js/mermaid-cli/src/cli.js",
+        )
+        entry_point = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if entry_point is not None:
+            return [node, str(entry_point)]
+    raise FileNotFoundError(
+        "Could not locate the Mermaid CLI JavaScript entry point beside the Windows command shim."
+    )
+
+
 def _puppeteer_config(directory: Path) -> list[str]:
     browser = os.environ.get("MERMAID_BROWSER_PATH")
     candidates = [Path(browser)] if browser else []
@@ -77,9 +97,6 @@ def _puppeteer_config(directory: Path) -> list[str]:
 
 
 def _run_command(command: list[str], *, timeout: float = 120.0) -> None:
-    if os.name == "nt" and Path(command[0]).suffix.lower() in {".cmd", ".bat"}:
-        command_line = subprocess.list2cmdline(command)
-        command = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", command_line]
     try:
         result = subprocess.run(
             command,
@@ -112,9 +129,10 @@ def _render_mermaid(
     config = {**SVG_CONFIG, "themeVariables": {"fontFamily": f"{font_family}, sans-serif"}}
     config_path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
 
+    command_prefix = _command_prefix(cli)
     common = ["-i", str(source_path), "-c", str(config_path), *_puppeteer_config(diagram_dir)]
-    _run_command([cli, *common, "-o", str(svg_path), "-e", "svg"], timeout=timeout)
-    _run_command([cli, *common, "-o", str(png_path), "-e", "png", "-s", "3"], timeout=timeout)
+    _run_command([*command_prefix, *common, "-o", str(svg_path), "-e", "svg"], timeout=timeout)
+    _run_command([*command_prefix, *common, "-o", str(png_path), "-e", "png", "-s", "3"], timeout=timeout)
 
     if not svg_path.is_file() or not png_path.is_file():
         raise RuntimeError("Mermaid CLI completed without producing both SVG and PNG outputs.")
@@ -579,19 +597,17 @@ def _publish_docx_exclusively(staged_docx: Path, output_path: Path) -> None:
         raise FileExistsError(
             f"Output file already exists; refusing to overwrite it: {output_path}"
         ) from error
-    except OSError:
-        try:
-            fd = os.open(output_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
-        except FileExistsError as error:
-            raise FileExistsError(
-                f"Output file already exists; refusing to overwrite it: {output_path}"
+    except OSError as error:
+        if os.name != "nt":
+            raise OSError(
+                f"Cannot publish DOCX atomically because hard links are unavailable: {output_path}"
             ) from error
         try:
-            with os.fdopen(fd, "wb") as destination_stream, staged_docx.open("rb") as source_stream:
-                shutil.copyfileobj(source_stream, destination_stream)
-        except BaseException:
-            output_path.unlink(missing_ok=True)
-            raise
+            os.rename(staged_docx, output_path)
+        except FileExistsError as conflict:
+            raise FileExistsError(
+                f"Output file already exists; refusing to overwrite it: {output_path}"
+            ) from conflict
     else:
         staged_docx.unlink(missing_ok=True)
 
