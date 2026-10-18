@@ -45,6 +45,17 @@ test("targets/parse and share agree on routes", async () => {
   assert.equal(bad.status, 400);
 });
 
+test("run endpoints require the capability token and validate input", async () => {
+  for (const path of ["/api/runs?repo=o/r", "/api/runs/5?repo=o/r", "/api/workflows?repo=o/r", "/api/runs/artifact-counts?repo=o/r&ids=1"]) {
+    const response = await call(path, { token: null });
+    assert.ok(response.status === 401 || response.status === 403, path);
+  }
+  const badIds = await call("/api/runs/artifact-counts?repo=o/r&ids=abc");
+  assert.equal(badIds.status, 400);
+  const tooMany = await call(`/api/runs/artifact-counts?repo=o/r&ids=${Array.from({ length: 31 }, (_, i) => i + 1).join(",")}`);
+  assert.equal(tooMany.status, 400);
+});
+
 test("probe reports embedding barriers and unreachable hosts", async () => {
   const ok = await (await call("/api/probe", { method: "POST", body: { url: origin } })).json();
   assert.equal(ok.embeddable, true);

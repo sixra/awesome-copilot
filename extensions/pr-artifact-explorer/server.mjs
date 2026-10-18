@@ -35,9 +35,15 @@ import {
   filterPullRequests,
   getIssue,
   getRepository,
+  getWorkflowRun,
   GitHubApiError,
   listRepositoryContributors,
   listPullRequestArtifacts,
+  listRunArtifactCounts,
+  listWorkflowRuns,
+  listWorkflows,
+  MAX_ARTIFACT_COUNT_RUNS,
+  normalizeRunFilters,
   searchPullRequestBase,
   searchPullRequests,
   suggestRepositories,
@@ -817,6 +823,74 @@ async function handleApi(req, res, entry, url) {
     const { auth } = await resolveAuth(repository);
     const issue = await getIssue(auth.activeToken, repository, issueMatch[1]);
     return sendJson(res, 200, { repository, issue, account: auth.active });
+  }
+
+  if (req.method === "GET" && path === "/api/workflows") {
+    const repository = normalizeRepository(url.searchParams.get("repo"));
+    const { auth } = await resolveAuth(repository);
+    const workflows = await pullRequestCache.get(
+      pullRequestCacheKey(auth.active, "workflows", [repository]),
+      () => listWorkflows(auth.activeToken, repository),
+      { force: url.searchParams.get("refresh") === "1" },
+    );
+    return sendJson(res, 200, { repository, workflows, account: auth.active });
+  }
+
+  if (req.method === "GET" && path === "/api/runs") {
+    const repository = normalizeRepository(url.searchParams.get("repo"));
+    const filters = normalizeRunFilters({
+      event: url.searchParams.get("event"),
+      status: url.searchParams.get("status"),
+      branch: url.searchParams.get("branch"),
+      workflow: url.searchParams.get("workflow"),
+      excludePullRequests: url.searchParams.get("nopr"),
+      page: url.searchParams.get("page"),
+    });
+    const { auth } = await resolveAuth(repository);
+    const load = () => listWorkflowRuns(auth.activeToken, repository, filters);
+    const force = url.searchParams.get("refresh") === "1";
+    // Branch names are case-sensitive but cache keys are case-folded, so those lists bypass the cache.
+    const payload = filters.branch
+      ? await load()
+      : await pullRequestCache.get(
+          pullRequestCacheKey(auth.active, "runs", [
+            repository,
+            filters.event,
+            filters.status,
+            filters.workflow,
+            filters.excludePullRequests,
+            filters.page,
+          ]),
+          load,
+          { force },
+        );
+    return sendJson(res, 200, { repository, ...payload, account: auth.active });
+  }
+
+  if (req.method === "GET" && path === "/api/runs/artifact-counts") {
+    const repository = normalizeRepository(url.searchParams.get("repo"));
+    const ids = String(url.searchParams.get("ids") ?? "")
+      .split(",")
+      .filter(Boolean)
+      .map(Number);
+    if (ids.length > MAX_ARTIFACT_COUNT_RUNS || ids.some((id) => !Number.isSafeInteger(id) || id <= 0)) {
+      throw new HttpError(400, `Provide up to ${MAX_ARTIFACT_COUNT_RUNS} positive run ids.`);
+    }
+    const { auth } = await resolveAuth(repository);
+    const counts = await listRunArtifactCounts(auth.activeToken, repository, ids);
+    return sendJson(res, 200, { repository, counts, account: auth.active });
+  }
+
+  const runMatch = path.match(/^\/api\/runs\/(\d+)$/);
+  if (req.method === "GET" && runMatch) {
+    const repository = normalizeRepository(url.searchParams.get("repo"));
+    const { auth } = await resolveAuth(repository);
+    const payload = await pullRequestCache.get(
+      pullRequestCacheKey(auth.active, "run", [repository, runMatch[1]]),
+      () => getWorkflowRun(auth.activeToken, repository, runMatch[1]),
+      { force: url.searchParams.get("refresh") === "1" },
+    );
+    return sendJson(res, 200, { repository, ...payload, account: auth.active });
   }
 
   if (req.method === "POST" && path === "/api/runs/rerun-context") {

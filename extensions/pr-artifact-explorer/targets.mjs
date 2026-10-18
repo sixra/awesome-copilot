@@ -1,4 +1,6 @@
 // Single source of truth for turning links, routes and plain-language requests into explorer targets.
+import { normalizeRunFilters } from "./github.mjs";
+
 const NAME = "[A-Za-z0-9_.-]+";
 const REPO = `(${NAME})\\/(${NAME})`;
 const GITHUB_HOSTS = new Set(["github.com", "www.github.com"]);
@@ -36,6 +38,68 @@ export function artifactUrl(repository, artifactId, runId = null) {
     : `https://github.com/${repository}/actions/artifacts/${artifactId}`;
 }
 
+export function runUrl(repository, runId) {
+  return `https://github.com/${repository}/actions/runs/${runId}`;
+}
+
+// Only the filters that GitHub's own Actions page understands are carried into the public link.
+const GITHUB_STATUS_QUALIFIERS = {
+  success: "success",
+  failure: "failure",
+  cancelled: "cancelled",
+  skipped: "skipped",
+  in_progress: "in_progress",
+  queued: "queued",
+  waiting: "waiting",
+};
+
+export function runsUrl(target) {
+  const base = target.workflow
+    ? `https://github.com/${target.repository}/actions/workflows/${encodeURIComponent(target.workflow)}`
+    : `https://github.com/${target.repository}/actions`;
+  const qualifiers = [];
+  if (target.event) qualifiers.push(`event:${target.event}`);
+  if (target.branch && !/\s/.test(target.branch)) qualifiers.push(`branch:${target.branch}`);
+  if (GITHUB_STATUS_QUALIFIERS[target.status]) qualifiers.push(`is:${GITHUB_STATUS_QUALIFIERS[target.status]}`);
+  return qualifiers.length ? `${base}?${new URLSearchParams({ query: qualifiers.join(" ") })}` : base;
+}
+
+function runFilters(source) {
+  const filters = normalizeRunFilters(source);
+  const result = {};
+  if (filters.event) result.event = filters.event;
+  if (filters.status) result.status = filters.status;
+  if (filters.branch) result.branch = filters.branch;
+  if (filters.workflow) result.workflow = filters.workflow;
+  if (filters.excludePullRequests) result.excludePullRequests = true;
+  if (filters.page > 1) result.page = filters.page;
+  return result;
+}
+
+function runsQueryString(target) {
+  const query = new URLSearchParams();
+  if (target.event) query.set("event", target.event);
+  if (target.status) query.set("status", target.status);
+  if (target.branch) query.set("branch", target.branch);
+  if (target.workflow) query.set("workflow", target.workflow);
+  if (target.excludePullRequests) query.set("nopr", "1");
+  if (target.page > 1) query.set("page", String(target.page));
+  return query.toString();
+}
+
+function filtersFromGitHubQuery(raw) {
+  const filters = {};
+  for (const token of String(raw ?? "").split(/\s+/).filter(Boolean)) {
+    const [key, ...rest] = token.split(":");
+    const value = rest.join(":");
+    if (!value) continue;
+    if (key === "event") filters.event = value;
+    else if (key === "branch") filters.branch = value;
+    else if (key === "is") filters.status = value;
+  }
+  return runFilters(filters);
+}
+
 export function canonicalUrl(target) {
   switch (target?.kind) {
     case "pull":
@@ -44,6 +108,10 @@ export function canonicalUrl(target) {
       return issueUrl(target.repository, target.number);
     case "artifact":
       return artifactUrl(target.repository, target.artifactId, target.runId);
+    case "run":
+      return runUrl(target.repository, target.runId);
+    case "runs":
+      return runsUrl(target);
     case "repository":
       return `https://github.com/${target.repository}`;
     case "url":
@@ -70,6 +138,17 @@ function fromGitHubUrl(url) {
   }
   if (parts[2] === "actions" && parts[3] === "artifacts" && positive(parts[4])) {
     return { kind: "artifact", repository, artifactId: positive(parts[4]) };
+  }
+  if (parts[2] === "actions" && parts[3] === "runs" && positive(parts[4])) {
+    return { kind: "run", repository, runId: positive(parts[4]) };
+  }
+  if (parts[2] === "actions") {
+    const filters = filtersFromGitHubQuery(url.searchParams.get("query"));
+    if (parts[3] === "workflows" && parts[4]) {
+      const workflow = runFilters({ workflow: parts[4] }).workflow;
+      if (workflow) filters.workflow = workflow;
+    }
+    return { kind: "runs", repository, ...filters };
   }
   return { kind: "repository", repository };
 }
@@ -122,6 +201,7 @@ function fromExplorerPath(route, query) {
     const target = { kind: "artifact", repository: safeRepository(match[1]), artifactId: safeId(match[3]) };
     const pullNumber = safeId(match[2], { allowZero: true });
     if (pullNumber > 0) target.pullNumber = pullNumber;
+    if (query.get("run")) target.runId = safeId(query.get("run"));
     if (query.get("file")) {
       target.file = query.get("file");
       if (query.get("view") === "raw") target.mode = "raw";
@@ -130,6 +210,23 @@ function fromExplorerPath(route, query) {
   }
   match = route.match(/^\/pulls\/([^/]+)$/);
   if (match) return { kind: "repository", repository: safeRepository(match[1]) };
+  match = route.match(/^\/runs\/([^/]+)$/);
+  if (match) {
+    return {
+      kind: "runs",
+      repository: safeRepository(match[1]),
+      ...runFilters({
+        event: query.get("event"),
+        status: query.get("status"),
+        branch: query.get("branch"),
+        workflow: query.get("workflow"),
+        excludePullRequests: query.get("nopr"),
+        page: query.get("page"),
+      }),
+    };
+  }
+  match = route.match(/^\/run\/([^/]+)\/(\d+)$/);
+  if (match) return { kind: "run", repository: safeRepository(match[1]), runId: safeId(match[2]) };
   if (route === "/cache") return { kind: "cache" };
   if (route === "/docs" || route.startsWith("/docs/")) return { kind: "docs", section: route.slice(6) || null };
   return null;
@@ -217,11 +314,22 @@ function naturalLanguage(text) {
   const repoMatch = text.match(new RegExp(`(?:^|[\\s(])(${NAME}\\/${NAME})(?=$|[\\s,.;)#])`));
   const [repoOwner, repoName] = repoMatch ? repoMatch[1].split("/") : [];
   const repository = repoMatch && validRepository(repoOwner, repoName) ? repoMatch[1] : null;
-  const kindMatch = lower.match(/\b(pull request|pull|pr|issue|artifact)\b\s*(?:number\s*|no\.?\s*|id\s*)?#?(\d+)/);
+  const kindMatch = lower.match(/\b(pull request|pull|pr|issue|artifact|run)\b\s*(?:number\s*|no\.?\s*|id\s*)?#?(\d+)/);
   if (kindMatch) {
     const number = positive(kindMatch[2]);
     if (kindMatch[1] === "artifact") return { kind: "artifact", repository, artifactId: number };
+    if (kindMatch[1] === "run") return { kind: "run", repository, runId: number };
     return { kind: kindMatch[1] === "issue" ? "issue" : "pull", repository, number };
+  }
+  if (/\b(?:open|show|go to|browse|view|list|find|see)\b/.test(lower) && /\b(?:actions|workflow runs?|workflows|runs|cron|scheduled|schedule|nightly)\b/.test(lower)) {
+    const filters = {};
+    if (/\b(?:cron|scheduled|schedule|nightly)\b/.test(lower)) filters.event = "schedule";
+    else if (/\b(?:manual|manually|dispatch|dispatched)\b/.test(lower)) filters.event = "workflow_dispatch";
+    else if (/\breleases?\b/.test(lower)) filters.event = "release";
+    else if (/\bpush(?:es)?\b/.test(lower)) filters.event = "push";
+    if (/\b(?:fail|failed|failing|failures?)\b/.test(lower)) filters.status = "failure";
+    if (/\b(?:without|no|not|non)[\s-]+(?:from\s+)?(?:a\s+)?(?:pr|prs|pull requests?)\b/.test(lower)) filters.excludePullRequests = true;
+    return { kind: "runs", repository, ...runFilters(filters) };
   }
   if (repository && /\b(?:open|show|go to|browse|view|pulls?)\b/.test(lower)) {
     const hash = text.match(/#(\d+)/);
@@ -263,6 +371,14 @@ export function parseTarget(value, { defaultRepository = null } = {}) {
   if (match && validRepository(match[1], match[2])) {
     return { kind: "artifact", repository: `${match[1]}/${match[2]}`, artifactId: Number(match[3]) };
   }
+  match = input.match(new RegExp(`^${REPO}(?:\\s+|:)run[:\\s#]*(\\d+)$`, "i"));
+  if (match && validRepository(match[1], match[2])) {
+    return { kind: "run", repository: `${match[1]}/${match[2]}`, runId: Number(match[3]) };
+  }
+  match = input.match(new RegExp(`^${REPO}(?:\\s+|:)(?:actions|runs|workflow runs)$`, "i"));
+  if (match && validRepository(match[1], match[2])) {
+    return { kind: "runs", repository: `${match[1]}/${match[2]}` };
+  }
   match = input.match(/^#(\d+)$/);
   if (match && defaultRepository) {
     return { kind: "pull", repository: defaultRepository, number: Number(match[1]), ambiguous: true };
@@ -288,8 +404,21 @@ export function routeFor(target) {
       return `#/pull/${encodeURIComponent(target.repository)}/${target.number}`;
     case "issue":
       return `#/issue/${encodeURIComponent(target.repository)}/${target.number}`;
-    case "artifact":
-      return `#/artifact/${encodeURIComponent(target.repository)}/${target.pullNumber ?? 0}/${target.artifactId}${target.file ? `?file=${encodeURIComponent(target.file)}${target.mode === "raw" ? "&view=raw" : ""}` : ""}`;
+    case "artifact": {
+      const params = [];
+      if (target.file) {
+        params.push(`file=${encodeURIComponent(target.file)}`);
+        if (target.mode === "raw") params.push("view=raw");
+      }
+      if (target.runId) params.push(`run=${target.runId}`);
+      return `#/artifact/${encodeURIComponent(target.repository)}/${target.pullNumber ?? 0}/${target.artifactId}${params.length ? `?${params.join("&")}` : ""}`;
+    }
+    case "run":
+      return `#/run/${encodeURIComponent(target.repository)}/${target.runId}`;
+    case "runs": {
+      const query = runsQueryString(target);
+      return `#/runs/${encodeURIComponent(target.repository)}${query ? `?${query}` : ""}`;
+    }
     case "url":
       return target.url ? `#/browser?v=${encodeView({ ...target.view, url: target.url })}` : null;
     case "cache":

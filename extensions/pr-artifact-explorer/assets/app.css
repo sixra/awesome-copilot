@@ -1750,6 +1750,114 @@ select {
   background: var(--app-fg-muted);
 }
 
+.state-badge.pending {
+  background: var(--app-attention);
+}
+
+.repo-tabs {
+  display: flex;
+  gap: var(--base-size-4, 4px);
+  margin-bottom: var(--base-size-16, 16px);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.repo-tab {
+  display: inline-flex;
+  gap: var(--base-size-6, 6px);
+  padding: var(--base-size-8, 8px) var(--base-size-12, 12px);
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--app-fg);
+  text-decoration: none;
+  align-items: center;
+}
+
+.repo-tab:hover {
+  background: var(--app-bg-muted);
+  border-radius: var(--app-radius) var(--app-radius) 0 0;
+}
+
+.repo-tab[aria-current="page"] {
+  border-bottom-color: var(--app-accent);
+  font-weight: 600;
+}
+
+.runs-filter-form {
+  display: flex;
+  gap: var(--base-size-8, 8px);
+  margin-bottom: var(--base-size-16, 16px);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.runs-filter-select {
+  width: auto;
+  min-width: 150px;
+  max-width: 220px;
+  padding-right: var(--base-size-32, 32px);
+}
+
+.run-row .Label {
+  display: inline-flex;
+  min-height: 20px;
+  margin-left: var(--base-size-4, 4px);
+  padding: 0 7px;
+  border: 1px solid var(--app-border);
+  border-radius: 2em;
+  color: var(--app-fg-muted);
+  font-size: var(--text-body-size-small, 12px);
+  align-items: center;
+}
+
+.runs-filter-branch {
+  width: 180px;
+}
+
+.runs-filter-check {
+  display: inline-flex;
+  gap: var(--base-size-6, 6px);
+  color: var(--app-fg-muted);
+  align-items: center;
+}
+
+.run-row {
+  min-height: 64px;
+}
+
+.run-row[hidden] {
+  display: none;
+}
+
+.run-row > .octicon {
+  margin-top: 4px;
+  flex: none;
+}
+
+.run-row .Box-row-title {
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.run-artifact-count {
+  display: inline-flex;
+  gap: var(--base-size-4, 4px);
+  font-size: var(--text-body-size-small, 12px);
+  align-items: center;
+  white-space: nowrap;
+}
+
+.run-pr-link {
+  display: inline-flex;
+  gap: var(--base-size-4, 4px);
+  align-items: center;
+}
+
+.run-pager {
+  display: inline-flex;
+  gap: var(--base-size-8, 8px);
+  align-items: center;
+}
+
 .pr-summary {
   display: flex;
   gap: var(--base-size-8, 8px);

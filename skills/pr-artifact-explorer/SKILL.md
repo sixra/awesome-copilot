@@ -1,11 +1,11 @@
 ---
 name: pr-artifact-explorer
-description: 'Open, share, and inspect GitHub PRs, issues, Actions artifacts, and local or HTTP(S) web previews in the Artifact Explorer canvas, with viewport presets, zoom, screenshots, and recoverable download jobs.'
+description: 'Open, share, and inspect GitHub PRs, issues, workflow runs (including scheduled, manual and other runs with no PR), Actions artifacts, and local or HTTP(S) web previews in the Artifact Explorer canvas, with viewport presets, zoom, screenshots, and recoverable download jobs.'
 ---
 
 # Artifact Explorer
 
-Use the `pr-artifact-explorer` canvas to show a user pull requests, issues, Actions artifacts, and web pages.
+Use the `pr-artifact-explorer` canvas to show a user pull requests, issues, workflow runs, Actions artifacts, and web pages.
 
 ## How to drive the canvas
 
@@ -17,20 +17,25 @@ The action names below (`open_target`, `share`, ...) are **canvas actions, not s
 
 ## Open a target
 
-`invoke_canvas_action` with `open_target { input }` (or the open input `repository`, `pullNumber`, `artifactId`, `url`, `route`, plus `preset`/`width`/`height`/`zoom`). `input` accepts:
+`invoke_canvas_action` with `open_target { input }` (or the open input `repository`, `pullNumber`, `runId`, `artifactId`, `url`, `route`, `view: "runs"` with run filters, plus `preset`/`width`/`height`/`zoom`). `input` accepts:
 
-- GitHub PR/issue URLs or `owner/repo#123`; issues display details only, artifacts are PR-specific
+- GitHub PR/issue URLs or `owner/repo#123`; issues display details only
+- Actions links and requests that need no PR: `https://github.com/<owner>/<repo>/actions` (also `?query=event%3Aschedule`, `/actions/workflows/<file>.yml`), `https://github.com/<owner>/<repo>/actions/runs/<run>`, `owner/repo actions`, `owner/repo run 123`, `show scheduled runs in owner/repo`
 - real artifact permalinks (`https://github.com/<owner>/<repo>/actions/runs/<run>/artifacts/<id>`), an artifact ID with a repository, or a shared explorer link/route such as `#/docs`, `#/artifact/owner%2Frepo/0/456?file=index.html`, `#/browser?v=...`
 - `http(s)://` and `localhost` URLs (browser preview)
 - bounded natural language: `open PR 123 in owner/repo`, `show localhost:3000 on mobile`, `go back`, `zoom 150%`, `tablet`, `1280x720`, `screenshot`
 
 Use `share { input, preset?, zoom?, width?, height? }` to produce a link, route, and text to give the user. Artifact shares keep repository/artifact/file identity (not preview ports); the recipient pastes it into the canvas or into `open_target`.
 
+## Workflow runs without a pull request
+
+Many runs have no PR: `schedule` (cron), `workflow_dispatch`, `push`, `release`, `workflow_run`, and others. Use `open_runs { repository, event?, status?, branch?, workflow?, excludePullRequests? }` to open the repository's **Workflow runs** list (for example `event: "schedule"` for cron runs), and `open_run { repository, runId }` to open one run and its artifacts. The same artifact preview, Browser view, sharing and Re-run behavior applies; artifacts opened from a run keep a `?run=<id>` route so breadcrumbs return to the run. Run rows show a lazily loaded artifact count and the list can hide runs with no artifacts or runs triggered by pull requests.
+
 ## Artifacts
 
 `inspect_artifact { repository, artifactId }` starts a background job. Downloads continue past soft limits; when one is reached the user is prompted for a larger value (`set_limit { kind, value }`; the value must be at least the live progress). Check `job_status`; use `retry_job` after an `interrupted` or `failed` job (a completed ZIP is reused) and `cancel_job` only when asked. Never execute artifact programs or build scripts: artifacts are only inspected or previewed as static sites and files.
 
-Re-running the workflow that produced an artifact is a UI-only, user-confirmed action (the Re-run button on an artifact row). Never attempt it yourself or call its API; if the user wants a fresh artifact, tell them to use that button. It reuses the original commit, ref and actor, is limited to 30 days and 50 re-runs, and only requests a run, not a ready artifact.
+Re-running the workflow that produced an artifact is a UI-only, user-confirmed action (the Re-run button on an artifact row or a run page). Never attempt it yourself or call its API; if the user wants a fresh artifact, tell them to use that button. It reuses the original commit, ref and actor, is limited to 30 days and 50 re-runs, and only requests a run, not a ready artifact.
 
 ## Browser preview
 

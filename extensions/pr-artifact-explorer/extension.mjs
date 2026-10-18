@@ -88,6 +88,14 @@ const VIEW_PROPERTIES = {
   orientation: { type: "string", enum: ["portrait", "landscape"] },
 };
 
+const RUN_FILTER_PROPERTIES = {
+  event: { type: "string", description: "Workflow run event filter, e.g. schedule, workflow_dispatch, push or release." },
+  status: { type: "string", description: "Run status or conclusion filter, e.g. success, failure or in_progress." },
+  branch: { type: "string", description: "Branch name filter." },
+  workflow: { type: "string", description: "Workflow file name (e.g. ci.yml) or numeric workflow id." },
+  excludePullRequests: { type: "boolean", description: "Hide runs triggered by pull requests." },
+};
+
 function viewFragment(url, input = {}) {
   let { width, height } = input;
   if (width && height && ((input.orientation === "landscape" && height > width) || (input.orientation === "portrait" && width > height))) {
@@ -102,7 +110,7 @@ const session = await joinSession({
       id: "pr-artifact-explorer",
       displayName: "Artifact Explorer",
       description:
-        "Browse GitHub pull requests and issues, securely preview workflow artifacts, and open local or web URLs in a responsive browser preview with device presets, zoom, history, and screenshots.",
+        "Browse GitHub pull requests, issues and workflow runs (including scheduled and manual runs without a pull request), securely preview workflow artifacts, and open local or web URLs in a responsive browser preview with device presets, zoom, history, and screenshots.",
       inputSchema: {
         type: "object",
         properties: {
@@ -120,10 +128,21 @@ const session = await joinSession({
             minimum: 1,
             description: "Workflow artifact id to inspect (requires repository).",
           },
+          runId: {
+            type: "integer",
+            minimum: 1,
+            description: "Workflow run id to open, with or without a pull request (requires repository).",
+          },
+          view: {
+            type: "string",
+            enum: ["runs"],
+            description: "Set to \"runs\" to open the repository's workflow runs list (requires repository).",
+          },
+          ...RUN_FILTER_PROPERTIES,
           url: {
             type: "string",
             description:
-              "A GitHub PR/issue/artifact URL, a shared artifact-explorer link, or an http(s) URL to preview in the browser view.",
+              "A GitHub PR/issue/artifact/run/Actions URL, a shared artifact-explorer link, or an http(s) URL to preview in the browser view.",
           },
           route: {
             type: "string",
@@ -158,9 +177,55 @@ const session = await joinSession({
           }),
         },
         {
+          name: "open_runs",
+          description:
+            "Navigate to a repository's workflow runs from any trigger, including scheduled (cron), manual, push and release runs that have no pull request. Optionally filter by event, status, branch or workflow.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              repository: { type: "string" },
+              ...RUN_FILTER_PROPERTIES,
+            },
+            required: ["repository"],
+            additionalProperties: false,
+          },
+          handler: wrap((ctx) => {
+            const repository = normalizeRepository(ctx.input?.repository);
+            const target = {
+              kind: "runs",
+              repository,
+              ...Object.fromEntries(
+                Object.entries(ctx.input ?? {}).filter(([key, value]) => key in RUN_FILTER_PROPERTIES && value),
+              ),
+            };
+            const route = routeFor(target);
+            return { navigated: navigateInstance(ctx.instanceId, route), repository, route };
+          }),
+        },
+        {
+          name: "open_run",
+          description:
+            "Navigate to a workflow run and its artifacts. Works for any run, including those not tied to a pull request.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              repository: { type: "string" },
+              runId: { type: "integer", minimum: 1 },
+            },
+            required: ["repository", "runId"],
+            additionalProperties: false,
+          },
+          handler: wrap((ctx) => {
+            const repository = normalizeRepository(ctx.input?.repository);
+            const runId = positiveInteger(ctx.input?.runId, "runId");
+            const route = routeFor({ kind: "run", repository, runId });
+            return { navigated: navigateInstance(ctx.instanceId, route), repository, runId, route };
+          }),
+        },
+        {
           name: "open_target",
           description:
-            "Navigate the canvas to any supported target: a PR/issue/artifact URL, a shared link, natural language (e.g. 'open PR 123 in owner/repo'), a docs request, or an http(s) URL in the browser preview. Never runs artifact code.",
+            "Navigate the canvas to any supported target: a PR/issue/artifact/workflow-run/Actions URL, a shared link, natural language (e.g. 'open PR 123 in owner/repo'), a docs request, or an http(s) URL in the browser preview. Never runs artifact code.",
           inputSchema: {
             type: "object",
             properties: {
@@ -511,7 +576,7 @@ const session = await joinSession({
         );
         return {
           title: "Artifact Explorer",
-          status: "GitHub pull request artifacts",
+          status: "GitHub workflow artifacts",
           url: entry.url,
         };
       },

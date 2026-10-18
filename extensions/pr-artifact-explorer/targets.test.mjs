@@ -148,3 +148,63 @@ test("Raw preview mode round-trips through parse, route and share", () => {
   assert.equal(parseTarget("#/artifact/example%2Fproject/0/999997?view=raw").mode, undefined);
   assert.equal(parseTarget(r.replace("raw", "bogus")).mode, undefined);
 });
+
+test("Actions runs lists and single runs resolve from GitHub links", () => {
+  assert.deepEqual(parseTarget(`https://github.com/${R}/actions`), { kind: "runs", repository: R });
+  assert.deepEqual(parseTarget(`https://github.com/${R}/actions?query=event%3Aschedule+branch%3Amain+is%3Afailure`), {
+    kind: "runs",
+    repository: R,
+    event: "schedule",
+    branch: "main",
+    status: "failure",
+  });
+  assert.deepEqual(parseTarget(`https://github.com/${R}/actions/workflows/nightly.yml`), { kind: "runs", repository: R, workflow: "nightly.yml" });
+  assert.deepEqual(parseTarget(`https://github.com/${R}/actions/runs/55/job/9`), { kind: "run", repository: R, runId: 55 });
+  assert.deepEqual(parseTarget(`https://github.com/${R}/actions/runs/55`), { kind: "run", repository: R, runId: 55 });
+  assert.equal(parseTarget(`https://github.com/${R}/actions/runs/55/artifacts/7`).kind, "artifact");
+});
+
+test("runs and run targets round-trip through routes and shares", () => {
+  const runs = parseTarget("#/runs/github%2Fawesome-copilot?event=schedule&status=failure&nopr=1&page=2&branch=release%2F1");
+  assert.deepEqual(runs, {
+    kind: "runs",
+    repository: R,
+    event: "schedule",
+    status: "failure",
+    branch: "release/1",
+    excludePullRequests: true,
+    page: 2,
+  });
+  assert.deepEqual(parseTarget(routeFor(runs)), runs);
+  assert.equal(describeShare({ kind: "runs", repository: R, event: "schedule" }).url, `https://github.com/${R}/actions?query=event%3Aschedule`);
+  assert.equal(routeFor({ kind: "runs", repository: R }), "#/runs/github%2Fawesome-copilot");
+  const run = parseTarget("#/run/github%2Fawesome-copilot/55");
+  assert.deepEqual(run, { kind: "run", repository: R, runId: 55 });
+  assert.equal(routeFor(run), "#/run/github%2Fawesome-copilot/55");
+  assert.equal(describeShare(run).url, `https://github.com/${R}/actions/runs/55`);
+  assert.throws(() => parseTarget("#/run/github%2Fawesome-copilot/0"), TargetError);
+  assert.throws(() => parseTarget("#/runs/not-a-repo"), TargetError);
+  assert.deepEqual(parseTarget("#/runs/github%2Fawesome-copilot?event=a%26b&status=bogus"), { kind: "runs", repository: R });
+});
+
+test("artifacts opened from a run keep the run in their route", () => {
+  const route = "#/artifact/github%2Fawesome-copilot/0/8?file=a%2Fb.txt&view=raw&run=55";
+  const target = parseTarget(route);
+  assert.deepEqual(target, { kind: "artifact", repository: R, artifactId: 8, runId: 55, file: "a/b.txt", mode: "raw" });
+  assert.equal(routeFor(target), route);
+  assert.equal(routeFor({ kind: "artifact", repository: R, artifactId: 8, runId: 55 }), "#/artifact/github%2Fawesome-copilot/0/8?run=55");
+  assert.equal(parseTarget(`https://github.com/${R}/actions/runs/55/artifacts/8`).runId, 55);
+  assert.equal(routeFor(parseTarget(`https://github.com/${R}/actions/runs/55/artifacts/8`)), "#/artifact/github%2Fawesome-copilot/0/8?run=55");
+  assert.throws(() => parseTarget("#/artifact/github%2Fawesome-copilot/0/8?run=0"), TargetError);
+});
+
+test("natural language reaches scheduled and non-PR runs", () => {
+  assert.deepEqual(parseTarget(`${R} actions`), { kind: "runs", repository: R });
+  assert.deepEqual(parseTarget(`${R} run 12`), { kind: "run", repository: R, runId: 12 });
+  assert.deepEqual(parseTarget("show scheduled runs", { defaultRepository: R }), { kind: "runs", repository: R, event: "schedule" });
+  assert.deepEqual(parseTarget(`list failed nightly runs in ${R}`), { kind: "runs", repository: R, event: "schedule", status: "failure" });
+  assert.deepEqual(parseTarget(`show workflow runs not from PRs in ${R}`), { kind: "runs", repository: R, excludePullRequests: true });
+  assert.deepEqual(parseTarget("open run 99", { defaultRepository: R }), { kind: "run", repository: R, runId: 99 });
+  assert.throws(() => parseTarget("show scheduled runs"), TargetError);
+  assert.throws(() => parseTarget("dotnet runs fine"), TargetError);
+});

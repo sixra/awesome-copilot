@@ -1,6 +1,6 @@
 # Artifact Explorer
 
-> **GitHub, the missing parts:** GitHub Actions makes artifacts easy to produce, but pull-request reviewers still have to download opaque ZIP files and inspect them out of context. Artifact Explorer turns those artifacts into a fast, GitHub-native, navigable experience inside Copilot.
+> **GitHub, the missing parts:** GitHub Actions makes artifacts easy to produce, but pull-request reviewers still have to download opaque ZIP files and inspect them out of context. Artifact Explorer turns those artifacts into a fast, GitHub-native, navigable experience inside Copilot, whether they came from a pull request or from a scheduled, manual, push or release run.
 
 Artifact Explorer is a community-built Copilot canvas extension with the internal extension ID `pr-artifact-explorer`. It is not an official GitHub product or endorsed feature.
 
@@ -12,7 +12,8 @@ Artifact Explorer is a community-built Copilot canvas extension with the interna
 
 ## What it does
 
-- Navigates repositories, pull requests, artifacts, and files with persistent breadcrumbs.
+- Navigates repositories, pull requests, workflow runs, artifacts, and files with persistent breadcrumbs.
+- Browses workflow runs that have no pull request. A repository-level **Workflow runs** tab lists runs from any trigger (scheduled/cron, manual, push, release, and more) with event, status, branch and workflow filters, a "Hide pull request runs" toggle, paging, linked-PR chips, and lazily loaded artifact counts with a "Has artifacts" filter. A run page lists its artifacts and reuses the same preview, Browser view, sharing and Re-run features.
 - Loads pull requests progressively, caches result pages, and supports query filters for fast review.
 - Bounds artifact discovery to the newest 30 workflow runs per head commit and reports when older runs are omitted.
 - Downloads an artifact once, indexes its ZIP, and streams entries directly from the archive without extracting them to disk.
@@ -69,12 +70,14 @@ You can also copy the folder to one of the supported extension locations:
 - `~/.copilot/extensions/pr-artifact-explorer/` for user scope
 - `.github/extensions/pr-artifact-explorer/` for project scope
 
-Reload extensions, then ask Copilot to open the `pr-artifact-explorer` canvas. You can optionally provide a repository (`owner/name`), pull request number, or GitHub pull request URL when opening it.
+Reload extensions, then ask Copilot to open the `pr-artifact-explorer` canvas. You can optionally provide a repository (`owner/name`), pull request number, workflow run ID, or a GitHub pull request, run, or Actions URL when opening it.
 
 ## Agent actions
 
 - `open_pull_request { repository, pullNumber }` - navigate an open canvas to a pull request.
-- `open_target { input }` - open any share link, URL, issue/PR, artifact, or route.
+- `open_runs { repository, event?, status?, branch?, workflow?, excludePullRequests? }` - open a repository's workflow runs (for example `event: "schedule"` for cron runs), whether or not they belong to a pull request.
+- `open_run { repository, runId }` - open one workflow run and its artifacts.
+- `open_target { input }` - open any share link, URL, issue/PR, workflow run or Actions page, artifact, or route.
 - `inspect_artifact { repository, artifactId }` - start a recoverable job to download, index, detect, and open an Actions artifact.
 - `job_status`, `retry_job`, `cancel_job`, `set_limit { kind, value }` - manage jobs and soft limits.
 - `restart_canvas` - restart the instance (same port and token) without stopping jobs.

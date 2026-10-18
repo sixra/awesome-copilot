@@ -164,7 +164,11 @@ async function initialRouteFromInput(input) {
   if (input.route) return String(input.route).startsWith("#") ? input.route : `#${input.route}`;
   const repository = input.repository ?? bootstrapState.prefs.repository;
   if (input.artifactId && input.repository) {
-    return `#/artifact/${encodeURIComponent(repository)}/${Number(input.pullNumber ?? 0)}/${Number(input.artifactId)}`;
+    return artifactHash(repository, Number(input.pullNumber ?? 0), Number(input.artifactId), null, false, Number(input.runId) || 0);
+  }
+  if (input.runId && input.repository) return runHash(repository, input.runId);
+  if (input.view === "runs" && input.repository) {
+    return runsHash(repository, { event: input.event, status: input.status, branch: input.branch, workflow: input.workflow, excludePullRequests: input.excludePullRequests === true });
   }
   if (input.url) {
     const parsed = await api("/api/targets/parse", { method: "POST", body: { input: input.url, repository } });
@@ -449,6 +453,7 @@ const DOCS_SECTIONS = [
     <ol class="docs-steps">
       <li><strong>Find your repository.</strong> Use the field in the header to enter <code>owner/repository</code>, or paste a GitHub pull request URL. You can also press <kbd>g</kbd> then <kbd>b</kbd> and enter a request such as <code>open PR 123 in github/awesome-copilot</code>.</li>
       <li><strong>Open the pull request.</strong> Choose a change from the list to see its workflow artifacts. An issue URL opens issue details instead; issues do not have PR artifacts.</li>
+      <li><strong>No pull request?</strong> Choose the <strong>Workflow runs</strong> tab to browse scheduled (cron), manual, push and release runs, then open a run to see its artifacts.</li>
       <li><strong>Choose what to inspect.</strong> Open an artifact to browse its files or preview a supported file. A website artifact with an HTML page shows a <strong>Browser view</strong> button in the preview toolbar for a closer look at different screen sizes. Videos (.webm, .mp4, .mov) play with native controls, and JUnit XML test reports open as a summarized report.</li>
     </ol>
     <p>Artifact Explorer reads build outputs. It does <strong>not</strong> run artifact programs, install their dependencies, or execute their build scripts.</p>
@@ -468,7 +473,20 @@ const DOCS_SECTIONS = [
     <p>Paste a GitHub artifact URL or an Explorer share route into the address field. Explorer resolves the target; you do not need to reconstruct its local preview address.</p>
     <h2>When an artifact is missing</h2>
     <p>Check that the workflow completed and uploaded an artifact. Availability also depends on your account’s repository access and the artifact’s retention period. Keep the original workflow or PR open when you need to confirm those details.</p>
-    <div class="docs-next"><strong>Keep exploring</strong><a href="#/docs/sharing">Share a specific view</a><a href="#/docs/jobs">Understand background downloads</a></div>`],
+    <div class="docs-next"><strong>Keep exploring</strong><a href="#/docs/runs">Browse runs without a PR</a><a href="#/docs/sharing">Share a specific view</a><a href="#/docs/jobs">Understand background downloads</a></div>`],
+  ["runs", "Runs without a PR", `
+    <p class="docs-lead">Not every workflow run belongs to a pull request. Scheduled (cron), manually dispatched, push and release runs often produce the artifacts you want, and Explorer can open them directly.</p>
+    <h2>Browse a repository's runs</h2>
+    <ol class="docs-steps">
+      <li><strong>Open the tab.</strong> Choose a repository, then select <strong>Workflow runs</strong> beside Pull requests. You can also press <kbd>g</kbd> then <kbd>b</kbd> and enter a request such as <code>show scheduled runs in github/awesome-copilot</code>, or paste a GitHub <code>/actions</code> or <code>/actions/runs/123</code> link.</li>
+      <li><strong>Narrow the list.</strong> Filter by event (Scheduled, Manual, Push, Release and more), status, workflow and branch. <strong>Hide pull request runs</strong> removes runs triggered by pull requests, leaving only the runs that have no PR.</li>
+      <li><strong>Open a run.</strong> The run page lists its artifacts. Inspect one to browse its files, preview it, use Browser view, copy a share link, or re-run the workflow, exactly as you would from a pull request.</li>
+    </ol>
+    <h2>Find runs that have artifacts</h2>
+    <p>Each row shows how many artifacts its run produced once that count loads. Select <strong>Has artifacts</strong> to hide runs that have none on the current page. A run that was triggered by a pull request shows a link to that PR.</p>
+    <h2>Limits worth knowing</h2>
+    <p>Each page shows 30 runs, and GitHub exposes only the newest 1,000 runs for a filtered search. Artifacts expire after the repository's retention period, so an old scheduled run may list its artifacts as expired.</p>
+    <div class="docs-next"><strong>Next</strong><a href="#/docs/sharing">Share a run or artifact</a><a href="#/docs/recovery">Re-run a workflow</a></div>`],
   ["browser", "Pages and device sizes", `
     <p class="docs-lead">See the page, not a wall of controls. The address bar handles navigation; the second row gives you device size, visual zoom, and a screenshot.</p>
     <h2>Preview a local or published page</h2>
@@ -542,7 +560,7 @@ const DOCS_SECTIONS = [
     <h2>A job failed or an artifact is unavailable</h2>
     <p>Check the error, repository access, workflow result, and artifact retention. For a recoverable failed or interrupted job, use Retry. Integrity and disk-space errors need their underlying cause resolved first.</p>
     <h2>Re-run a workflow</h2>
-    <p>Each artifact row has a <strong>Re-run</strong> button. It opens a confirmation naming the repository, workflow, run number, attempt and commit. Choose all jobs or, for failed runs, failed jobs only. A re-run reuses the original commit, ref and triggering actor, not the pull request's latest head, and GitHub allows it up to 30 days after the original run and at most 50 re-runs. Nothing is sent until you confirm, and existing artifacts are kept until the new run produces replacements. The button only requests the re-run; it does not mean new artifacts are ready. Your token may lack Actions write permission, in which case GitHub's refusal is shown.</p>
+    <p>Each artifact row, and each run page, has a <strong>Re-run</strong> button. It opens a confirmation naming the repository, workflow, run number, attempt and commit. Choose all jobs or, for failed runs, failed jobs only. A re-run reuses the original commit, ref and triggering actor, not the pull request's latest head, and GitHub allows it up to 30 days after the original run and at most 50 re-runs. Nothing is sent until you confirm, and existing artifacts are kept until the new run produces replacements. The button only requests the re-run; it does not mean new artifacts are ready. Your token may lack Actions write permission, in which case GitHub's refusal is shown.</p>
     <h2>A screenshot failed</h2>
     <p>Open a reachable address before capturing, and check Chromium availability. See <a href="#/docs/screenshots">Taking screenshots</a> for explicit setup and the difference between fresh and current-state captures.</p>`],
   ["shortcuts", "Keyboard shortcuts", `

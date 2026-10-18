@@ -580,6 +580,33 @@ async function mapLimit(items, limit, callback) {
   return results;
 }
 
+function mapRunSummary(run) {
+  return {
+    id: run.id,
+    name: run.name,
+    number: run.run_number,
+    attempt: run.run_attempt,
+    event: run.event,
+    status: run.status,
+    conclusion: run.conclusion,
+    createdAt: run.created_at,
+    url: run.html_url,
+  };
+}
+
+function mapRunArtifact(artifact, run) {
+  return {
+    id: artifact.id,
+    name: artifact.name,
+    sizeInBytes: artifact.size_in_bytes,
+    expired: Boolean(artifact.expired),
+    createdAt: artifact.created_at,
+    updatedAt: artifact.updated_at,
+    expiresAt: artifact.expires_at,
+    run: mapRunSummary(run),
+  };
+}
+
 async function listRunArtifacts(token, repository, runId) {
   const artifacts = [];
   for (let page = 1; page <= 10; page++) {
@@ -629,26 +656,7 @@ export async function listPullRequestArtifacts(token, repository, pullNumber) {
 
   const artifactGroups = await mapLimit(runs, 5, async (run) => {
     const runArtifacts = await listRunArtifacts(token, repository, run.id);
-    return runArtifacts.map((artifact) => ({
-      id: artifact.id,
-      name: artifact.name,
-      sizeInBytes: artifact.size_in_bytes,
-      expired: Boolean(artifact.expired),
-      createdAt: artifact.created_at,
-      updatedAt: artifact.updated_at,
-      expiresAt: artifact.expires_at,
-      run: {
-        id: run.id,
-        name: run.name,
-        number: run.run_number,
-        attempt: run.run_attempt,
-        event: run.event,
-        status: run.status,
-        conclusion: run.conclusion,
-        createdAt: run.created_at,
-        url: run.html_url,
-      },
-    }));
+    return runArtifacts.map((artifact) => mapRunArtifact(artifact, run));
   });
 
   const allArtifacts = [...new Map(
@@ -658,17 +666,7 @@ export async function listPullRequestArtifacts(token, repository, pullNumber) {
 
   return {
     pullRequest,
-    runs: runs.map((run) => ({
-      id: run.id,
-      name: run.name,
-      number: run.run_number,
-      attempt: run.run_attempt,
-      event: run.event,
-      status: run.status,
-      conclusion: run.conclusion,
-      createdAt: run.created_at,
-      url: run.html_url,
-    })),
+    runs: runs.map(mapRunSummary),
     runCount,
     runsTruncated,
     artifacts,
@@ -676,6 +674,147 @@ export async function listPullRequestArtifacts(token, repository, pullNumber) {
     artifactsTruncated:
       runsTruncated || artifacts.length < allArtifacts.length,
   };
+}
+
+const RUN_STATUSES = new Set([
+  "queued", "in_progress", "completed", "waiting", "requested", "pending",
+  "success", "failure", "cancelled", "skipped", "timed_out", "action_required",
+  "neutral", "stale", "startup_failure",
+]);
+const RUN_EVENT_PATTERN = /^[a-z_]{1,40}$/;
+const RUN_WORKFLOW_PATTERN = /^(?:\d{1,20}|[A-Za-z0-9_.-]{1,100}\.ya?ml)$/;
+export const RUNS_PER_PAGE = 30;
+// GitHub only exposes the first 1,000 results of a run search.
+const MAX_RUN_PAGES = 33;
+export const MAX_ARTIFACT_COUNT_RUNS = 30;
+
+export function normalizeRunFilters(filters = {}) {
+  const event = String(filters.event ?? "").trim().toLowerCase();
+  const status = String(filters.status ?? "").trim().toLowerCase();
+  const workflow = String(filters.workflow ?? "").trim();
+  const branch = String(filters.branch ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 255);
+  const page = Number.parseInt(filters.page, 10);
+  return {
+    event: RUN_EVENT_PATTERN.test(event) ? event : "",
+    status: RUN_STATUSES.has(status) ? status : "",
+    workflow: RUN_WORKFLOW_PATTERN.test(workflow) ? workflow : "",
+    branch,
+    excludePullRequests:
+      filters.excludePullRequests === true ||
+      filters.excludePullRequests === "1" ||
+      filters.excludePullRequests === "true",
+    page: Number.isSafeInteger(page) && page > 0 ? Math.min(page, MAX_RUN_PAGES) : 1,
+  };
+}
+
+function mapWorkflowRun(run) {
+  return {
+    ...mapRunSummary(run),
+    title: run.display_title ?? run.name ?? null,
+    workflowId: run.workflow_id ?? null,
+    branch: run.head_branch ?? null,
+    headSha: run.head_sha ?? null,
+    actor: run.actor?.login ?? null,
+    actorAvatarUrl: run.actor?.avatar_url ?? null,
+    updatedAt: run.updated_at ?? null,
+    pullRequests: (run.pull_requests ?? [])
+      .map((pull) => Number(pull?.number))
+      .filter((number) => Number.isSafeInteger(number) && number > 0),
+  };
+}
+
+export async function listWorkflows(token, repository) {
+  const payload = await githubRequest(
+    token,
+    `/repos/${repositoryPath(repository)}/actions/workflows?per_page=100`,
+  );
+  return (payload.workflows ?? []).map((workflow) => {
+    const file = String(workflow.path ?? "").split("/").at(-1) ?? "";
+    return {
+      id: workflow.id,
+      name: workflow.name,
+      path: workflow.path,
+      ref: /\.ya?ml$/.test(file) ? file : String(workflow.id),
+      state: workflow.state,
+    };
+  });
+}
+
+export async function listWorkflowRuns(token, repository, filters = {}) {
+  const normalized = normalizeRunFilters(filters);
+  const query = new URLSearchParams({
+    per_page: String(RUNS_PER_PAGE),
+    page: String(normalized.page),
+  });
+  if (normalized.event) query.set("event", normalized.event);
+  if (normalized.status) query.set("status", normalized.status);
+  if (normalized.branch) query.set("branch", normalized.branch);
+  if (normalized.excludePullRequests) query.set("exclude_pull_requests", "true");
+  const scope = normalized.workflow
+    ? `/actions/workflows/${encodeURIComponent(normalized.workflow)}/runs`
+    : "/actions/runs";
+  const payload = await githubRequest(
+    token,
+    `/repos/${repositoryPath(repository)}${scope}?${query}`,
+  );
+  const runs = (payload.workflow_runs ?? []).map(mapWorkflowRun);
+  const totalCount = Math.max(Number(payload.total_count) || 0, runs.length);
+  const reachable = Math.min(totalCount, MAX_RUN_PAGES * RUNS_PER_PAGE);
+  return {
+    filters: normalized,
+    runs,
+    totalCount,
+    page: normalized.page,
+    perPage: RUNS_PER_PAGE,
+    hasPrevious: normalized.page > 1,
+    hasMore: normalized.page * RUNS_PER_PAGE < reachable,
+    capped: totalCount > MAX_RUN_PAGES * RUNS_PER_PAGE,
+  };
+}
+
+export async function getWorkflowRun(token, repository, runId) {
+  const id = Number.parseInt(runId, 10);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error("Run id must be a positive integer.");
+  }
+  const raw = await githubRequest(
+    token,
+    `/repos/${repositoryPath(repository)}/actions/runs/${id}`,
+  );
+  const run = mapWorkflowRun(raw);
+  const runArtifacts = await listRunArtifacts(token, repository, id);
+  const artifacts = runArtifacts
+    .map((artifact) => mapRunArtifact(artifact, raw))
+    .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt));
+  return {
+    run,
+    runs: [mapRunSummary(raw)],
+    runCount: 1,
+    runsTruncated: false,
+    artifacts,
+    artifactCount: artifacts.length,
+    artifactsTruncated: artifacts.length >= 1_000,
+  };
+}
+
+export async function listRunArtifactCounts(token, repository, runIds) {
+  const ids = [...new Set((runIds ?? []).map(Number))]
+    .filter((id) => Number.isSafeInteger(id) && id > 0)
+    .slice(0, MAX_ARTIFACT_COUNT_RUNS);
+  const counts = {};
+  await mapLimit(ids, 5, async (id) => {
+    try {
+      const payload = await githubRequest(
+        token,
+        `/repos/${repositoryPath(repository)}/actions/runs/${id}/artifacts?per_page=1`,
+      );
+      counts[id] = Number(payload.total_count) || 0;
+    } catch (error) {
+      if (!(error instanceof GitHubApiError)) throw error;
+      counts[id] = null;
+    }
+  });
+  return counts;
 }
 
 export async function getArtifact(token, repository, artifactId) {

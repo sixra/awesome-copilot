@@ -739,10 +739,27 @@ function pullHash(repository, pullNumber) {
   return `#/pull/${encodeURIComponent(repository)}/${Number(pullNumber)}`;
 }
 
-function artifactHash(repository, pullNumber, artifactId, filePath = null, raw = false) {
+function runsHash(repository, filters = {}) {
+  const query = new URLSearchParams();
+  if (filters.event) query.set("event", filters.event);
+  if (filters.status) query.set("status", filters.status);
+  if (filters.branch) query.set("branch", filters.branch);
+  if (filters.workflow) query.set("workflow", filters.workflow);
+  if (filters.excludePullRequests) query.set("nopr", "1");
+  if (Number(filters.page) > 1) query.set("page", String(Number(filters.page)));
+  const suffix = query.toString();
+  return `#/runs/${encodeURIComponent(repository)}${suffix ? `?${suffix}` : ""}`;
+}
+
+function runHash(repository, runId) {
+  return `#/run/${encodeURIComponent(repository)}/${Number(runId)}`;
+}
+
+function artifactHash(repository, pullNumber, artifactId, filePath = null, raw = false, runId = 0) {
   const params = [];
   if (filePath) params.push(`file=${encodeURIComponent(filePath)}`);
   if (filePath && raw) params.push("view=raw");
+  if (Number(runId) > 0) params.push(`run=${Number(runId)}`);
   const query = params.length ? `?${params.join("&")}` : "";
   return `#/artifact/${encodeURIComponent(repository)}/${Number(pullNumber)}/${Number(artifactId)}${query}`;
 }
@@ -789,8 +806,28 @@ function parseRouteUnsafe() {
       repository: decodeURIComponent(parts[1]),
       pullNumber: Number(parts[2]),
       artifactId: Number(parts[3]),
+      runId: Number(query.get("run")) || 0,
       filePath: query.get("file"),
       raw: query.get("view") === "raw",
+    };
+  }
+  if (parts[0] === "runs" && parts[1]) {
+    return {
+      name: "runs",
+      repository: decodeURIComponent(parts[1]),
+      event: query.get("event") ?? "",
+      status: query.get("status") ?? "",
+      branch: query.get("branch") ?? "",
+      workflow: query.get("workflow") ?? "",
+      excludePullRequests: query.get("nopr") === "1",
+      page: Math.max(1, Number(query.get("page")) || 1),
+    };
+  }
+  if (parts[0] === "run" && parts[1] && parts[2]) {
+    return {
+      name: "run",
+      repository: decodeURIComponent(parts[1]),
+      runId: Number(parts[2]),
     };
   }
   if (parts[0] === "issue" && parts[1] && parts[2]) {
@@ -2066,6 +2103,11 @@ function runEventLabel(value) {
     pull_request: "Pull request",
     push: "Push",
     workflow_dispatch: "Manual",
+    schedule: "Scheduled",
+    release: "Release",
+    workflow_run: "Workflow run",
+    repository_dispatch: "API dispatch",
+    merge_group: "Merge queue",
   };
   return labels[event] ?? event.replaceAll("_", " ");
 }
@@ -2509,6 +2551,7 @@ function pullPageHtml(payload, route) {
         </a>
       </div>
     </div>
+    ${repoTabsHtml(route.repository, "pulls")}
     <form class="pull-query-form" data-pull-query-form>
       <label class="sr-only" for="pull-query">Filter pull requests</label>
       <div class="pull-query-input-wrap">
@@ -2973,7 +3016,7 @@ async function renderPulls(route, sequence, { force = false } = {}) {
   }
 }
 
-function artifactRowHtml(artifact, repository, pullNumber, cachedById) {
+function artifactRowHtml(artifact, repository, pullNumber, cachedById, runId = 0) {
   const cached = cachedById.get(String(artifact.id));
   const progress = cached ? null : artifactDownloadProgress.get(String(artifact.id));
   const downloading = Boolean(progress && progress.stage !== "error");
@@ -2982,7 +3025,7 @@ function artifactRowHtml(artifact, repository, pullNumber, cachedById) {
     isLargeArtifactProgress(progress, artifact.sizeInBytes);
   const primary = artifactPrimaryLabel(cached);
   const href = cached
-    ? artifactHash(repository, pullNumber, artifact.id)
+    ? artifactHash(repository, pullNumber, artifact.id, null, false, runId)
     : null;
   const clickable = !artifact.expired;
   return `
@@ -2997,7 +3040,7 @@ function artifactRowHtml(artifact, repository, pullNumber, cachedById) {
         clickable && !downloading
           ? href
             ? `<a class="artifact-row-overlay" href="${escapeHtml(href)}" aria-label="Open ${escapeHtml(artifact.name)}"></a>`
-            : `<button class="artifact-row-overlay" type="button" data-inspect-artifact="${artifact.id}" data-repository="${escapeHtml(repository)}" data-pull-number="${pullNumber}" aria-label="Inspect ${escapeHtml(artifact.name)}"></button>`
+            : `<button class="artifact-row-overlay" type="button" data-inspect-artifact="${artifact.id}" data-repository="${escapeHtml(repository)}" data-pull-number="${pullNumber}" data-run-id="${Number(runId) || 0}" aria-label="Inspect ${escapeHtml(artifact.name)}"></button>`
           : ""
       }
       ${icon("package", "artifact-icon")}
@@ -3019,7 +3062,7 @@ function artifactRowHtml(artifact, repository, pullNumber, cachedById) {
               ? '<span class="Label">Expired</span>'
               : cached
                 ? `<a class="app-button app-button-small" href="${href}">${icon("eye")} Open</a>`
-                : `<button class="app-button app-button-small" type="button" data-inspect-artifact="${artifact.id}" data-repository="${escapeHtml(repository)}" data-pull-number="${pullNumber}">${icon("download")} Inspect</button>`
+                : `<button class="app-button app-button-small" type="button" data-inspect-artifact="${artifact.id}" data-repository="${escapeHtml(repository)}" data-pull-number="${pullNumber}" data-run-id="${Number(runId) || 0}">${icon("download")} Inspect</button>`
         }
         ${
           downloading || !artifact.run?.id
@@ -3067,7 +3110,7 @@ async function openRerunDialog(button) {
   const body = {
     repository,
     runId: Number(button.dataset.rerunRun),
-    artifactId: Number(button.dataset.artifactId),
+    artifactId: Number(button.dataset.artifactId) || null,
     pullNumber: Number(button.dataset.pullNumber) || null,
   };
   rerunBusy = true;
@@ -3321,6 +3364,7 @@ function renderPullArtifactRows(filter = artifactFilters.query) {
         currentPullContext.repository,
         currentPullContext.pullNumber,
         currentPullContext.cachedById,
+        currentPullContext.runId ?? 0,
       )).join("")
     : `<div class="blankslate">
         ${icon("search")}
@@ -3394,6 +3438,37 @@ function artifactResultLimitMessage(payload) {
   return messages.join(" ");
 }
 
+function artifactBoxHtml({ artifacts, resultLimitMessage, initialScope, emptyText }) {
+  return `
+    <section class="Box artifact-list-box" aria-label="Workflow artifacts">
+      <div class="Box-header toolbar artifact-toolbar">
+        <h2 class="Box-title">${icon("package")} Artifacts</h2>
+        <span id="artifact-total-count" class="Counter ml-2" title="${escapeHtml(initialScope.title)}">${escapeHtml(initialScope.label)}</span>
+        <span id="artifact-match-count" class="Counter Counter--secondary ml-1" hidden></span>
+        <span class="toolbar-spacer"></span>
+        <label class="sr-only" for="artifact-filter">Filter workflow artifacts</label>
+        <input id="artifact-filter" class="form-control input-sm artifact-filter" type="search" placeholder="Filter artifacts" autocomplete="off" value="${escapeHtml(artifactFilters.query)}" />
+        ${artifactFilterControlsHtml(artifacts)}
+        <button class="app-button app-button-small artifact-refresh" type="button" data-refresh-view>${icon("sync")} Refresh</button>
+      </div>
+      ${
+        resultLimitMessage
+          ? `<div class="flash flash-warn">${icon("alert")} ${escapeHtml(resultLimitMessage)}</div>`
+          : ""
+      }
+      ${
+        artifacts.length
+          ? `<div id="artifact-list"></div>
+             <div id="artifact-list-summary" class="Box-footer" aria-live="polite"></div>`
+          : `<div class="blankslate">
+              ${icon("package")}
+              <h2>No workflow artifacts found</h2>
+              <p>${escapeHtml(emptyText)}</p>
+            </div>`
+      }
+    </section>`;
+}
+
 function renderPullPayload(repository, pullNumber, payload, cache) {
   updateAccountFromPayload(payload);
   updateCacheHeader(cache);
@@ -3449,37 +3524,14 @@ function renderPullPayload(repository, pullNumber, payload, cache) {
       <span><strong>${escapeHtml(pull.author)}</strong> wants to merge into <span class="branch-name">${escapeHtml(pull.baseRef)}</span></span>
       <span>Updated ${escapeHtml(relativeTime(pull.updatedAt))}</span>
     </div>
-    <section class="Box artifact-list-box" aria-label="Workflow artifacts">
-      <div class="Box-header toolbar artifact-toolbar">
-        <h2 class="Box-title">${icon("package")} Artifacts</h2>
-        <span id="artifact-total-count" class="Counter ml-2" title="${escapeHtml(initialScope.title)}">${escapeHtml(initialScope.label)}</span>
-        <span id="artifact-match-count" class="Counter Counter--secondary ml-1" hidden></span>
-        <span class="toolbar-spacer"></span>
-        <label class="sr-only" for="artifact-filter">Filter workflow artifacts</label>
-        <input id="artifact-filter" class="form-control input-sm artifact-filter" type="search" placeholder="Filter artifacts" autocomplete="off" value="${escapeHtml(artifactFilters.query)}" />
-        ${artifactFilterControlsHtml(artifacts)}
-        <button class="app-button app-button-small artifact-refresh" type="button" data-refresh-view>${icon("sync")} Refresh</button>
-      </div>
-      ${
-        resultLimitMessage
-          ? `<div class="flash flash-warn">${icon("alert")} ${escapeHtml(resultLimitMessage)}</div>`
-          : ""
-      }
-      ${
-        artifacts.length
-          ? `<div id="artifact-list"></div>
-             <div id="artifact-list-summary" class="Box-footer" aria-live="polite"></div>`
-          : `<div class="blankslate">
-              ${icon("package")}
-              <h2>No workflow artifacts found</h2>
-              <p>${
-                payload.runsTruncated
-                  ? "No artifacts were found in the loaded workflow runs. Older runs were not queried."
-                  : "No retained GitHub Actions artifacts are associated with this pull request head commit."
-              }</p>
-            </div>`
-      }
-    </section>`;
+    ${artifactBoxHtml({
+      artifacts,
+      resultLimitMessage,
+      initialScope,
+      emptyText: payload.runsTruncated
+        ? "No artifacts were found in the loaded workflow runs. Older runs were not queried."
+        : "No retained GitHub Actions artifacts are associated with this pull request head commit.",
+    })}`;
   if (artifacts.length) renderPullArtifactRows();
 }
 
@@ -3547,6 +3599,342 @@ async function renderPull(route, sequence, { force = false } = {}) {
   if (sequence !== renderSequence) return;
   renderPullPayload(repository, pullNumber, payload, cache);
   if (refocus) view.querySelector("[data-refresh-view]")?.focus();
+}
+
+const RUN_EVENT_OPTIONS = [
+  ["", "All events"],
+  ["schedule", "Scheduled"],
+  ["workflow_dispatch", "Manual"],
+  ["push", "Push"],
+  ["release", "Release"],
+  ["workflow_run", "Workflow run"],
+  ["repository_dispatch", "API dispatch"],
+  ["merge_group", "Merge queue"],
+  ["pull_request", "Pull request"],
+];
+
+const RUN_STATUS_OPTIONS = [
+  ["", "All statuses"],
+  ["success", "Success"],
+  ["failure", "Failure"],
+  ["cancelled", "Cancelled"],
+  ["timed_out", "Timed out"],
+  ["skipped", "Skipped"],
+  ["in_progress", "In progress"],
+  ["queued", "Queued"],
+];
+
+let runsHasArtifactsOnly = false;
+
+function repoTabsHtml(repository, active) {
+  const tab = (name, href, iconName, label) =>
+    `<a class="repo-tab" href="${escapeHtml(href)}"${active === name ? ' aria-current="page"' : ""}>${icon(iconName)} ${label}</a>`;
+  return `
+    <nav class="repo-tabs" aria-label="Repository views">
+      ${tab("pulls", pullsHashForRepository(repository), "git-pull-request", "Pull requests")}
+      ${tab("runs", runsHash(repository), "workflow", "Workflow runs")}
+    </nav>`;
+}
+
+function runFiltersFromRoute(route) {
+  return {
+    event: route.event ?? "",
+    status: route.status ?? "",
+    branch: route.branch ?? "",
+    workflow: route.workflow ?? "",
+    excludePullRequests: route.excludePullRequests === true,
+    page: Number(route.page) > 1 ? Number(route.page) : 1,
+  };
+}
+
+function runRequestPath(repository, filters, { force = false } = {}) {
+  const parameters = new URLSearchParams({ repo: repository });
+  if (filters.event) parameters.set("event", filters.event);
+  if (filters.status) parameters.set("status", filters.status);
+  if (filters.branch) parameters.set("branch", filters.branch);
+  if (filters.workflow) parameters.set("workflow", filters.workflow);
+  if (filters.excludePullRequests) parameters.set("nopr", "1");
+  if (filters.page > 1) parameters.set("page", String(filters.page));
+  if (force) parameters.set("refresh", "1");
+  return `/api/runs?${parameters}`;
+}
+
+function runSelectHtml(id, label, options, selected) {
+  const values = new Set(options.map(([value]) => value));
+  const all = values.has(selected) ? options : [...options, [selected, selected]];
+  return `
+    <label class="sr-only" for="${id}">${escapeHtml(label)}</label>
+    <select id="${id}" class="form-select input-sm runs-filter-select" name="${id.replace("runs-", "")}" aria-label="${escapeHtml(label)}">
+      ${all
+        .map(([value, text]) => `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(text)}</option>`)
+        .join("")}
+    </select>`;
+}
+
+function runStatusLabel(run) {
+  const status = String(run.status ?? "");
+  if (status !== "completed") return status ? status.replaceAll("_", " ").replace(/^./, (c) => c.toLocaleUpperCase()) : "Unknown";
+  const conclusion = String(run.conclusion ?? "completed");
+  return conclusion.replaceAll("_", " ").replace(/^./, (c) => c.toLocaleUpperCase());
+}
+
+function runStateBadgeClass(run) {
+  if (run.status !== "completed") return "pending";
+  if (run.conclusion === "success") return "";
+  if (["failure", "timed_out", "startup_failure", "action_required"].includes(run.conclusion)) return "closed";
+  return "draft";
+}
+
+function runLinkedPullsHtml(run, repository) {
+  return (run.pullRequests ?? [])
+    .map((number) => `<a class="Label run-pr-link" href="${pullHash(repository, number)}" title="Open pull request #${number}">${icon("git-pull-request")} #${number}</a>`)
+    .join("");
+}
+
+function runRowHtml(run, repository) {
+  return `
+    <div class="Box-row run-row" data-run-row="${run.id}">
+      ${runStatusIcon(run)}
+      <div class="Box-row-main">
+        <div class="pull-row-title-line">
+          <a class="Box-row-title" href="${runHash(repository, run.id)}">${titleHtml(run.title ?? run.name ?? `Run ${run.id}`)}</a>
+          <span class="Label">${escapeHtml(runEventLabel(run.event))}</span>
+          ${runLinkedPullsHtml(run, repository)}
+        </div>
+        <div class="Box-row-meta pull-row-meta">
+          <span>${escapeHtml(run.name ?? "Workflow")} #${escapeHtml(String(run.number ?? run.id))}${Number(run.attempt) > 1 ? ` · attempt ${Number(run.attempt)}` : ""}</span>
+          ${run.branch ? `<span class="branch-name">${escapeHtml(run.branch)}</span>` : ""}
+          ${run.actor ? `<span>by ${escapeHtml(run.actor)}</span>` : ""}
+          <span>${escapeHtml(relativeTime(run.createdAt))}</span>
+        </div>
+      </div>
+      <div class="Box-row-actions color-fg-muted">
+        <span class="run-artifact-count" data-run-artifacts="${run.id}" aria-live="polite"></span>
+      </div>
+    </div>`;
+}
+
+function runsPageHtml(payload, route) {
+  const repository = normalizeRepository(route.repository);
+  const filters = runFiltersFromRoute(route);
+  const runs = payload.runs ?? [];
+  const total = Number(payload.totalCount) || runs.length;
+  const first = runs.length ? (payload.page - 1) * payload.perPage + 1 : 0;
+  const last = first ? first + runs.length - 1 : 0;
+  const pageLink = (page, label, enabled) =>
+    enabled
+      ? `<a class="app-button app-button-small" href="${escapeHtml(runsHash(repository, { ...filters, page }))}">${label}</a>`
+      : `<button class="app-button app-button-small" type="button" disabled>${label}</button>`;
+  return `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title repo-heading pulls-repo-heading">
+          ${icon("workflow")}
+          <strong>${escapeHtml(repository)}</strong>
+        </h1>
+        <p class="page-subtitle">Browse workflow runs from any trigger, including scheduled, manual, push and release runs that have no pull request.</p>
+      </div>
+      <div class="page-actions">
+        <button class="app-button" type="button" data-refresh-view>${icon("sync")} Refresh</button>
+        <a class="app-button" href="https://github.com/${escapeHtml(repository)}/actions" target="_blank" rel="noreferrer">
+          ${icon("link-external")} View on GitHub
+        </a>
+      </div>
+    </div>
+    ${repoTabsHtml(repository, "runs")}
+    <form class="runs-filter-form" data-runs-filter-form data-repository="${escapeHtml(repository)}" aria-label="Filter workflow runs">
+      ${runSelectHtml("runs-event", "Event", RUN_EVENT_OPTIONS, filters.event)}
+      ${runSelectHtml("runs-status", "Status", RUN_STATUS_OPTIONS, filters.status)}
+      ${runSelectHtml("runs-workflow", "Workflow", [["", "All workflows"]], filters.workflow)}
+      <label class="sr-only" for="runs-branch">Branch</label>
+      <input id="runs-branch" class="form-control input-sm runs-filter-branch" name="branch" type="text" placeholder="Branch" autocomplete="off" autocapitalize="none" spellcheck="false" value="${escapeHtml(filters.branch)}" />
+      <label class="runs-filter-check"><input id="runs-nopr" name="nopr" type="checkbox"${filters.excludePullRequests ? " checked" : ""} /> Hide pull request runs</label>
+      <label class="runs-filter-check"><input id="runs-has-artifacts" type="checkbox"${runsHasArtifactsOnly ? " checked" : ""} /> Has artifacts</label>
+    </form>
+    <section class="Box run-list-box" aria-label="Workflow runs">
+      <div class="Box-header toolbar">
+        <h2 class="Box-title">${icon("workflow")} ${total.toLocaleString()} workflow run${total === 1 ? "" : "s"}</h2>
+        <span class="toolbar-spacer"></span>
+        <span id="run-list-artifact-note" class="color-fg-muted f6" aria-live="polite"></span>
+      </div>
+      <div id="run-list-rows">${
+        runs.length
+          ? runs.map((run) => runRowHtml(run, repository)).join("")
+          : `<div class="blankslate">${icon("workflow")}<h2>No workflow runs match</h2><p>Adjust the event, status, branch or workflow filters.</p></div>`
+      }</div>
+      <div class="Box-footer">
+        <span>${runs.length ? `Showing ${first.toLocaleString()}–${last.toLocaleString()} of ${total.toLocaleString()}` : "Nothing to show"}${payload.capped ? " · GitHub exposes only the newest 1,000 runs for a search" : ""}</span>
+        <span class="run-pager">${pageLink(filters.page - 1, `${icon("chevron-left")} Newer`, payload.hasPrevious)}${pageLink(filters.page + 1, `Older ${icon("chevron-right")}`, payload.hasMore)}</span>
+      </div>
+    </section>`;
+}
+
+function applyRunArtifactFilter() {
+  const rows = [...document.querySelectorAll("[data-run-row]")];
+  let hidden = 0;
+  for (const row of rows) {
+    const empty = row.dataset.artifactCount === "0";
+    row.hidden = runsHasArtifactsOnly && empty;
+    if (row.hidden) hidden++;
+  }
+  const note = document.getElementById("run-list-artifact-note");
+  if (note) {
+    note.textContent = runsHasArtifactsOnly && hidden
+      ? `${hidden.toLocaleString()} run${hidden === 1 ? "" : "s"} without artifacts hidden`
+      : "";
+  }
+}
+
+async function loadRunArtifactCounts(repository, runs, sequence) {
+  const ids = runs.map((run) => run.id);
+  if (!ids.length) return;
+  try {
+    const payload = await api(`/api/runs/artifact-counts?repo=${encodeURIComponent(repository)}&ids=${ids.join(",")}`);
+    if (sequence !== renderSequence) return;
+    for (const [id, count] of Object.entries(payload.counts ?? {})) {
+      const row = document.querySelector(`[data-run-row="${id}"]`);
+      const badge = row?.querySelector("[data-run-artifacts]");
+      if (!row || !badge || count == null) continue;
+      row.dataset.artifactCount = String(count);
+      badge.innerHTML = count
+        ? `${icon("package")} ${count.toLocaleString()} artifact${count === 1 ? "" : "s"}`
+        : "No artifacts";
+    }
+    applyRunArtifactFilter();
+  } catch {
+    // Badges are an enhancement; the list stays usable without them.
+  }
+}
+
+async function loadRunWorkflows(repository, selected, sequence) {
+  try {
+    const payload = await api(`/api/workflows?repo=${encodeURIComponent(repository)}`);
+    if (sequence !== renderSequence) return;
+    const select = document.getElementById("runs-workflow");
+    if (!select) return;
+    const options = (payload.workflows ?? []).map((workflow) => [workflow.ref, workflow.name]);
+    if (selected && !options.some(([value]) => value === selected)) options.push([selected, selected]);
+    select.innerHTML = [["", "All workflows"], ...options]
+      .map(([value, text]) => `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(text)}</option>`)
+      .join("");
+  } catch {
+    // The workflow picker is optional; filtering by event, status and branch still works.
+  }
+}
+
+async function renderRuns(route, sequence, { force = false } = {}) {
+  const repository = normalizeRepository(route.repository);
+  const filters = runFiltersFromRoute(route);
+  repositoryInput.value = rememberRepositoryClient(repository);
+  setBreadcrumbs([
+    { label: repository, href: pullsHashForRepository(repository) },
+    { label: "Workflow runs" },
+  ]);
+  loadingView();
+  const payload = await api(runRequestPath(repository, filters, { force }));
+  if (sequence !== renderSequence) return;
+  updateAccountFromPayload(payload);
+  view.removeAttribute("aria-busy");
+  view.innerHTML = runsPageHtml(payload, { ...route, repository });
+  void loadRunWorkflows(repository, filters.workflow, sequence);
+  void loadRunArtifactCounts(repository, payload.runs ?? [], sequence);
+}
+
+function navigateRunFilters(form) {
+  const repository = form.dataset.repository;
+  location.hash = runsHash(repository, {
+    event: form.elements.event.value,
+    status: form.elements.status.value,
+    workflow: form.elements.workflow.value,
+    branch: form.elements.branch.value.trim(),
+    excludePullRequests: form.elements.nopr.checked,
+  });
+}
+
+function runDetailHtml(payload, repository, artifactBox) {
+  const run = payload.run;
+  const sha = run.headSha ? run.headSha.slice(0, 7) : null;
+  return `
+    <div class="page-header">
+      <div>
+        ${pageTitleHtml(run.title ?? run.name, run.number, run.url)}
+        <p class="page-subtitle">${escapeHtml(run.name ?? "Workflow")} · ${escapeHtml(runEventLabel(run.event))}${Number(run.attempt) > 1 ? ` · attempt ${Number(run.attempt)}` : ""}</p>
+      </div>
+      <div class="page-actions">
+        <button class="app-button" type="button" data-rerun-run="${run.id}" data-repository="${escapeHtml(repository)}" aria-label="Re-run workflow ${escapeHtml(run.name ?? "")} run ${escapeHtml(String(run.number ?? run.id))}" title="Re-run this workflow run">${icon("sync")} Re-run</button>
+        <a class="app-button" href="${escapeHtml(run.url)}" target="_blank" rel="noreferrer">
+          ${icon("link-external")} View on GitHub
+        </a>
+      </div>
+    </div>
+    <div class="pr-summary">
+      <span class="state-badge ${runStateBadgeClass(run)}">${icon("workflow")} ${escapeHtml(runStatusLabel(run))}</span>
+      ${run.branch ? `<span class="branch-name">${escapeHtml(run.branch)}</span>` : ""}
+      ${sha ? `<code>${escapeHtml(sha)}</code>` : ""}
+      ${run.actorAvatarUrl ? `<img class="avatar" src="${escapeHtml(run.actorAvatarUrl)}" alt="" />` : ""}
+      ${run.actor ? `<span><strong>${escapeHtml(run.actor)}</strong></span>` : ""}
+      <span>Started ${escapeHtml(relativeTime(run.createdAt))}</span>
+      ${runLinkedPullsHtml(run, repository)}
+    </div>
+    ${artifactBox}`;
+}
+
+function renderRunPayload(repository, payload, cache) {
+  updateAccountFromPayload(payload);
+  updateCacheHeader(cache);
+  view.removeAttribute("aria-busy");
+  const run = payload.run;
+  const cachedById = new Map(cache.artifacts.map((item) => [String(item.id), item]));
+  const artifacts = payload.artifacts ?? [];
+  const filterContext = `${repository}@run${run.id}`;
+  if (artifactFilters.context !== filterContext) {
+    artifactFilters = { context: filterContext, query: "", status: "all", run: "all" };
+  }
+  bootstrapState.prefs.repository = repository;
+  bootstrapState.prefs.pullNumber = 0;
+  currentPullContext = {
+    artifactCount: artifacts.length,
+    artifacts,
+    artifactsTruncated: Boolean(payload.artifactsTruncated),
+    cachedById,
+    pullNumber: 0,
+    repository,
+    runCount: 1,
+    runId: run.id,
+    runsTruncated: false,
+  };
+  const initialScope = artifactScopeCountLabel(
+    artifacts,
+    artifactsForRunFilter(artifacts, artifactFilters.run),
+    artifactFilters.run,
+    Boolean(payload.artifactsTruncated),
+  );
+  const artifactBox = artifactBoxHtml({
+    artifacts,
+    resultLimitMessage: artifactResultLimitMessage(payload),
+    initialScope,
+    emptyText: "This workflow run has no retained artifacts. It may not upload any, or they may have expired.",
+  });
+  view.innerHTML = runDetailHtml(payload, repository, artifactBox);
+  if (artifacts.length) renderPullArtifactRows();
+}
+
+async function renderRun(route, sequence, { force = false } = {}) {
+  const repository = normalizeRepository(route.repository);
+  const runId = Number(route.runId);
+  repositoryInput.value = rememberRepositoryClient(repository);
+  setBreadcrumbs([
+    { label: repository, href: pullsHashForRepository(repository) },
+    { label: "Workflow runs", href: runsHash(repository) },
+    { label: `Run ${runId}` },
+  ]);
+  loadingView();
+  const [payload, cache] = await Promise.all([
+    api(`/api/runs/${runId}?repo=${encodeURIComponent(repository)}${force ? "&refresh=1" : ""}`),
+    api("/api/cache"),
+  ]);
+  if (sequence !== renderSequence) return;
+  renderRunPayload(repository, payload, cache);
 }
 
 function fileIconName(kind) {
@@ -4254,7 +4642,7 @@ async function setPreviewMode(mode) {
   history.replaceState(
     null,
     "",
-    artifactHash(artifact.repository, artifact.pullNumber, artifact.id, artifact.selectedPath, raw),
+    artifactHash(artifact.repository, artifact.pullNumber, artifact.id, artifact.selectedPath, raw, artifact.runId),
   );
   navHistory.record();
   const entry = artifact.analysis.entries.find((item) => item.path === artifact.selectedPath);
@@ -4503,11 +4891,18 @@ function artifactBreadcrumbItems(artifact, selectedPath) {
       label: artifact.repository,
       href: pullsHashForRepository(artifact.repository),
     },
-    {
+  ];
+  if (artifact.runId > 0 && !(artifact.pullNumber > 0)) {
+    items.push(
+      { label: "Workflow runs", href: runsHash(artifact.repository) },
+      { label: `Run ${artifact.runId}`, href: runHash(artifact.repository, artifact.runId) },
+    );
+  } else {
+    items.push({
       label: "Pull requests",
       href: pullsHashForRepository(artifact.repository),
-    },
-  ];
+    });
+  }
   if (artifact.pullNumber > 0) {
     items.push({
       label: `#${artifact.pullNumber}`,
@@ -4572,6 +4967,7 @@ async function selectArtifactFile(path, updateHash = true) {
         currentArtifact.id,
         path,
         currentArtifact.rawMode === true,
+        currentArtifact.runId,
       ),
     );
     navHistory.record();
@@ -4631,6 +5027,7 @@ async function renderArtifact(route, sequence) {
     id: Number(route.artifactId),
     repository,
     pullNumber: Number(route.pullNumber) || 0,
+    runId: Number(route.runId) || 0,
     metadata,
     analysis,
     fileTree: createArtifactFileTreeState(analysis.entries, preferredPath),
@@ -4966,12 +5363,23 @@ async function renderRoute({ force = false } = {}) {
   try {
     if (route.name === "pulls") await renderPulls(route, sequence, { force });
     else if (route.name === "pull") await renderPull(route, sequence, { force });
+    else if (route.name === "runs") await renderRuns(route, sequence, { force });
+    else if (route.name === "run") await renderRun(route, sequence, { force });
     else if (route.name === "artifact") {
-      setBreadcrumbs([
-        { label: route.repository, href: pullsHashForRepository(route.repository) },
-        { label: "Pull requests", href: pullsHashForRepository(route.repository) },
-        { label: "Artifact" },
-      ]);
+      setBreadcrumbs(
+        route.runId > 0 && !(route.pullNumber > 0)
+          ? [
+              { label: route.repository, href: pullsHashForRepository(route.repository) },
+              { label: "Workflow runs", href: runsHash(route.repository) },
+              { label: `Run ${route.runId}`, href: runHash(route.repository, route.runId) },
+              { label: "Artifact" },
+            ]
+          : [
+              { label: route.repository, href: pullsHashForRepository(route.repository) },
+              { label: "Pull requests", href: pullsHashForRepository(route.repository) },
+              { label: "Artifact" },
+            ],
+      );
       loadingView();
       await renderArtifact(route, sequence);
     } else if (route.name === "cache") await renderCache(sequence);
@@ -5056,6 +5464,7 @@ async function inspectArtifactButton(button) {
   const artifactId = Number(button.dataset.inspectArtifact);
   const repository = button.dataset.repository;
   const pullNumber = Number(button.dataset.pullNumber);
+  const runId = Number(button.dataset.runId) || 0;
   const row = button.closest(".artifact-row");
   const controls = row
     ? [...row.querySelectorAll("button[data-inspect-artifact]")]
@@ -5090,7 +5499,7 @@ async function inspectArtifactButton(button) {
     }
     updateCacheHeader(await api("/api/cache"));
     artifactDownloadProgress.delete(String(artifactId));
-    location.hash = artifactHash(repository, pullNumber, artifactId);
+    location.hash = artifactHash(repository, pullNumber, artifactId, null, false, runId);
   } catch (error) {
     artifactDownloadProgress.delete(String(artifactId));
     showToast(error instanceof Error ? error.message : String(error), "error");
@@ -5330,10 +5739,26 @@ accountAvatar.addEventListener("error", () => {
 });
 
 view.addEventListener("submit", (event) => {
+  const runsForm = event.target.closest("[data-runs-filter-form]");
+  if (runsForm) {
+    event.preventDefault();
+    navigateRunFilters(runsForm);
+    return;
+  }
   const form = event.target.closest("[data-pull-query-form]");
   if (!form) return;
   event.preventDefault();
   void commitPullQuery(form.querySelector("#pull-query"));
+});
+
+view.addEventListener("change", (event) => {
+  if (event.target.id === "runs-has-artifacts") {
+    runsHasArtifactsOnly = event.target.checked;
+    applyRunArtifactFilter();
+    return;
+  }
+  const runsForm = event.target.closest("[data-runs-filter-form]");
+  if (runsForm) navigateRunFilters(runsForm);
 });
 
 view.addEventListener("input", (event) => {
