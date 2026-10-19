@@ -3,7 +3,7 @@ name: foundry-agentic-loop
 description: 'Build agentic solutions on Microsoft Foundry, GitHub and Azure: hosted agents, toolbox tools and skills, Foundry IQ grounding and a React/FastAPI app. Three modes: rapid prototyping in an existing Foundry project; spec-driven development (SDD), where the foundry-agentic-loop-workflow runs Specify, Implement, Verify and Deploy to create the Foundry project and deploy with azd, or one phase runs alone; and Improve, which refines this skill and the workflow from past runs. Use for Agentic Loop requests and canvas actions, or end-to-end agent solutions from architecture to Azure deployment. Not for isolated Azure administration or unrelated UI edits.'
 ---
 
-# Agentic Loop
+# Foundry Agentic Loop
 
 Coordinate the solution and use `microsoft-foundry` for platform operations. Explicit user choices override defaults. Reuse known context, ask only for missing decisions, read only the references a step needs, and report decisions, blockers and endpoints concisely.
 

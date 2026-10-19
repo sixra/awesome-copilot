@@ -17,6 +17,26 @@ export const links = {
 
 export const MODES = Object.freeze(["rapid", "sdd"]);
 export const TABS = Object.freeze(["start", "build", "explore", "optimize"]);
+export const VIEWS = Object.freeze(["gallery", "list"]);
+// Prompt template facets in display order, with their descriptions; every scenario value must come from here.
+export const TAXONOMY = Object.freeze({
+    capabilities: [
+        ["Frontier Models", "GPT, Claude, Llama, Phi"], ["Image Generation", "GPT Image 2, MAI-Image-2.5"], ["Text to Speech", "Neural voices"],
+        ["Speech to Text", "Real-time transcription"], ["Real-Time Conversations", "Voice-first agents"], ["Forms Recognition", "Document intelligence"],
+        ["Foundry IQ", "Grounded knowledge & retrieval"],
+    ],
+    buildingBlocks: [
+        ["Observability", "Traces, evals, monitoring"], ["AI Gateway", "Routing, quotas, policies"], ["Identity & Access", "Entra, RBAC, scopes"],
+        ["Private Networking", "VNet, Private Endpoints"], ["Data Persistence", "Cosmos DB, Postgres"], ["Storage", "Blobs, files, vectors"],
+    ],
+    patterns: [
+        ["Workflow Automation", "Multi-step orchestration"], ["Domain-Specific Agents", "Vertical specialization"], ["Knowledge Grounding", "Trusted enterprise data"],
+        ["Multi-Agent Orchestration", "Coordinated agent teams"], ["Human-in-the-Loop", "Review & approval gates"],
+    ],
+});
+// The pinned "Shape it with Copilot" prompt template; the others are packaged scenario ids.
+export const GUIDED = "guided";
+export const templateLocked = () => Object.assign(new Error("The prompt template is locked because the build started from it."), { code: "template_locked" });
 const RETIRED_TABS = { setup: "start", resources: "start", workflow: "build", cost: "optimize" };
 const ENV_RETRY = 30_000;
 const ENV_RETRY_MAX = 300_000;
@@ -63,7 +83,7 @@ function azureTarget(target = {}, subscriptions = []) {
 }
 
 function changeRequest(runId, checkpoint, feedback) {
-    const hold = "Do not resume the run: I will continue it from the Agentic Loop canvas.";
+    const hold = "Do not resume the run: I will continue it from the Foundry Agentic Loop canvas.";
     const pause = checkpointInfo(checkpoint);
     if (pause?.kind === "blocked") {
         const files = [...ARTIFACTS[pause.phase], LESSONS].join(", ");
@@ -72,7 +92,7 @@ function changeRequest(runId, checkpoint, feedback) {
     switch (checkpoint) {
         case "approve-spec-v1": return feedback && `The foundry-agentic-loop-workflow run ${runId} is paused for spec approval. Apply this feedback to docs/spec.md, and to .azure/deployment-plan.md when affected. Keep the EARS acceptance criteria, contract, workstreams and verification mapping consistent. Summarize what changed. ${hold}\n\nFeedback:\n${feedback}`;
         case "approve-deploy-v1": return feedback && `The foundry-agentic-loop-workflow run ${runId} is paused for deployment approval. Apply this feedback to .azure/deployment-plan.md and the azd configuration when affected. Summarize what changed, including cost, security and region impact. Do not deploy anything. ${hold}\n\nFeedback:\n${feedback}`;
-        case "failed": return `The foundry-agentic-loop-workflow run ${runId} stopped before finishing. Inspect its error and progress log, find the root cause in the workspace, Azure configuration, quota or region, fix it and verify the fix. Add the cause and fix to ${LESSONS}. Do not resume or restart the run: I will continue from the Agentic Loop canvas.${feedback ? `\n\nGuidance:\n${feedback}` : ""}`;
+        case "failed": return `The foundry-agentic-loop-workflow run ${runId} stopped before finishing. Inspect its error and progress log, find the root cause in the workspace, Azure configuration, quota or region, fix it and verify the fix. Add the cause and fix to ${LESSONS}. Do not resume or restart the run: I will continue from the Foundry Agentic Loop canvas.${feedback ? `\n\nGuidance:\n${feedback}` : ""}`;
         default: throw new Error("Request changes while the run waits at a checkpoint or after it fails.");
     }
 }
@@ -82,9 +102,12 @@ export function promptFor(kind, { project, scenario, text, agent, mode = "rapid"
     if (runId != null && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(runId)) throw new Error("Invalid workflow run.");
     const context = project && !unscoped.includes(kind) && !(mode === "sdd" && ["guided", "scenario", "custom"].includes(kind))
         ? `\nSelected Foundry project: ${project.id}\nEndpoint: ${project.endpoint ?? "resolve from Azure"}\nUse resource group ${project.resourceGroup} for additional solution resources.` : "";
+    // Edited template text replaces the scenario prompt; its industry, run skills and workflow scenarioId still apply.
+    const body = scenario ? `${text?.trim() || scenario.prompt}\n\nIndustry: ${scenario.industry}` : text?.trim();
     // Name the scenario's run skills so the reuse rule applies even when the prompt text does not mention them.
-    const runSkills = scenario?.runSkills?.some(name => !scenario.prompt.includes(name)) ? `\nRun skills to reuse: ${scenario.runSkills.join(", ")}.` : "";
-    const brief = scenario ? `${scenario.prompt}\n\nIndustry: ${scenario.industry}${runSkills}` : text?.trim();
+    const runSkills = scenario?.runSkills?.some(name => !body.includes(name)) ? `\nRun skills to reuse: ${scenario.runSkills.join(", ")}.` : "";
+    const brief = scenario ? `${body}${runSkills}` : body;
+    const idea = kind === "guided" && text?.trim() ? `\n\nMy idea:\n${text.trim()}` : "";
     const where = project ? "in the selected Foundry project" : "in an existing Foundry project; ask me which one to use";
     const rapid = brief ? `Use the foundry-agentic-loop skill in rapid prototyping mode to build this complete solution ${where}.\n\n${brief}` : null;
     const sdd = brief ? `Use the foundry-agentic-loop skill in SDD mode. Start the foundry-agentic-loop-workflow to specify, implement, verify and deploy this solution end to end; Implement provisions a new Foundry project and the solution resources with azd. Run preflight and ask only the clarifying questions that change the spec before starting the workflow.\n\n${brief}\n\n${scenario?.id ? `Workflow scenarioId: ${scenario.id}\n` : ""}${azureTarget(target, subscriptions)}` : null;
@@ -97,8 +120,8 @@ export function promptFor(kind, { project, scenario, text, agent, mode = "rapid"
         landingZone: `Guide me through a production-ready enterprise AI deployment using Azure AI Landing Zones: ${links.landingZone}. Clarify governance, networking, identity, subscriptions, region and cost before provisioning.`,
         insights: "Create or reuse an Azure Application Insights resource and connect it to this Foundry project. Verify the project connection, managed-identity permissions and telemetry configuration. Ask before creating billable resources.",
         guided: mode === "sdd"
-            ? `Use the foundry-agentic-loop skill in SDD mode to guide me from idea to a deployed agentic solution. Clarify the use case, agents, data, tools and user experience with focused questions, then start the foundry-agentic-loop-workflow.\n\n${azureTarget(target, subscriptions)}`
-            : `Use the foundry-agentic-loop skill in rapid prototyping mode to guide me through creating a complete agentic solution ${where}: clarify the use case, one or more agents, and the user experience. Ask focused questions and obtain approval before provisioning.`,
+            ? `Use the foundry-agentic-loop skill in SDD mode to guide me from idea to a deployed agentic solution. Clarify the use case, agents, data, tools and user experience with focused questions, then start the foundry-agentic-loop-workflow.${idea}\n\n${azureTarget(target, subscriptions)}`
+            : `Use the foundry-agentic-loop skill in rapid prototyping mode to guide me through creating a complete agentic solution ${where}: clarify the use case, one or more agents, and the user experience. Ask focused questions and obtain approval before provisioning.${idea}`,
         scenario: scenario ? (mode === "sdd" ? sdd : rapid) : null,
         custom: mode === "sdd" ? sdd : rapid,
         sdd,
@@ -127,7 +150,7 @@ export class Model {
         this.session = session;
         this.scenarios = scenarios;
         this.storage = storage;
-        this.state = { tab: "start", subscriptionId: null, projectId: null, draft: "", mode: null, target: validTarget(), workiq: false };
+        this.state = { tab: "start", subscriptionId: null, projectId: null, draft: "", mode: null, target: validTarget(), workiq: false, template: null, started: false, view: "gallery" };
         this.projects = [];
         this.subscriptions = [];
         this.projectWarnings = [];
@@ -149,7 +172,34 @@ export class Model {
         if (this.state.mode != null && !MODES.includes(this.state.mode)) { this.state.mode = null; migrated = true; }
         try { this.state.target = validTarget(this.state.target ?? {}); }
         catch { this.state.target = validTarget(); migrated = true; }
+        if (this.state.template != null && !this.isTemplate(this.state.template)) { Object.assign(this.state, { template: null, started: false }); migrated = true; }
+        // A brief saved before prompt templates existed becomes the idea of the guided template.
+        if (this.state.template == null && typeof this.state.draft === "string" && this.state.draft.trim()) { this.state.template = GUIDED; migrated = true; }
+        if (typeof this.state.draft !== "string") { this.state.draft = ""; migrated = true; }
+        if (typeof this.state.started !== "boolean" || (this.state.started && this.state.template == null)) { this.state.started = false; migrated = true; }
+        if (!VIEWS.includes(this.state.view)) { this.state.view = "gallery"; migrated = true; }
         if (migrated) await this.save();
+    }
+
+    isTemplate(id) { return id === GUIDED || (this.scenarios ?? []).some(row => row.id === id); }
+
+    // Choosing a template resets its draft unless one is given, and a draft needs a template. Sending from a template
+    // locks it; started: false unlocks it with its text kept, which the extension allows only before the build leaves a trace.
+    async preferences(input) {
+        const next = input.started === false ? { started: false } : {};
+        const current = { template: this.state.template, started: this.state.started, ...next };
+        for (const key of ["tab", "workiq", "view", "draft"]) if (Object.hasOwn(input, key)) next[key] = input[key];
+        if (Object.hasOwn(input, "template")) {
+            const template = input.template || null;
+            if (template !== null && !this.isTemplate(template)) throw new Error("Choose an available prompt template.");
+            if (current.started && template !== current.template) throw templateLocked();
+            if (template !== current.template && !Object.hasOwn(input, "draft")) next.draft = "";
+            next.template = template;
+        }
+        if ((Object.hasOwn(next, "template") ? next.template : current.template) == null) next.draft = "";
+        Object.assign(this.state, next);
+        await this.save();
+        return this.state;
     }
 
     // An AGENTS.md lock wins over an explicit choice, which wins over the run-based default.
@@ -270,12 +320,18 @@ export class Model {
     async send(input, mode = this.mode(false), checkpoint = null) {
         const scenario = input.scenarioId ? this.scenarios.find(row => row.id === input.scenarioId) : undefined;
         if (input.scenarioId && !scenario) throw new Error("Unknown scenario.");
+        const template = input.kind === "guided" ? GUIDED : input.kind === "scenario" ? scenario?.id : null;
+        if (template && this.state.started && template !== this.state.template) throw templateLocked();
         const prompt = promptFor(input.kind, {
             project: this.project, scenario, text: input.text, mode, runId: input.runId, checkpoint,
             target: this.state.target, subscriptions: this.subscriptions, workiq: this.state.workiq === true,
         });
         const messageId = await this.session.send({ prompt });
-        return { messageId, prompt };
+        if (!template) return { messageId, prompt };
+        // The message is already in Chat, so a failed save must not report the send as failed; the next save persists it.
+        Object.assign(this.state, { template, started: true, draft: input.text?.trim() ?? "" });
+        await this.save().catch(() => {});
+        return { messageId, prompt, template, started: true };
     }
 
     async inspectAgent({ projectId, agentName }) {

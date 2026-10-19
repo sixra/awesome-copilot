@@ -1,4 +1,4 @@
-# Agentic Loop workflow
+# Foundry Agentic Loop workflow
 
 A GitHub Copilot dynamic workflow that turns a brief into a verified Microsoft Foundry solution on Azure. It runs four phases in sequence:
 
@@ -7,7 +7,7 @@ A GitHub Copilot dynamic workflow that turns a brief into a verified Microsoft F
 3. **Verify**: local E2E, a hosted invocation, telemetry and evaluations.
 4. **Deploy**: `azd up`, health checks and deployed E2E.
 
-It ships with the `foundry-agentic-loop` plugin. The **SDD** mode of the `foundry-agentic-loop` skill starts it, and the Agentic Loop canvas shows its progress.
+It ships with the `foundry-agentic-loop` plugin. The **SDD** mode of the `foundry-agentic-loop` skill starts it, and the Foundry Agentic Loop canvas shows its progress.
 
 At setup, it adds the Agentic Loop SDD section to the workspace root `AGENTS.md` unless one exists. The section locks the workspace to SDD and routes short commands such as `deploy`, `status` and `resume` in later prompts. A workspace locked to rapid prototyping stops the run until Copilot converts the prototype to SDD.
 
@@ -43,7 +43,7 @@ Workflow subagents don't appear in `list_agents` or `read_agent`. The flight rec
 | `subscriptionId` | current `az` default | Target subscription GUID |
 | `location` | `auto` | Preferred region. A joint model, quota and service placement check decides |
 | `environmentName` | derived | azd environment name, 2–20 characters |
-| `scenarioId` | none | Canvas industry scenario that the run came from |
+| `scenarioId` | none | Canvas prompt template that the run came from |
 | `autonomy` | `gated` | `gated` pauses for spec approval; `auto` skips that pause |
 | `maxFixLoops` | `2` | Fix rounds per phase gate, 0–5 |
 | `skipDeploy` | `false` | End after Verify with status `verified` |
@@ -62,4 +62,4 @@ For an unattended run from Specify through Verify, use `autonomy: "auto"` and `s
 node --test extensions/foundry-agentic-loop-workflow/tests/*.test.mjs
 ```
 
-Or run `npm test` from `extensions/foundry-agentic-loop-workflow`. When the Agentic Loop canvas sits next to this extension, a contract test checks that it reads the workflow's Chat lines, checkpoints, flight record path and `AGENTS.md` section, and validates Azure args the same way.
+Or run `npm test` from `extensions/foundry-agentic-loop-workflow`. When the Foundry Agentic Loop canvas sits next to this extension, a contract test checks that it reads the workflow's Chat lines, checkpoints, flight record path and `AGENTS.md` section, and validates Azure args the same way.

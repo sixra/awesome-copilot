@@ -3,6 +3,8 @@ const token = document.querySelector('meta[name="canvas-token"]').content;
 const number = value => new Intl.NumberFormat().format(value ?? 0);
 const money = (value, currency = "USD") => new Intl.NumberFormat(undefined, { style: "currency", currency }).format(value);
 const escape = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+// Live updates re-render often; unchanged text is left alone so live regions are not announced again.
+const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const toTime = value => typeof value === "number" ? value : Date.parse(value ?? "");
@@ -44,14 +46,14 @@ const LOCK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11
 const START = {
     rapid: {
         title: "Start with an outcome",
-        intro: "Confirm readiness, choose a Foundry project and describe the outcome. Copilot builds a working agentic solution in that project.",
+        intro: "Confirm readiness, choose a Foundry project and pick a prompt template. Copilot builds a working agentic solution in that project.",
         guided: "Answer a few focused questions about agents, data, tools and the user experience.",
         send: "Send to Chat",
         hint: "Opens in Chat with your selected project. Copilot asks before creating or changing resources. Track milestones on the Build tab.",
     },
     sdd: {
         title: "Specify what to deliver",
-        intro: "Confirm readiness, set the deployment target and describe the outcome. The workflow writes a spec for your approval, builds it in a new Foundry project, verifies it and deploys it to Azure.",
+        intro: "Confirm readiness, set the deployment target and pick a prompt template. The workflow writes a spec for your approval, builds it in a new Foundry project, verifies it and deploys it to Azure.",
         guided: "Copilot asks only the questions that shape the spec, then starts the workflow.",
         send: "Start SDD workflow",
         hint: "Copilot runs preflight in Chat, then starts the workflow. Follow every phase on the Build tab.",
@@ -61,6 +63,22 @@ const START = {
 const COMMANDS = { rapid: ["run", "test", "add agent", "deploy", "improve"], sdd: ["status", "approve", "deploy", "improve"] };
 const TRACK = { go: "build", label: "Track progress" };
 const TARGET_HELP = "The workflow creates a resource group and a Foundry project here. Nothing deploys until you approve it.";
+// The pinned first prompt template: Copilot shapes the solution with the user instead of starting from a scenario.
+const GUIDED = "guided";
+const GUIDED_NAME = "Shape it with Copilot";
+const GUIDED_META = "Guided · Any industry";
+const GUIDED_PLACEHOLDER = "Optional. Describe the idea in a sentence or two, such as who it helps and the data it uses. Copilot asks about the rest.";
+const GUIDED_ART = '<span class="guided-art" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M10 14h18a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4H19l-7 6v-6h-2a4 4 0 0 1-4-4V18a4 4 0 0 1 4-4Z"/><path d="M12 22h12M12 27h8"/><path class="spark" d="m38 4 1.6 4.4L44 10l-4.4 1.6L38 16l-1.6-4.4L32 10l4.4-1.6Z"/><path class="spark" d="m42.5 19 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8Z"/></svg></span>';
+const FACETS = [["industry", "Industry"], ["capabilities", "Capabilities"], ["buildingBlocks", "Building blocks"], ["patterns", "Patterns"]];
+const EMPTY_RESULTS = { search: ["this search", "Clear search"], filters: ["these filters", "Clear filters"], both: ["this search and these filters", "Clear search and filters"] };
+const TEMPLATE_HINT = {
+    building: "Copilot is building from this template in Chat. Follow progress on Build.",
+    unlockable: "Sent to Chat. Unlock to edit the prompt or choose another template until Copilot starts building.",
+    locked: "The template stays locked for this session. Keep the loop going from Build.",
+};
+const CHEVRON = '<svg class="facet-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const CLOSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+const WF_EMPTY_INTRO = $("wf-empty-intro").textContent;
 
 let snapshot;
 let projects = [];
@@ -70,7 +88,19 @@ let activeTab = "start";
 let selectionRevision = 0;
 let discovering = false;
 let usageLoading = false;
-let scenarioReturn = null;
+// Prompt templates: the selected template (null, GUIDED or a scenario id), whether a send locked it, and gallery state.
+let template = null;
+let templateStarted = false;
+let galleryReturn = null;
+let heroKey = "";
+let draftSave;
+let awaitingTurn = false;
+let awaitingTimer;
+const filters = Object.fromEntries(FACETS.map(([key]) => [key, new Set()]));
+const universals = {};
+const haystacks = new Map();
+// Edits to templates the user left, kept for this page so reopening one restores them.
+const drafts = new Map();
 let frontendsLoading = false;
 let frontendsSignature;
 let frontendRevision;
@@ -122,7 +152,7 @@ async function api(action, input = {}) {
         body: JSON.stringify({ action, input }),
     });
     const value = await response.json();
-    if (!response.ok) throw new Error(value.error || `Request failed (${response.status}).`);
+    if (!response.ok) throw Object.assign(new Error(value.error || `Request failed (${response.status}).`), { code: value.code, status: response.status });
     return value;
 }
 
@@ -262,14 +292,15 @@ function renderStart() {
     const copy = START[mode];
     $("start-title").textContent = copy.title;
     $("start-intro").textContent = copy.intro;
-    $("guided-text").textContent = copy.guided;
-    $("send-prompt").textContent = copy.send;
-    $("send-hint").textContent = copy.hint;
     $("where-rapid").hidden = mode !== "rapid";
     $("target").hidden = mode !== "sdd";
     renderTargetSummary();
     renderWhere();
     renderStartMark();
+    if (snapshot) {
+        renderGallery();
+        renderTemplateView();
+    }
 }
 
 const capitalize = text => text.charAt(0).toUpperCase() + text.slice(1);
@@ -312,6 +343,7 @@ function renderStartMark() {
 
 function renderBuild() {
     renderBuildMark();
+    renderTemplateCta();
     if (mode === "rapid") renderRapidProgress();
     const hint = $("build-commands-hint");
     hint.hidden = lock !== mode;
@@ -349,7 +381,7 @@ function renderRapidProgress() {
     $("rapid-commands").hidden = !locked;
     const open = (key, value, label) => `<button data-frontend="${key}" data-key="frontend:${key}" aria-label="Open ${label} in the integrated browser">${escape(value.replace(/^https?:\/\//, ""))}</button>`;
     const steps = [
-        { title: "Loop started", done: locked, todo: "Send a brief from Start. Copilot locks rapid prototyping in AGENTS.md and adds short commands.", detail: "AGENTS.md locks rapid prototyping and lists the short commands.", extra: '<button data-artifact="AGENTS.md" data-key="artifact:agents">AGENTS.md</button>' },
+        { title: "Loop started", done: locked, todo: "Send a prompt template from Start. Copilot locks rapid prototyping in AGENTS.md and adds short commands.", detail: "AGENTS.md locks rapid prototyping and lists the short commands.", extra: '<button data-artifact="AGENTS.md" data-key="artifact:agents">AGENTS.md</button>' },
         { title: "Project linked", done: Boolean(projectName), todo: "Copilot validates your Foundry project and its access, then records it in .env and .azure/deployment-plan.md.", detail: `${projectName}, recorded in .env and the deployment plan.`, extra: '<button data-artifact=".azure/deployment-plan.md" data-key="artifact:plan">deployment-plan.md</button>' },
         { title: "Running locally", done: Boolean(local), todo: "Copilot proves a minimal slice in a hosted checkpoint, expands it, then runs the end-to-end tests locally.", detail: "The app runs on this machine.", extra: local ? open("local", local, "the local app") : "" },
         { title: "Deployed to Azure", done: Boolean(deployed), optional: true, todo: "Optional. After local acceptance, Copilot asks before deploying the app to Azure Container Apps.", detail: "The app runs in Azure Container Apps.", extra: deployed ? open("deployed", deployed, "the deployed app") : "" },
@@ -545,17 +577,20 @@ async function checkReadiness() {
 // Work IQ is optional context: its state never blocks building, and Copilot continues without it.
 function renderWorkIq(result = workIq) {
     workIq = result;
+    const on = $("workiq-toggle").checked;
     let text;
     let action = null;
     if (!result) text = "Checking Work IQ…";
     else if (result.status === "ready" && result.data.enabled && !result.data.error) {
         const state = result.data.live;
-        text = `${state === "connected" ? "Connected." : state ? `Configured (${state}).` : "Configured."} Copilot pulls relevant Microsoft 365 meetings, email and documents into the brief and confirms them with you.`;
+        text = `${state === "connected" ? "Work IQ connected." : state ? `Work IQ configured (${state}).` : "Work IQ configured."} ${on
+            ? "Copilot adds relevant Microsoft 365 meetings, email and documents to the prompt and confirms them with you."
+            : "Turn it on to add relevant Microsoft 365 meetings, email and documents to the prompt."}`;
     } else if (result.status === "ready" && !result.data.enabled) { text = "Work IQ is installed but turned off."; action = "Fix in Chat"; }
     else if (result.status === "ready") { text = `Work IQ can't connect: ${result.data.error}`; action = "Fix in Chat"; }
-    else if (result.status === "missing") { text = "Not set up. Work IQ brings Microsoft 365 meetings, email and documents into the brief."; action = "Set up Work IQ"; }
+    else if (result.status === "missing") { text = "Work IQ isn't set up. It adds Microsoft 365 meetings, email and documents to the prompt."; action = "Set up Work IQ"; }
     else { text = `Couldn't check Work IQ: ${result.error}`; action = "Set up Work IQ"; }
-    if (action && $("workiq-toggle").checked) text += ` Copilot continues without it until it's ${action === "Fix in Chat" ? "fixed" : "set up"}.`;
+    if (action && on) text += ` Copilot continues without it until it's ${action === "Fix in Chat" ? "fixed" : "set up"}.`;
     $("workiq-status").textContent = text;
     $("workiq-setup").hidden = !action;
     if (action) $("workiq-setup").textContent = action;
@@ -684,55 +719,250 @@ async function discover(subscriptionId) {
     }
 }
 
-// The industry filter groups by sector, the text before ":" (for example "Government: Ops and infra").
+// The industry facet groups by sector, the text before ":" (for example "Government: Ops and infra").
 function sector(industry) {
     return industry.split(":")[0].trim();
 }
 
-function renderScenarios() {
-    const query = $("scenario-search").value.toLowerCase();
-    const industry = $("industry").value;
-    const capability = $("capability").value;
-    const rows = snapshot.scenarios.filter(row => (!industry || sector(row.industry) === industry) &&
-        (!capability || row.tags.includes(capability) || row.capabilities?.includes(capability)) &&
-        `${row.name} ${row.description} ${row.industry} ${row.tags.join(" ")}`.toLowerCase().includes(query));
-    const sort = $("sort").value;
-    rows.sort((a, b) => sort === "industry" ? a.industry.localeCompare(b.industry) || a.name.localeCompare(b.name) : (sort === "reverse" ? -1 : 1) * a.name.localeCompare(b.name));
-    $("result-count").textContent = `${rows.length} ${rows.length === 1 ? "scenario" : "scenarios"}`;
-    $("scenarios").innerHTML = rows.map(row => `<button class="scenario" data-scenario="${escape(row.id)}"><img src="/${escape(row.image)}" alt="" loading="lazy" width="480" height="270"><h3>${escape(row.name)}</h3><p>${escape(row.description)}</p><span class="industry">${escape(row.industry)} · Review brief →</span></button>`).join("") ||
-        '<p class="muted">No scenarios match these filters. Clear filters to see all scenarios.</p>';
-}
+const templateRow = id => id && id !== GUIDED ? snapshot.scenarios.find(row => row.id === id) ?? null : null;
+const valuesOf = (row, key) => key === "industry" ? [sector(row.industry)] : row[key] ?? [];
+const searchTokens = () => $("template-search").value.toLowerCase().split(/\s+/).filter(Boolean);
+const facetFiltered = () => FACETS.some(([key]) => filters[key].size);
+const listText = values => values.length < 2 ? values.join("") : `${values.slice(0, -1).join(", ")} and ${values.at(-1)}`;
 
-function openReview(title, text, returnButton) {
-    scenarioReturn = { button: returnButton, scrollY: window.scrollY };
-    $("prompt-title").textContent = title;
-    $("prompt-text").value = text;
-    $("cancel-prompt").lastChild.textContent = returnButton?.dataset.scenario ? " Back to scenarios" : " Back";
-    setScenarioReview(true);
-    api("preferences", { draft: text }).catch(error => notice(error.message, true));
-    $("brief-step").scrollIntoView({ block: "start", behavior: "instant" });
-}
-
-function reviewScenario(id) {
-    const scenario = snapshot.scenarios.find(row => row.id === id);
-    openReview(scenario.name, `${scenario.prompt}\n\nIndustry: ${scenario.industry}`, document.querySelector(`[data-scenario="${CSS.escape(id)}"]`));
-    $("prompt-title").focus({ preventScroll: true });
-}
-
-function setScenarioReview(visible) {
-    $("scenario-browser").hidden = visible;
-    $("prompt-review").hidden = !visible;
-    document.querySelector("#start .guided").hidden = visible;
-    renderTargetSummary();
-}
-
-function returnToScenarios() {
-    setScenarioReview(false);
-    if (activeTab === "start") {
-        const back = scenarioReturn?.button?.isConnected ? scenarioReturn.button : $("scenario-search");
-        back.focus({ preventScroll: true });
-        window.scrollTo({ top: scenarioReturn?.scrollY ?? 0, behavior: "instant" });
+function searchable(row) {
+    if (!haystacks.has(row.id)) {
+        haystacks.set(row.id, [row.name, row.description, row.industry, ...(row.tags ?? []), ...FACETS.slice(1).flatMap(([key]) => valuesOf(row, key))].join(" ").toLowerCase());
     }
+    return haystacks.get(row.id);
+}
+
+// Filters combine with OR inside a facet and AND across facets; skip leaves one facet out so its options can be counted.
+function matchesFacets(row, skip) {
+    return FACETS.every(([key]) => key === skip || !filters[key].size || valuesOf(row, key).some(value => filters[key].has(value)));
+}
+
+// A value every template has, such as Frontier Models, cannot narrow the results, so its menu notes it instead of offering it.
+function buildFacets() {
+    const rows = snapshot.scenarios;
+    $("facets").innerHTML = FACETS.map(([key, label]) => {
+        const values = key === "industry"
+            ? [...new Set(rows.map(row => sector(row.industry)))].sort((a, b) => a.localeCompare(b)).map(value => [value, ""])
+            : (snapshot.taxonomy?.[key] ?? []).filter(([value]) => rows.some(row => valuesOf(row, key).includes(value)));
+        universals[key] = values.filter(([value]) => rows.every(row => valuesOf(row, key).includes(value))).map(([value]) => value);
+        const options = values.filter(([value]) => !universals[key].includes(value));
+        if (!options.length) return "";
+        return `<details class="facet" data-facet="${key}"><summary><span>${label}</span><span class="facet-badge" hidden></span>${CHEVRON}</summary>
+            <div class="facet-menu" role="group" aria-label="${label}">${options.map(([value, detail]) => `<label class="option"><input type="checkbox" data-facet-option="${key}" value="${escape(value)}"><span class="option-text">${escape(value)}${detail ? `<small>${escape(detail)}</small>` : ""}</span><span class="option-count"></span></label>`).join("")}${universals[key].length ? `<p class="facet-note">Every template includes ${escape(listText(universals[key]))}.</p>` : ""}</div></details>`;
+    }).join("");
+}
+
+// Option counts follow the search and the other facets; an option that would show nothing is disabled unless checked.
+function renderFacets(base) {
+    for (const input of $("facets").querySelectorAll("[data-facet-option]")) {
+        const key = input.dataset.facetOption;
+        const count = base.filter(row => matchesFacets(row, key) && valuesOf(row, key).includes(input.value)).length;
+        input.checked = filters[key].has(input.value);
+        input.disabled = !count && !input.checked;
+        setText(input.closest(".option").querySelector(".option-count"), String(count));
+    }
+    for (const facet of $("facets").querySelectorAll(".facet")) {
+        const size = filters[facet.dataset.facet].size;
+        const badge = facet.querySelector(".facet-badge");
+        badge.hidden = !size;
+        badge.innerHTML = size ? `${size}<span class="visually-hidden"> selected</span>` : "";
+    }
+}
+
+function renderChips() {
+    const chosen = FACETS.flatMap(([key]) => [...filters[key]].map(value => [key, value]));
+    $("chips").hidden = !chosen.length;
+    region("chips", $("chips"), chosen, () => chosen.map(([key, value]) =>
+        `<button class="chip" data-chip="${key}" data-value="${escape(value)}" data-key="chip:${key}:${escape(value)}" aria-label="Remove ${escape(value)} filter">${escape(value)}${CLOSE_ICON}</button>`).join("") +
+        (chosen.length ? '<button class="quiet" data-clear-filters data-key="clear-filters">Clear filters</button>' : ""));
+}
+
+const cardText = (id, name, description, meta) =>
+    `<span class="template-text"><span class="template-name">${escape(name)}</span><span id="${escape(id)}-d" class="template-description">${escape(description)}</span><span id="${escape(id)}-m" class="template-meta">${escape(meta)}</span></span>`;
+
+function templateCard(row) {
+    const id = `t-${row.id}`;
+    const meta = [sector(row.industry), valuesOf(row, "capabilities").find(value => !universals.capabilities?.includes(value)), row.patterns?.[0]].filter(Boolean).join(" · ");
+    return `<li><button class="template" data-template="${escape(row.id)}" data-key="template:${escape(row.id)}" aria-label="${escape(row.name)}" aria-describedby="${escape(id)}-d ${escape(id)}-m"><img src="/${escape(row.image)}" alt="" loading="lazy" width="480" height="270">${cardText(id, row.name, row.description, meta)}</button></li>`;
+}
+
+// Shape it with Copilot stays first and visible whatever the filters, since it fits any idea.
+function renderGallery() {
+    const tokens = searchTokens();
+    const base = snapshot.scenarios.filter(row => tokens.every(token => searchable(row).includes(token)));
+    const rows = base.filter(row => matchesFacets(row));
+    const sort = $("template-sort").value;
+    if (sort !== "featured") rows.sort((a, b) => sort === "industry" ? a.industry.localeCompare(b.industry) || a.name.localeCompare(b.name) : (sort === "reverse" ? -1 : 1) * a.name.localeCompare(b.name));
+    renderFacets(base);
+    renderChips();
+    const total = snapshot.scenarios.length;
+    setText($("template-count"), `${tokens.length || facetFiltered() ? `${rows.length} of ` : ""}${total} prompt templates`);
+    const empty = rows.length ? null : EMPTY_RESULTS[tokens.length && facetFiltered() ? "both" : tokens.length ? "search" : "filters"];
+    region("templates", $("templates"), [mode, rows.map(row => row.id), empty], () =>
+        `<li><button class="template guided-template" data-template="${GUIDED}" data-key="template:${GUIDED}" aria-label="${GUIDED_NAME}" aria-describedby="t-${GUIDED}-d t-${GUIDED}-m">${GUIDED_ART}${cardText(`t-${GUIDED}`, GUIDED_NAME, START[mode].guided, GUIDED_META)}</button></li>` +
+        rows.map(templateCard).join("") +
+        (empty ? `<li class="templates-empty"><p>No prompt templates match ${empty[0]}.</p><button class="quiet" data-clear-filters="all" data-key="clear-all">${empty[1]}</button></li>` : ""));
+}
+
+function setLayout(next, save = false) {
+    const layout = next === "list" ? "list" : "gallery";
+    $("templates").dataset.layout = layout;
+    for (const button of document.querySelectorAll(".layout-toggle [data-layout]")) button.setAttribute("aria-pressed", String(button.dataset.layout === layout));
+    if (save) api("preferences", { view: layout }).catch(error => notice(error.message, true));
+}
+
+function clearFilters(search) {
+    for (const [key] of FACETS) filters[key].clear();
+    if (search) $("template-search").value = "";
+    renderGallery();
+    $("template-search").focus();
+}
+
+// Focus moves to the next chip, then Clear filters, then search, so keyboard users keep their place.
+function removeChip(button) {
+    const index = [...$("chips").querySelectorAll("[data-chip]")].indexOf(button);
+    filters[button.dataset.chip].delete(button.dataset.value);
+    renderGallery();
+    const chips = [...$("chips").querySelectorAll("[data-chip]")];
+    (chips[index] ?? (chips.length ? $("chips").querySelector("[data-clear-filters]") : $("template-search"))).focus();
+}
+
+// A scenario's draft is "" while its prompt is unedited, so the server sends the packaged prompt; a guided draft is the idea.
+function draftValue() {
+    const text = $("prompt-text").value;
+    const row = templateRow(template);
+    return row && text.trim() === row.prompt.trim() ? "" : text;
+}
+
+// open: review and edit; building: Copilot works from it; unlockable: sent, with no build trace yet;
+// rerun: an SDD template ready to send again; locked: rapid prototyping continues from Build.
+function templateState() {
+    if (!template || !templateStarted) return "open";
+    if (awaitingTurn || live?.busy || (mode === "sdd" && ["running", "pending", "paused"].includes(live?.run?.status))) return "building";
+    if (!live?.lock && !live?.runs?.length) return "unlockable";
+    return mode === "sdd" ? "rerun" : "locked";
+}
+
+function renderReset() {
+    const row = templateRow(template);
+    $("template-reset").hidden = !row || $("prompt-text").readOnly || $("prompt-text").value.trim() === row.prompt.trim();
+}
+
+function renderTemplateView() {
+    const active = document.activeElement;
+    $("gallery").hidden = Boolean(template);
+    $("template-view").hidden = !template;
+    setText($("brief-title"), !template ? "Choose a prompt template" : templateStarted ? "Your prompt template" : "Review and send");
+    if (template) {
+        const row = templateRow(template);
+        if (heroKey !== `${template}:${mode}`) {
+            heroKey = `${template}:${mode}`;
+            $("template-art").innerHTML = row ? `<img src="/${escape(row.image)}" alt="" width="480" height="270">` : GUIDED_ART;
+            $("template-industry").textContent = row?.industry ?? GUIDED_META;
+            $("prompt-title").textContent = row?.name ?? GUIDED_NAME;
+            $("template-description").textContent = row?.description ?? START[mode].guided;
+            $("template-tags").hidden = !row;
+            $("template-tags").innerHTML = row ? FACETS.slice(1).filter(([key]) => valuesOf(row, key).length).map(([key, label]) =>
+                `<div><dt>${label}</dt><dd>${valuesOf(row, key).map(value => `<span class="tag">${escape(value)}</span>`).join("")}</dd></div>`).join("") : "";
+            $("prompt-label").textContent = row ? "Prompt" : "Your idea (optional)";
+            $("prompt-text").placeholder = row ? "" : GUIDED_PLACEHOLDER;
+        }
+        const state = templateState();
+        const editable = state === "open" || state === "rerun";
+        const runs = live?.runs?.length ?? 0;
+        $("prompt-text").readOnly = !editable;
+        $("template-back").hidden = templateStarted;
+        $("template-lock").hidden = !templateStarted;
+        $("send-prompt").hidden = !editable;
+        setText($("send-prompt"), state === "rerun" && runs ? "Start a new run" : START[mode].send);
+        $("template-unlock").hidden = state !== "unlockable";
+        $("track-build").hidden = !templateStarted;
+        $("workiq-switch").hidden = !editable;
+        $("workiq-line").hidden = !editable;
+        setText($("send-hint"), state === "open" ? START[mode].hint
+            : state === "rerun" ? `Edit the prompt if needed and ${runs ? "start a new run" : "send it again"}. The template stays locked for this session.`
+                : TEMPLATE_HINT[state]);
+        renderReset();
+    }
+    // A control hidden under keyboard focus hands focus to the next useful one.
+    if (active?.closest("#gallery, #template-view") && active.closest("[hidden]")) {
+        const next = template ? ["send-prompt", "template-unlock", "track-build"].map($).find(node => !node.hidden) ?? $("prompt-title") : $("template-search");
+        next.focus({ preventScroll: true });
+    }
+}
+
+function renderTemplateCta() {
+    for (const button of document.querySelectorAll("[data-template-cta]")) {
+        setText(button, !template ? "Start with a prompt template" : templateStarted ? "View prompt template" : "Continue with your prompt template");
+        button.classList.toggle("primary", !templateStarted);
+    }
+    setText($("wf-empty-intro"), templateStarted ? "Copilot runs preflight in Chat; the workflow appears here when it starts." : WF_EMPTY_INTRO);
+}
+
+function showTemplate() {
+    const switching = selectTab("start");
+    $("brief-step").scrollIntoView({ block: "start", behavior: "instant" });
+    (template ? $("prompt-title") : $("template-search")).focus({ preventScroll: true });
+    switching.catch(error => notice(error.message, true));
+}
+
+function applyTemplateState(state, text = false) {
+    if (text || (state.template ?? null) !== template) $("prompt-text").value = state.draft || (templateRow(state.template)?.prompt ?? "");
+    template = state.template ?? null;
+    templateStarted = state.started === true;
+    renderTemplateView();
+    renderTemplateCta();
+}
+
+// After a lock conflict, show the server's template, lock and text.
+async function syncTemplate() {
+    try {
+        const response = await fetch("/api/state", { headers: { "X-Canvas-Token": token } });
+        const value = await response.json();
+        if (response.ok) applyTemplateState(value.state, true);
+    } catch { /* The notice already reports the conflict. */ }
+}
+
+function openTemplate(id) {
+    if (templateStarted) return;
+    clearTimeout(draftSave);
+    galleryReturn = { id, scrollY: window.scrollY };
+    template = id;
+    $("prompt-text").value = drafts.get(id) ?? templateRow(id)?.prompt ?? "";
+    renderTemplateView();
+    renderTemplateCta();
+    $("brief-step").scrollIntoView({ block: "start", behavior: "instant" });
+    $("prompt-title").focus({ preventScroll: true });
+    api("preferences", { template: id, draft: draftValue() }).catch(error => { notice(error.message, true); syncTemplate(); });
+}
+
+function closeTemplate() {
+    clearTimeout(draftSave);
+    const id = template;
+    if (draftValue()) drafts.set(id, $("prompt-text").value);
+    else drafts.delete(id);
+    template = null;
+    renderTemplateView();
+    renderTemplateCta();
+    const card = $("templates").querySelector(`[data-template="${CSS.escape(id)}"]`);
+    (card ?? $("template-search")).focus({ preventScroll: true });
+    if (galleryReturn?.id === id) window.scrollTo({ top: galleryReturn.scrollY, behavior: "instant" });
+    else card?.scrollIntoView({ block: "center", behavior: "instant" });
+    galleryReturn = null;
+    api("preferences", { template: "" }).catch(error => { notice(error.message, true); syncTemplate(); });
+}
+
+// Sending starts a Copilot turn; the template stays read-only until live updates report it, or for 10 seconds.
+function expectTurn() {
+    if (live?.busy) return;
+    awaitingTurn = true;
+    clearTimeout(awaitingTimer);
+    awaitingTimer = setTimeout(() => { awaitingTurn = false; renderTemplateView(); }, 10_000);
 }
 
 function table(headers, rows, label) {
@@ -1101,8 +1331,13 @@ function applyLive(snap, initial = false) {
     }
     lastCheckpoint = checkpoint;
     document.body.classList.toggle("is-busy", Boolean(snap.busy));
+    if (snap.busy) {
+        awaitingTurn = false;
+        clearTimeout(awaitingTimer);
+    }
     renderWorkflow(snap);
     renderBuild();
+    if (snapshot) renderTemplateView();
     updateDock();
 }
 
@@ -1369,7 +1604,11 @@ document.addEventListener("click", event => {
     }
     if (button.dataset.mode && button.closest(".mode")) { chooseMode(button.dataset.mode); return; }
     if (button.hasAttribute("data-dismiss")) { $("notice").hidden = true; return; }
-    if (button.dataset.scenario) { reviewScenario(button.dataset.scenario); return; }
+    if (button.dataset.template) { openTemplate(button.dataset.template); return; }
+    if (button.hasAttribute("data-template-cta") || button.hasAttribute("data-show-template")) { showTemplate(); return; }
+    if (button.dataset.layout) { setLayout(button.dataset.layout, true); return; }
+    if (button.dataset.chip) { removeChip(button); return; }
+    if (button.hasAttribute("data-clear-filters")) { clearFilters(button.dataset.clearFilters === "all"); return; }
     if (button.dataset.wf) { workflowAction(button); return; }
     if (button.dataset.artifact) { busy(button, () => api("open_artifact", { path: button.dataset.artifact })); return; }
     if (button.hasAttribute("data-inventory-retry")) { busy(button, explore); return; }
@@ -1391,7 +1630,7 @@ document.addEventListener("click", event => {
         const kind = button.dataset.prompt;
         await api("prompt", { kind, ...(button.dataset.run ? { runId: button.dataset.run } : {}) });
         const sent = SENT[kind];
-        notice((typeof sent === "object" ? sent[mode] : sent) ?? "Sent to Chat. Continue there.", false, kind === "guided" ? TRACK : null);
+        notice((typeof sent === "object" ? sent[mode] : sent) ?? "Sent to Chat. Continue there.");
     });
 });
 
@@ -1489,35 +1728,104 @@ $("target-env").oninput = () => {
     $("target-help").classList.toggle("error", !valid);
     if (valid) envSave = setTimeout(() => saveTarget({ environmentName: value }), 400);
 };
-for (const id of ["scenario-search", "industry", "capability", "sort"]) $(id).addEventListener(id === "scenario-search" ? "input" : "change", renderScenarios);
-$("clear-filters").onclick = () => {
-    for (const id of ["scenario-search", "industry", "capability"]) $(id).value = "";
-    $("sort").value = "name";
-    renderScenarios();
-};
-$("own-brief").onclick = () => {
-    openReview("Your solution brief", "", $("own-brief"));
-    $("prompt-text").focus({ preventScroll: true });
-};
-let draftSave;
-$("prompt-text").oninput = () => {
+$("template-search").oninput = renderGallery;
+$("template-sort").onchange = renderGallery;
+// A menu that would overflow the panel aligns to its button's right edge, or stays inside the panel when that is not enough.
+function placeMenu(menu) {
+    menu.style.left = "";
+    const edge = document.documentElement.clientWidth - 8;
+    const { left, right, width } = menu.getBoundingClientRect();
+    if (right <= edge) return;
+    const end = menu.parentElement.getBoundingClientRect().right - width;
+    menu.style.left = `${(end >= 8 ? end : Math.max(8, edge - width)) - left}px`;
+}
+// Summary clicks, including Enter and Space, open one menu at a time and place it before it paints; the toggle event comes too late.
+$("facets").addEventListener("click", event => {
+    const facet = event.target.closest(".facet > summary")?.parentElement;
+    if (!facet) return;
+    event.preventDefault();
+    for (const other of $("facets").querySelectorAll(".facet[open]")) if (other !== facet) other.open = false;
+    facet.open = !facet.open;
+    if (facet.open) placeMenu(facet.querySelector(".facet-menu"));
+});
+addEventListener("resize", () => {
+    const menu = $("facets").querySelector(".facet[open] .facet-menu");
+    if (menu) placeMenu(menu);
+});
+$("facets").addEventListener("keydown", event => {
+    const facet = event.key === "Escape" ? event.target.closest(".facet[open]") : null;
+    if (!facet) return;
+    event.preventDefault();
+    facet.open = false;
+    facet.querySelector("summary").focus();
+});
+$("facets").addEventListener("change", event => {
+    const input = event.target.closest("[data-facet-option]");
+    if (!input) return;
+    const values = filters[input.dataset.facetOption];
+    if (input.checked) values.add(input.value);
+    else values.delete(input.value);
+    renderGallery();
+});
+// Tabbing away closes a menu; a click on a non-focusable spot has no related target, so the click handler decides.
+$("facets").addEventListener("focusout", event => {
+    const facet = event.target.closest(".facet[open]");
+    if (facet && event.relatedTarget && !facet.contains(event.relatedTarget)) facet.open = false;
+});
+document.addEventListener("click", event => {
+    for (const facet of $("facets").querySelectorAll(".facet[open]")) if (!facet.contains(event.target)) facet.open = false;
+});
+$("template-back").onclick = closeTemplate;
+$("template-reset").onclick = () => {
+    const row = templateRow(template);
+    if (!row) return;
     clearTimeout(draftSave);
-    draftSave = setTimeout(() => api("preferences", { draft: $("prompt-text").value }).catch(error => notice(error.message, true)), 300);
-};
-$("cancel-prompt").onclick = () => {
-    clearTimeout(draftSave);
-    returnToScenarios();
+    $("prompt-text").value = row.prompt;
+    drafts.delete(template);
+    renderReset();
+    $("prompt-text").focus();
     api("preferences", { draft: "" }).catch(error => notice(error.message, true));
 };
-$("send-prompt").onclick = () => busy($("send-prompt"), async () => {
-    const text = $("prompt-text").value.trim();
-    if (!text) { $("prompt-text").focus(); throw new Error("Write a brief first, or pick a scenario."); }
+$("prompt-text").oninput = () => {
+    renderReset();
     clearTimeout(draftSave);
-    await api("prompt", { kind: "custom", text });
-    await api("preferences", { draft: "" });
-    returnToScenarios();
-    notice(mode === "sdd" ? "Sent to Chat. Copilot runs preflight, then starts the workflow."
-        : activeProject() ? `Sent to Chat with ${activeProject().name}. Continue there.` : "Sent to Chat. Copilot asks which Foundry project to use.", false, TRACK);
+    draftSave = setTimeout(() => api("preferences", { draft: draftValue() }).catch(error => notice(error.message, true)), 300);
+};
+$("template-unlock").onclick = () => busy($("template-unlock"), async () => {
+    try {
+        applyTemplateState(await api("preferences", { started: false }));
+    } catch (error) {
+        if (error.code === "template_locked") syncTemplate();
+        throw error;
+    }
+    $("prompt-text").focus();
+    announce("Prompt template unlocked.");
+});
+$("send-prompt").onclick = () => busy($("send-prompt"), async () => {
+    const row = templateRow(template);
+    if (row && !$("prompt-text").value.trim()) {
+        $("prompt-text").focus();
+        throw new Error("The prompt is empty. Reset it to the template or write your own.");
+    }
+    clearTimeout(draftSave);
+    const text = draftValue().trim();
+    const input = row ? { kind: "scenario", scenarioId: row.id } : { kind: "guided" };
+    if (text) input.text = text;
+    let result;
+    try {
+        result = await api("prompt", input);
+    } catch (error) {
+        if (error.code === "template_locked") syncTemplate();
+        throw error;
+    }
+    drafts.delete(template);
+    templateStarted = result.started === true;
+    expectTurn();
+    renderTemplateView();
+    renderTemplateCta();
+    const project = activeProject();
+    notice(!row ? SENT.guided[mode] : mode === "sdd" ? "Sent to Chat. Copilot runs preflight, then starts the workflow."
+        : project ? `Sent to Chat with ${project.name}. Continue there.` : "Sent to Chat. Copilot asks which Foundry project to use.", false, TRACK);
 });
 
 async function start() {
@@ -1526,18 +1834,14 @@ async function start() {
     if (!response.ok) throw new Error(snapshot.error);
     target = { ...target, ...snapshot.state.target };
     lock = snapshot.live?.lock ?? null;
+    template = snapshot.state.template ?? null;
+    templateStarted = snapshot.state.started === true;
+    $("prompt-text").value = snapshot.state.draft || (templateRow(template)?.prompt ?? "");
+    setLayout(snapshot.state.view);
+    buildFacets();
     applyMode(snapshot.live?.mode ?? snapshot.state.mode);
     $("workiq-toggle").checked = snapshot.state.workiq === true;
     renderWorkIq(null);
-    if (snapshot.state.draft) {
-        $("prompt-text").value = snapshot.state.draft;
-        setScenarioReview(true);
-    }
-    for (const [id, values] of [
-        ["industry", snapshot.scenarios.map(row => sector(row.industry))],
-        ["capability", snapshot.scenarios.flatMap(row => [...row.tags, ...(row.capabilities ?? [])])],
-    ]) for (const value of [...new Set(values)].sort()) $(id).add(new Option(value, value));
-    renderScenarios();
     if (snapshot.live) applyLive(snapshot.live, true);
     const run = snapshot.live?.run;
     const saved = snapshot.state.tab;

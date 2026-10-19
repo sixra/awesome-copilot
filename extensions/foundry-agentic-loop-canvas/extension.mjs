@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
 import { Azure } from "./lib/azure.mjs";
-import { Model, TABS } from "./lib/model.mjs";
+import { Model, TABS, TAXONOMY, VIEWS, templateLocked } from "./lib/model.mjs";
 import { startServer } from "./lib/server.mjs";
 import { openFrontend } from "./lib/frontends.mjs";
 import { assertSession, sessionUsage } from "./lib/usage.mjs";
@@ -37,7 +37,10 @@ const schemas = {
     open_frontend: { ...objectSchema({ frontend: { enum: ["local", "deployed"] } }), required: ["frontend"] },
     usage: objectSchema({}),
     cost: objectSchema({}),
-    preferences: objectSchema({ tab: { enum: tabs }, draft: { type: "string", maxLength: 16000 }, workiq: { type: "boolean" } }),
+    preferences: objectSchema({
+        tab: { enum: tabs }, draft: { type: "string", maxLength: 16000 }, workiq: { type: "boolean" },
+        template: { type: "string", maxLength: 128 }, view: { enum: [...VIEWS] }, started: { enum: [false] },
+    }),
     mode: { ...objectSchema({ mode: { enum: ["rapid", "sdd", "auto"] } }), required: ["mode"] },
     targets: objectSchema({}),
     target: objectSchema({ subscriptionId: { type: "string", maxLength: 36 }, location: { type: "string", maxLength: 32 }, environmentName: { type: "string", maxLength: 40 } }),
@@ -117,7 +120,15 @@ async function perform(action, input) {
             if (!panel) throw new Error("Open Microsoft Foundry Canvas first using the button above.");
             return model.session.rpc.canvas.action.invoke({ instanceId: panel.instanceId, actionName: "refreshWorkspaceState" });
         }
-        case "preferences": Object.assign(model.state, input); await model.save(); return model.state;
+        case "preferences": {
+            // Unlocking is for a template sent by mistake: once the build leaves a trace, the template stays.
+            if (input.started === false && model.state.started) {
+                await ensureLive();
+                await live.refresh();
+                if (live.lock || live.runs.length || live.busy) throw templateLocked();
+            }
+            return model.preferences(input);
+        }
         case "mode": {
             await ensureLive();
             await live.refresh();
@@ -182,7 +193,7 @@ const descriptions = {
     open_frontend: "Open a configured frontend in the integrated browser, rereading its URL from .env.",
     usage: "Get usage for the bound Copilot session, with its ID, session accounting and runtime model counters.",
     cost: "Query resource-group month-to-date actual Azure spend.",
-    preferences: "Save the active tab, the Start brief draft and whether briefs ask Copilot to use Work IQ context.",
+    preferences: "Save the active tab, the prompt template gallery view, the selected prompt template and its draft text, and whether briefs ask Copilot to use Work IQ context. Sending from a template locks it; started: false unlocks it, keeping its text, only before an AGENTS.md mode lock, a workflow run or a Copilot turn exists.",
     mode: "Show rapid prototyping or SDD workflow views; auto selects SDD when this session has foundry-agentic-loop-workflow runs. An Agentic Loop section in the workspace AGENTS.md locks the mode and rejects a switch away from it.",
     targets: "List enabled Azure subscriptions and the saved SDD deployment target.",
     target: "Save the SDD deployment target: subscription, region (or auto) and azd environment name.",
@@ -193,13 +204,13 @@ const descriptions = {
     workflow_cancel: "Cancel a foundry-agentic-loop-workflow run.",
     open_artifact: "Open an existing workflow artifact such as docs/spec.md, or the workspace AGENTS.md, in the Editor canvas.",
     refresh_foundry: "Reuse the existing Foundry canvas public refreshWorkspaceState action.",
-    prompt: "Send a canvas prompt to Chat; this starts a Copilot turn. In the panel only the Start brief (kind custom) is reviewed and edited by the user before sending; changes adds the user's feedback to a fixed change request, and the other kinds send a fixed prompt for their step directly. With Work IQ context on, brief prompts ask Copilot to use the Work IQ MCP server first.",
+    prompt: "Send a canvas prompt to Chat; this starts a Copilot turn. On Start the user picks a prompt template and reviews or edits its text before sending: kind guided is Shape it with Copilot, with an optional idea as text; kind scenario sends scenarioId with the edited prompt as text. Sending from a template locks it for this session. changes adds the user's feedback to a fixed change request; the other kinds send a fixed prompt for their step directly. With Work IQ context on, brief prompts ask Copilot to use the Work IQ MCP server first.",
 };
 
 const session = await joinSession({
     canvases: [createCanvas({
         id: "foundry-agentic-loop-canvas",
-        displayName: "Agentic Loop",
+        displayName: "Foundry Agentic Loop",
         description: "Build agentic solutions on Microsoft Foundry: rapid prototyping in an existing project, or spec-driven development with live foundry-agentic-loop-workflow phases, gates and artifacts.",
         inputSchema: objectSchema({ tab: { enum: tabs }, mode: { enum: ["rapid", "sdd", "auto"] } }),
         actions: Object.entries(schemas).map(([name, inputSchema]) => ({
@@ -241,14 +252,14 @@ const session = await joinSession({
                         return dispatch(action, input);
                     },
                     snapshot: async () => ({
-                        state: model.state, scenarios, project: model.project,
+                        state: model.state, scenarios, taxonomy: TAXONOMY, project: model.project,
                         sessionId: session.sessionId, live: liveSnapshot(),
                     }),
                     live: { wait: (version, options) => live.wait(version, options), snapshot: liveSnapshot },
                 });
                 servers.set(ctx.instanceId, entry);
             }
-            return { title: "Agentic Loop", url: entry.url };
+            return { title: "Foundry Agentic Loop", url: entry.url };
         },
         onClose: async ctx => {
             const entry = servers.get(ctx.instanceId);
@@ -261,7 +272,7 @@ const session = await joinSession({
 });
 
 try {
-    if (!session.workspacePath) throw new Error("The runtime did not provide session storage. Upgrade Copilot before opening Agentic Loop.");
+    if (!session.workspacePath) throw new Error("The runtime did not provide session storage. Upgrade Copilot before opening Foundry Agentic Loop.");
     model = new Model({
         azure: new Azure(), session, scenarios,
         storage: path.join(session.workspacePath, "foundry-agentic-loop", "settings.json"),
@@ -272,4 +283,4 @@ try {
     resolveReady();
 } catch (error) { rejectReady(error); }
 // Keep the extension running so the reason reaches the timeline; open and actions reject with the same error.
-ready.catch(error => session.log(`Agentic Loop canvas failed to start: ${error.message}`, { level: "error" }).catch(() => {}));
+ready.catch(error => session.log(`Foundry Agentic Loop canvas failed to start: ${error.message}`, { level: "error" }).catch(() => {}));

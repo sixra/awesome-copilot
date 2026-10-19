@@ -10,13 +10,15 @@
       "Frontier Models",
       "Observability"
     ],
-    "prompt": "Build a manufacturing knowledge-discovery app where a team of agents uses MCP servers to pull from product manuals, CRM, and service logs, then applies specialized agent skills to surface real-time answers and next-best actions for sales, service, and support reps",
+    "prompt": "Build a manufacturing knowledge-discovery app where a team of agents uses MCP servers to pull from product manuals, CRM, and service logs, then applies specialized agent skills to surface real-time answers and next-best actions for sales, service, and support reps.",
     "capabilities": [
       "Frontier Models",
-      "Knowledge"
+      "Foundry IQ"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -40,13 +42,16 @@
       "Forms Recognition",
       "Code Generation"
     ],
-    "prompt": "Build an education app where a tutor agent delivers around-the-clock personalized learning, using MCP servers to read each student’s records and curriculum and specialized agent skills to generate adaptive lessons, quizzes, and feedback",
+    "prompt": "Build an education app where a tutor agent delivers around-the-clock personalized learning, using MCP servers to read each student’s records and curriculum and specialized agent skills to generate adaptive lessons, quizzes, and feedback.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Identity & Access",
+      "Storage"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -68,12 +73,14 @@
       "Governance",
       "Observability"
     ],
-    "prompt": "Build a government cybersecurity app where security agents use MCP servers to ingest logs, threat feeds, and asset inventories, then apply specialized agent skills to detect threats, triage incidents, and recommend response playbooks for public-sector data protection",
+    "prompt": "Build a government cybersecurity app where security agents use MCP servers to ingest logs, threat feeds, and asset inventories, then apply specialized agent skills to detect threats, triage incidents, and recommend response playbooks for public-sector data protection.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Private Networking"
     ],
     "patterns": [
       "Workflow Automation",
@@ -94,12 +101,14 @@
       "Domain-Specific Agents",
       "Workflow Automation"
     ],
-    "prompt": "Build an IT helpdesk app where support agents use MCP servers to read ticketing, identity, and device-management systems, then apply specialized agent skills to diagnose issues, automate fixes, and resolve tickets end to end",
+    "prompt": "Build an IT helpdesk app where support agents use MCP servers to read ticketing, identity, and device-management systems, then apply specialized agent skills to diagnose issues, automate fixes, and resolve tickets end to end.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Data Persistence"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -120,7 +129,7 @@
     "tags": [
       "Personalization"
     ],
-    "prompt": "Build an education app where a teaching-assistant agent generates differentiated class materials and individualized instruction, using MCP servers to align content to standards and specialized agent skills to adapt lessons for each learner",
+    "prompt": "Build an education app where a teaching-assistant agent generates differentiated class materials and individualized instruction, using MCP servers to align content to standards and specialized agent skills to adapt lessons for each learner.",
     "capabilities": [
       "Frontier Models"
     ],
@@ -148,13 +157,15 @@
       "Forms Recognition",
       "Frontier Models"
     ],
-    "prompt": "Build a campus-engagement app where agents use MCP servers to connect student, course, and campus-services data, then apply specialized agent skills to recommend activities, answer questions, and personalize outreach that boosts engagement",
+    "prompt": "Build a campus-engagement app where agents use MCP servers to connect student, course, and campus-services data, then apply specialized agent skills to recommend activities, answer questions, and personalize outreach that boosts engagement.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -177,7 +188,7 @@
       "Workflow Automation",
       "Code Generation"
     ],
-    "prompt": "Build a developer-assistant app where a dev agent uses MCP servers to read the codebase, issues, and CI logs, then applies specialized agent skills to explain code, improve documentation, and guide troubleshooting",
+    "prompt": "Build a developer-assistant app where a dev agent uses MCP servers to read the codebase, issues, and CI logs, then applies specialized agent skills to explain code, improve documentation, and guide troubleshooting.",
     "capabilities": [
       "Frontier Models"
     ],
@@ -204,13 +215,16 @@
       "Knowledge Grounding",
       "Predictive Analytics"
     ],
-    "prompt": "Build a capital-markets research app where analyst agents use MCP servers to unify internal and external market data, then apply specialized agent skills to model scenarios and deliver predictive insights for investment decisions",
+    "prompt": "Build a capital-markets research app where analyst agents use MCP servers to unify internal and external market data, then apply specialized agent skills to model scenarios and deliver predictive insights for investment decisions.",
     "capabilities": [
       "Frontier Models",
-      "Knowledge"
+      "Foundry IQ"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Private Networking",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -231,13 +245,15 @@
     "tags": [
       "Workflow Automation"
     ],
-    "prompt": "Build a pharma manufacturing app where agents use MCP servers to access SOPs, batch records, and quality data, then apply specialized agent skills to streamline SOP management, flag deviations, and guide quality-control decisions",
+    "prompt": "Build a pharma manufacturing app where agents use MCP servers to access SOPs, batch records, and quality data, then apply specialized agent skills to streamline SOP management, flag deviations, and guide quality-control decisions.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Private Networking",
+      "Storage"
     ],
     "patterns": [
       "Workflow Automation",
@@ -257,12 +273,13 @@
     "tags": [
       "Workflow Automation"
     ],
-    "prompt": "Build a telecom employee-productivity app where a personal-assistant agent uses MCP servers to connect email, calendars, and task systems, then applies specialized agent skills to automate task management and draft communications",
+    "prompt": "Build a telecom employee-productivity app where a personal-assistant agent uses MCP servers to connect email, calendars, and task systems, then applies specialized agent skills to automate task management and draft communications.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access"
     ],
     "patterns": [
       "Workflow Automation"
@@ -281,13 +298,14 @@
     "tags": [
       "Forms Recognition"
     ],
-    "prompt": "Build a legal contract-management app where agents use MCP servers to retrieve contracts and clause libraries, then apply specialized agent skills to review documents, flag risks, extract clauses, and accelerate legal research",
+    "prompt": "Build a legal contract-management app where agents use MCP servers to retrieve contracts and clause libraries, then apply specialized agent skills to review documents, flag risks, extract clauses, and accelerate legal research.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -308,12 +326,13 @@
     "tags": [
       "Frontier Models"
     ],
-    "prompt": "Build a telecom innovation app where agents use MCP servers to analyze network, usage, and market data, then apply specialized agent skills to ideate, validate, and document new products and services",
+    "prompt": "Build a telecom innovation app where agents use MCP servers to analyze network, usage, and market data, then apply specialized agent skills to ideate, validate, and document new products and services.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway"
     ],
     "patterns": [
       "Workflow Automation",
@@ -336,13 +355,17 @@
       "Governance",
       "Observability"
     ],
-    "prompt": "Build a public-benefits app where agents use MCP servers to verify applicant data across systems, then apply specialized agent skills to determine eligibility, detect fraud, and support investigations with auditable reasoning",
+    "prompt": "Build a public-benefits app where agents use MCP servers to verify applicant data across systems, then apply specialized agent skills to determine eligibility, detect fraud, and support investigations with auditable reasoning.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking",
+      "Data Persistence",
+      "Storage"
     ],
     "patterns": [
       "Workflow Automation",
@@ -365,13 +388,15 @@
       "Personalization",
       "Frontier Models"
     ],
-    "prompt": "Build a marketing app where a team of agents uses MCP servers to pull audience and campaign data, then applies specialized agent skills to generate personalized content, optimize campaigns, and surface insights",
+    "prompt": "Build a marketing app where a team of agents uses MCP servers to pull audience and campaign data, then applies specialized agent skills to generate personalized content, optimize campaigns, and surface insights.",
     "capabilities": [
       "Frontier Models",
       "Image Generation"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Storage"
     ],
     "patterns": [
       "Multi-Agent Orchestration",
@@ -393,12 +418,14 @@
     "tags": [
       "Domain-Specific Agents"
     ],
-    "prompt": "Build a facilities-management app where virtual-assistant agents use MCP servers to read building, sensor, and work-order data, then apply specialized agent skills to allocate resources, triage requests, and recommend proactive maintenance",
+    "prompt": "Build a facilities-management app where virtual-assistant agents use MCP servers to read building, sensor, and work-order data, then apply specialized agent skills to allocate resources, triage requests, and recommend proactive maintenance.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Private Networking",
+      "Data Persistence"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -418,12 +445,13 @@
     "tags": [
       "Governance"
     ],
-    "prompt": "Build a telecom network app where agents use MCP servers to monitor network performance and usage, then apply specialized agent skills to optimize efficiency, strengthen security, and surface new monetization opportunities",
+    "prompt": "Build a telecom network app where agents use MCP servers to monitor network performance and usage, then apply specialized agent skills to optimize efficiency, strengthen security, and surface new monetization opportunities.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway"
     ],
     "patterns": [
       "Workflow Automation",
@@ -438,18 +466,22 @@
     "id": "enable-seamless-access-to-information-with-ai",
     "name": "Give staff seamless access to the information and services they need",
     "industry": "Government: Public health and social services",
-    "description": "Empower social service case managers and public health organizations with AI in government to improve access to information and deliver faster, smarter government aid. (160 characters)",
+    "description": "Empower social service case managers and public health organizations with AI in government to improve access to information and deliver faster, smarter government aid.",
     "image": "images/enable-seamless-access-to-information-with-ai.webp",
     "tags": [
       "Forms Recognition"
     ],
-    "prompt": "Build a social-services app where a case-manager agent uses MCP servers to retrieve case files and program information, then applies specialized agent skills to summarize cases, answer policy questions, and speed access to aid",
+    "prompt": "Build a social-services app where a case-manager agent uses MCP servers to retrieve case files and program information, then applies specialized agent skills to summarize cases, answer policy questions, and speed access to aid.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking",
+      "Data Persistence",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -470,7 +502,7 @@
       "Workflow Automation",
       "Code Generation"
     ],
-    "prompt": "Build a software-defined-product app where engineering agents use MCP servers to read requirements and repositories, then apply specialized agent skills for AI-assisted coding, test generation, and release documentation",
+    "prompt": "Build a software-defined-product app where engineering agents use MCP servers to read requirements and repositories, then apply specialized agent skills for AI-assisted coding, test generation, and release documentation.",
     "capabilities": [
       "Frontier Models"
     ],
@@ -497,13 +529,16 @@
       "Personalization",
       "Real-Time Conversations"
     ],
-    "prompt": "Build a civic-engagement app where a public-facing agent uses MCP servers to access services, FAQs, and open data, then applies specialized agent skills to answer resident questions in real time and route requests to the right department",
+    "prompt": "Build a civic-engagement app where a public-facing agent uses MCP servers to access services, FAQs, and open data, then applies specialized agent skills to answer resident questions in real time and route requests to the right department.",
     "capabilities": [
       "Frontier Models",
       "Real-Time Conversations"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Private Networking",
+      "Data Persistence"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -526,13 +561,15 @@
       "Knowledge Grounding",
       "Forms Recognition"
     ],
-    "prompt": "Build a smart-factory app where industrial agents use MCP servers to access real-time machine, MES, maintenance, quality, and supply-chain data. Use the factory-operations-triage skill to correlate anomalies and produce evidence-backed operator actions, and use the production-flow-optimizer skill to diagnose bottlenecks and propose safe, constraint-aware production and shift plans. Require operator approval before any operational-system write or control action",
+    "prompt": "Build a smart-factory app where industrial agents use MCP servers to access real-time machine, MES, maintenance, quality, and supply-chain data. Use the factory-operations-triage skill to correlate anomalies and produce evidence-backed operator actions, and use the production-flow-optimizer skill to diagnose bottlenecks and propose safe, constraint-aware production and shift plans. Require operator approval before any operational-system write or control action.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Storage"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -553,7 +590,7 @@
     "tags": [
       "Observability"
     ],
-    "prompt": "Build a factory-safety app where agents use MCP servers to access sensor, incident, and procedure data, then apply specialized agent skills to surface real-time safety guidance and boost frontline productivity",
+    "prompt": "Build a factory-safety app where agents use MCP servers to access sensor, incident, and procedure data, then apply specialized agent skills to surface real-time safety guidance and boost frontline productivity.",
     "capabilities": [
       "Frontier Models"
     ],
@@ -580,13 +617,17 @@
       "Predictive Analytics",
       "Governance"
     ],
-    "prompt": "Build an insurance claims app where agents use MCP servers to ingest claims, policy, and third-party data, then apply specialized agent skills to automate adjudication, detect fraud, and route exceptions for review",
+    "prompt": "Build an insurance claims app where agents use MCP servers to ingest claims, policy, and third-party data, then apply specialized agent skills to automate adjudication, detect fraud, and route exceptions for review.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking",
+      "Data Persistence",
+      "Storage"
     ],
     "patterns": [
       "Workflow Automation",
@@ -609,13 +650,17 @@
       "Knowledge Grounding",
       "Personalization"
     ],
-    "prompt": "Build a banking relationship-manager app where an assistant agent uses MCP servers to gather client portfolios, interactions, and market data, then applies specialized agent skills to prepare meeting briefs, summaries, and tailored recommendations",
+    "prompt": "Build a banking relationship-manager app where an assistant agent uses MCP servers to gather client portfolios, interactions, and market data, then applies specialized agent skills to prepare meeting briefs, summaries, and tailored recommendations.",
     "capabilities": [
       "Frontier Models",
-      "Knowledge"
+      "Foundry IQ"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking",
+      "Data Persistence",
+      "Storage"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -639,13 +684,16 @@
       "Frontier Models",
       "Observability"
     ],
-    "prompt": "Build a government decision-intelligence app where agents use MCP servers to unify data across agencies at scale, then apply specialized agent skills to generate insights and support proactive, real-time decisions",
+    "prompt": "Build a government decision-intelligence app where agents use MCP servers to unify data across agencies at scale, then apply specialized agent skills to generate insights and support proactive, real-time decisions.",
     "capabilities": [
       "Frontier Models",
-      "Knowledge"
+      "Foundry IQ"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Private Networking",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -668,13 +716,16 @@
       "Predictive Analytics",
       "Forms Recognition"
     ],
-    "prompt": "Build an insurance sales app where agents use MCP servers to read policyholder profiles and product catalogs, then apply specialized agent skills to match customers to the right coverage and accelerate underwriting",
+    "prompt": "Build an insurance sales app where agents use MCP servers to read policyholder profiles and product catalogs, then apply specialized agent skills to match customers to the right coverage and accelerate underwriting.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking",
+      "Storage"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -696,12 +747,13 @@
     "tags": [
       "Workflow Automation"
     ],
-    "prompt": "Build an energy workforce app where agents use MCP servers to access procedures, asset data, and work orders, then apply specialized agent skills to automate processes, upskill workers, and improve frontline safety and productivity",
+    "prompt": "Build an energy workforce app where agents use MCP servers to access procedures, asset data, and work orders, then apply specialized agent skills to automate processes, upskill workers, and improve frontline safety and productivity.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Data Persistence"
     ],
     "patterns": [
       "Workflow Automation",
@@ -723,13 +775,16 @@
       "Personalization",
       "Real-Time Conversations"
     ],
-    "prompt": "Build a retail shopping app where a conversational agent uses MCP servers to access catalog, inventory, and customer history, then applies specialized agent skills to deliver personalized, real-time product recommendations that turn browsers into buyers",
+    "prompt": "Build a retail shopping app where a conversational agent uses MCP servers to access catalog, inventory, and customer history, then applies specialized agent skills to deliver personalized, real-time product recommendations that turn browsers into buyers.",
     "capabilities": [
       "Frontier Models",
       "Real-Time Conversations"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Identity & Access",
+      "Data Persistence"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -753,12 +808,13 @@
       "Workflow Automation",
       "Code Generation"
     ],
-    "prompt": "Build an engineering R&D app where agents use MCP servers to access design specs, CAD, and test data, then apply specialized agent skills to automate design tasks, generate documentation, and accelerate product development",
+    "prompt": "Build an engineering R&D app where agents use MCP servers to access design specs, CAD, and test data, then apply specialized agent skills to automate design tasks, generate documentation, and accelerate product development.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Storage"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -779,13 +835,17 @@
     "tags": [
       "Knowledge Grounding"
     ],
-    "prompt": "Build a healthcare-payor app where agents use MCP servers to unify member, provider, and clinical data, then apply specialized agent skills to surface care insights and improve operational efficiency",
+    "prompt": "Build a healthcare-payor app where agents use MCP servers to unify member, provider, and clinical data, then apply specialized agent skills to surface care insights and improve operational efficiency.",
     "capabilities": [
       "Frontier Models",
-      "Knowledge"
+      "Foundry IQ"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Identity & Access",
+      "Private Networking",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -807,13 +867,14 @@
       "Predictive Analytics",
       "Forms Recognition"
     ],
-    "prompt": "Build an energy-operations app where agents use MCP servers to access production, weather, and demand data, then apply specialized agent skills to forecast output and recommend decisions that improve efficiency and reliability",
+    "prompt": "Build an energy-operations app where agents use MCP servers to access production, weather, and demand data, then apply specialized agent skills to forecast output and recommend decisions that improve efficiency and reliability.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Storage"
     ],
     "patterns": [
       "Workflow Automation",
@@ -834,13 +895,16 @@
     "tags": [
       "Knowledge Grounding"
     ],
-    "prompt": "Build a financial-research app where analyst agents use MCP servers to gather reports, earnings calls, and market data, then apply specialized agent skills to summarize findings and surface sentiment for faster decisions",
+    "prompt": "Build a financial-research app where analyst agents use MCP servers to gather reports, earnings calls, and market data, then apply specialized agent skills to summarize findings and surface sentiment for faster decisions.",
     "capabilities": [
       "Frontier Models",
-      "Knowledge"
+      "Speech to Text",
+      "Foundry IQ"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Private Networking",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -863,13 +927,16 @@
       "Workflow Automation",
       "Knowledge Grounding"
     ],
-    "prompt": "Build a clinical-research app where agents use MCP servers to access unified, governed patient data, then apply specialized agent skills to generate insights, streamline operations, and support trusted research environments",
+    "prompt": "Build a clinical-research app where agents use MCP servers to access unified, governed patient data, then apply specialized agent skills to generate insights, streamline operations, and support trusted research environments.",
     "capabilities": [
       "Frontier Models",
-      "Knowledge"
+      "Foundry IQ"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -890,12 +957,15 @@
     "tags": [
       "Personalization"
     ],
-    "prompt": "Build a patient-engagement app where an agent uses MCP servers to access authorized patient records, care plans, consent, and follow-up data. Use the care-gap-outreach-planner skill to prioritize care gaps and prepare personalized, consent-aware outreach, and use the post-discharge-care-coordinator skill to manage follow-up tasks, patient responses, and rule-based escalation. Keep diagnosis, treatment changes, and urgent clinical decisions with licensed professionals",
+    "prompt": "Build a patient-engagement app where an agent uses MCP servers to access authorized patient records, care plans, consent, and follow-up data. Use the care-gap-outreach-planner skill to prioritize care gaps and prepare personalized, consent-aware outreach, and use the post-discharge-care-coordinator skill to manage follow-up tasks, patient responses, and rule-based escalation. Keep diagnosis, treatment changes, and urgent clinical decisions with licensed professionals.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking",
+      "Data Persistence"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -917,13 +987,16 @@
       "Knowledge Grounding",
       "Frontier Models"
     ],
-    "prompt": "Build a drug-discovery app where research agents use MCP servers to access scientific literature and experimental data, then apply specialized agent skills to share knowledge, analyze results, and accelerate discovery",
+    "prompt": "Build a drug-discovery app where research agents use MCP servers to access scientific literature and experimental data, then apply specialized agent skills to share knowledge, analyze results, and accelerate discovery.",
     "capabilities": [
       "Frontier Models",
-      "Knowledge"
+      "Foundry IQ"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Private Networking",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -945,13 +1018,15 @@
       "Knowledge Grounding",
       "Frontier Models"
     ],
-    "prompt": "Build a MedTech research app where agents use MCP servers to unify device and research data, then apply specialized agent skills to accelerate therapeutic discovery and shorten time to market",
+    "prompt": "Build a MedTech research app where agents use MCP servers to unify device and research data, then apply specialized agent skills to accelerate therapeutic discovery and shorten time to market.",
     "capabilities": [
       "Frontier Models",
-      "Knowledge"
+      "Foundry IQ"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Private Networking",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -973,13 +1048,17 @@
       "Workflow Automation",
       "Predictive Analytics"
     ],
-    "prompt": "Build an underwriting app where agents use MCP servers to gather applicant, claims, and risk data, then apply specialized agent skills to automate risk analysis and improve underwriting decisions",
+    "prompt": "Build an underwriting app where agents use MCP servers to gather applicant, claims, and risk data, then apply specialized agent skills to automate risk analysis and improve underwriting decisions.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking",
+      "Data Persistence",
+      "Storage"
     ],
     "patterns": [
       "Workflow Automation",
@@ -1002,13 +1081,15 @@
       "Real-Time Conversations",
       "Frontier Models"
     ],
-    "prompt": "Build a pharma guided-selling app where agents use MCP servers to access product, account, and compliance data, then apply specialized agent skills to guide reps in real time and improve customer service",
+    "prompt": "Build a pharma guided-selling app where agents use MCP servers to access product, account, and compliance data, then apply specialized agent skills to guide reps in real time and improve customer service.",
     "capabilities": [
       "Frontier Models",
       "Real-Time Conversations"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -1032,12 +1113,14 @@
       "Predictive Analytics",
       "Governance"
     ],
-    "prompt": "Build a risk-and-compliance app where agents use MCP servers to monitor transactions and regulatory data, then apply specialized agent skills to predict risks, automate monitoring, and report suspicious activity",
+    "prompt": "Build a risk-and-compliance app where agents use MCP servers to monitor transactions and regulatory data, then apply specialized agent skills to predict risks, automate monitoring, and report suspicious activity.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking"
     ],
     "patterns": [
       "Workflow Automation",
@@ -1058,12 +1141,14 @@
     "tags": [
       "Personalization"
     ],
-    "prompt": "Build a connected-care app where agents use MCP servers to access medical-device and patient data, then apply specialized agent skills to personalize care experiences and deliver tailored patient support",
+    "prompt": "Build a connected-care app where agents use MCP servers to access medical-device and patient data, then apply specialized agent skills to personalize care experiences and deliver tailored patient support.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -1085,13 +1170,15 @@
       "Knowledge Grounding",
       "Real-Time Conversations"
     ],
-    "prompt": "Build an insurance-agent app where an assistant agent uses MCP servers to gather customer and policy data, then applies specialized agent skills to prepare meetings, surface insights, and improve service",
+    "prompt": "Build an insurance-agent app where an assistant agent uses MCP servers to gather customer and policy data, then applies specialized agent skills to prepare meetings, surface insights, and improve service.",
     "capabilities": [
       "Frontier Models",
       "Real-Time Conversations"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -1115,13 +1202,16 @@
       "Personalization",
       "Forms Recognition"
     ],
-    "prompt": "Build a sales-enablement app where agents use MCP servers to access client portfolios and market data, then apply specialized agent skills to streamline meeting prep, personalize presentations, and deliver portfolio insights",
+    "prompt": "Build a sales-enablement app where agents use MCP servers to access client portfolios and market data, then apply specialized agent skills to streamline meeting prep, personalize presentations, and deliver portfolio insights.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking",
+      "Storage"
     ],
     "patterns": [
       "Workflow Automation",
@@ -1143,13 +1233,15 @@
       "Personalization",
       "Observability"
     ],
-    "prompt": "Build a retail conversion app where agents use MCP servers to access customer, product, and campaign data, then apply specialized agent skills to generate real-time, tailored product and marketing assets that increase engagement",
+    "prompt": "Build a retail conversion app where agents use MCP servers to access customer, product, and campaign data, then apply specialized agent skills to generate real-time, tailored product and marketing assets that increase engagement.",
     "capabilities": [
       "Frontier Models",
       "Image Generation"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Storage"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -1172,13 +1264,14 @@
       "Knowledge Grounding",
       "Code Generation"
     ],
-    "prompt": "Build an academic-research app where agents use MCP servers to access papers and datasets, then apply specialized agent skills to run literature reviews, synthesize findings, and uncover insights",
+    "prompt": "Build an academic-research app where agents use MCP servers to access papers and datasets, then apply specialized agent skills to run literature reviews, synthesize findings, and uncover insights.",
     "capabilities": [
       "Frontier Models",
-      "Knowledge"
+      "Foundry IQ"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -1202,13 +1295,17 @@
       "Personalization",
       "Real-Time Conversations"
     ],
-    "prompt": "Build a telecom customer-care app where a conversational agent uses MCP servers to access account, billing, and network data, then applies specialized agent skills to resolve issues in real time and personalize support",
+    "prompt": "Build a telecom customer-care app where a conversational agent uses MCP servers to access account, billing, and network data, then applies specialized agent skills to resolve issues in real time and personalize support.",
     "capabilities": [
       "Frontier Models",
+      "Text to Speech",
+      "Speech to Text",
       "Real-Time Conversations"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Identity & Access"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -1229,12 +1326,14 @@
     "tags": [
       "Governance"
     ],
-    "prompt": "Build an education-security app where agents use MCP servers to ingest security and identity signals, then apply specialized agent skills to detect cyberthreats and enforce responsible governance across learning platforms",
+    "prompt": "Build an education-security app where agents use MCP servers to ingest security and identity signals, then apply specialized agent skills to detect cyberthreats and enforce responsible governance across learning platforms.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking"
     ],
     "patterns": [
       "Workflow Automation",
@@ -1254,13 +1353,14 @@
     "tags": [
       "Knowledge Grounding"
     ],
-    "prompt": "Build an energy-exploration app where agents use MCP servers to access geological and operational data, then apply specialized agent skills to generate insights and power intelligent search for faster exploration",
+    "prompt": "Build an energy-exploration app where agents use MCP servers to access geological and operational data, then apply specialized agent skills to generate insights and power intelligent search for faster exploration.",
     "capabilities": [
       "Frontier Models",
-      "Knowledge"
+      "Foundry IQ"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -1283,13 +1383,17 @@
       "Workflow Automation",
       "Knowledge Grounding"
     ],
-    "prompt": "Build a customer-service app where an always-on agent uses MCP servers to access knowledge bases and case history, then applies specialized agent skills to resolve issues, automate follow-ups, and assist remote reps",
+    "prompt": "Build a customer-service app where an always-on agent uses MCP servers to access knowledge bases and case history, then applies specialized agent skills to resolve issues, automate follow-ups, and assist remote reps.",
     "capabilities": [
       "Frontier Models",
-      "Knowledge"
+      "Foundry IQ"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Identity & Access",
+      "Data Persistence",
+      "Storage"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -1312,13 +1416,16 @@
       "Predictive Analytics",
       "Governance"
     ],
-    "prompt": "Build a banking fraud-detection app where agents use MCP servers to access transaction and risk data, then apply specialized agent skills to surface real-time insights, reduce false positives, and pinpoint fraudulent activity",
+    "prompt": "Build a banking fraud-detection app where agents use MCP servers to access transaction and risk data, then apply specialized agent skills to surface real-time insights, reduce false positives, and pinpoint fraudulent activity.",
     "capabilities": [
       "Frontier Models",
-      "Knowledge"
+      "Foundry IQ"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking",
+      "Storage"
     ],
     "patterns": [
       "Workflow Automation",
@@ -1340,13 +1447,16 @@
       "Workflow Automation",
       "Governance"
     ],
-    "prompt": "Build a nonprofit-operations app where agents use MCP servers to access case and compliance data, then apply specialized agent skills to automate case management, improve data accuracy, and speed decisions",
+    "prompt": "Build a nonprofit-operations app where agents use MCP servers to access case and compliance data, then apply specialized agent skills to automate case management, improve data accuracy, and speed decisions.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Data Persistence",
+      "Storage"
     ],
     "patterns": [
       "Workflow Automation",
@@ -1367,12 +1477,14 @@
     "tags": [
       "Workflow Automation"
     ],
-    "prompt": "Build a nonprofit program app where agents use MCP servers to connect program and donor data, then apply specialized agent skills to automate decisions, accelerate delivery, and optimize fundraising",
+    "prompt": "Build a nonprofit program app where agents use MCP servers to connect program and donor data, then apply specialized agent skills to automate decisions, accelerate delivery, and optimize fundraising.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Identity & Access"
     ],
     "patterns": [
       "Workflow Automation",
@@ -1393,12 +1505,14 @@
       "Workflow Automation",
       "Predictive Analytics"
     ],
-    "prompt": "Build a capital-markets operations app where agents use MCP servers to access trade and reference data, then apply specialized agent skills to automate operations and surface predictive insights",
+    "prompt": "Build a capital-markets operations app where agents use MCP servers to access trade and reference data, then apply specialized agent skills to automate operations and surface predictive insights.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Private Networking"
     ],
     "patterns": [
       "Workflow Automation",
@@ -1421,13 +1535,15 @@
       "Workflow Automation",
       "Real-Time Conversations"
     ],
-    "prompt": "Build an HR app where an employee-assistant agent uses MCP servers to access HR systems and policies, then applies specialized agent skills to answer questions, automate tasks, and enable self-service",
+    "prompt": "Build an HR app where an employee-assistant agent uses MCP servers to access HR systems and policies, then applies specialized agent skills to answer questions, automate tasks, and enable self-service.",
     "capabilities": [
       "Frontier Models",
       "Real-Time Conversations"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Identity & Access"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -1449,13 +1565,16 @@
       "Knowledge Grounding",
       "Personalization"
     ],
-    "prompt": "Build a banking-marketing app where agents use MCP servers to access customer and campaign data, then apply specialized agent skills to personalize offers, generate content, and surface insights",
+    "prompt": "Build a banking-marketing app where agents use MCP servers to access customer and campaign data, then apply specialized agent skills to personalize offers, generate content, and surface insights.",
     "capabilities": [
       "Frontier Models",
       "Image Generation"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking",
+      "Storage"
     ],
     "patterns": [
       "Knowledge Grounding",
@@ -1479,13 +1598,18 @@
       "Workflow Automation",
       "Personalization"
     ],
-    "prompt": "Build a self-service customer app where agents use MCP servers to access knowledge and account data, then apply specialized agent skills to deliver chat, voice, and avatar experiences that resolve requests automatically",
+    "prompt": "Build a self-service customer app where agents use MCP servers to access knowledge and account data, then apply specialized agent skills to deliver chat, voice, and avatar experiences that resolve requests automatically.",
     "capabilities": [
       "Frontier Models",
+      "Text to Speech",
+      "Speech to Text",
       "Real-Time Conversations"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Identity & Access",
+      "Data Persistence"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -1507,12 +1631,14 @@
       "Governance",
       "Observability"
     ],
-    "prompt": "Build an energy-security app where agents use MCP servers to ingest operational and threat data, then apply specialized agent skills to detect threats fast and recommend responses that keep critical systems online",
+    "prompt": "Build an energy-security app where agents use MCP servers to ingest operational and threat data, then apply specialized agent skills to detect threats fast and recommend responses that keep critical systems online.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Private Networking"
     ],
     "patterns": [
       "Workflow Automation",
@@ -1532,12 +1658,13 @@
     "tags": [
       "Personalization"
     ],
-    "prompt": "Build a media-engagement app where agents use MCP servers to access audience and content data, then apply specialized agent skills to power smart recommendations and interactive features that boost retention and monetization",
+    "prompt": "Build a media-engagement app where agents use MCP servers to access audience and content data, then apply specialized agent skills to power smart recommendations and interactive features that boost retention and monetization.",
     "capabilities": [
       "Frontier Models"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Storage"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -1560,13 +1687,16 @@
       "Knowledge Grounding",
       "Governance"
     ],
-    "prompt": "Build a lending and mortgage app where agents use MCP servers to gather authorized application, document, credit, collateral, and compliance data. Use the loan-file-readiness-reviewer skill to validate completeness, consistency, freshness, and provenance, and use the mortgage-underwriting-coordinator skill to assemble policy evidence, conditions, and fair-lending checks for a human underwriter. Keep approval, denial, and pricing decisions with authorized human reviewers",
+    "prompt": "Build a lending and mortgage app where agents use MCP servers to gather authorized application, document, credit, collateral, and compliance data. Use the loan-file-readiness-reviewer skill to validate completeness, consistency, freshness, and provenance, and use the mortgage-underwriting-coordinator skill to assemble policy evidence, conditions, and fair-lending checks for a human underwriter. Keep approval, denial, and pricing decisions with authorized human reviewers.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking",
+      "Storage"
     ],
     "patterns": [
       "Workflow Automation",
@@ -1588,13 +1718,14 @@
       "Workflow Automation",
       "Forms Recognition"
     ],
-    "prompt": "Build a nonprofit document app where agents use MCP servers to retrieve program data and documents, then apply specialized agent skills to translate content accurately and streamline workflows",
+    "prompt": "Build a nonprofit document app where agents use MCP servers to retrieve program data and documents, then apply specialized agent skills to translate content accurately and streamline workflows.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Storage"
     ],
     "patterns": [
       "Workflow Automation",
@@ -1616,13 +1747,19 @@
       "Real-Time Conversations",
       "Forms Recognition"
     ],
-    "prompt": "Build a banking contact-center app where agents use MCP servers to access customer, account, and knowledge data, then apply specialized agent skills to handle real-time conversations and turn routine tasks into meaningful service",
+    "prompt": "Build a banking contact-center app where agents use MCP servers to access customer, account, and knowledge data, then apply specialized agent skills to handle real-time conversations and turn routine tasks into meaningful service.",
     "capabilities": [
       "Frontier Models",
+      "Text to Speech",
+      "Speech to Text",
       "Real-Time Conversations"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Identity & Access",
+      "Private Networking",
+      "Data Persistence"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -1645,13 +1782,17 @@
       "Personalization",
       "Forms Recognition"
     ],
-    "prompt": "Build a capital-markets client app where agents use MCP servers to access client and portfolio data, then apply specialized agent skills to personalize experiences and augment advisor interactions",
+    "prompt": "Build a capital-markets client app where agents use MCP servers to access client and portfolio data, then apply specialized agent skills to personalize experiences and augment advisor interactions.",
     "capabilities": [
       "Frontier Models",
       "Forms Recognition"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "Identity & Access",
+      "Private Networking",
+      "Data Persistence",
+      "Storage"
     ],
     "patterns": [
       "Domain-Specific Agents",
@@ -1674,13 +1815,19 @@
       "Personalization",
       "Real-Time Conversations"
     ],
-    "prompt": "Build an insurance customer-service app where a conversational agent uses MCP servers to access policy and claims data, then applies specialized agent skills to provide personalized support, speed claims, and surface upsell opportunities",
+    "prompt": "Build an insurance customer-service app where a conversational agent uses MCP servers to access policy and claims data, then applies specialized agent skills to provide personalized support, speed claims, and surface upsell opportunities.",
     "capabilities": [
       "Frontier Models",
+      "Text to Speech",
+      "Speech to Text",
       "Real-Time Conversations"
     ],
     "buildingBlocks": [
-      "Observability"
+      "Observability",
+      "AI Gateway",
+      "Identity & Access",
+      "Private Networking",
+      "Data Persistence"
     ],
     "patterns": [
       "Domain-Specific Agents",

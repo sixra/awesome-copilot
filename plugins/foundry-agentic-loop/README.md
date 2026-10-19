@@ -1,4 +1,4 @@
-# Agentic Loop
+# Foundry Agentic Loop
 
 Build agentic solutions on Microsoft Foundry, GitHub and Azure, from a quick prototype to a verified, deployed solution.
 
@@ -21,7 +21,7 @@ Then ask Copilot in the App to **open the agentic loop**. The `foundry-agentic-l
 | **Rapid prototyping** | An existing Foundry project | Hosted agents, a governed toolbox, Foundry IQ grounding when needed and a React/FastAPI app on Container Apps, built from Chat |
 | **Spec-driven development (SDD)** | A brief and an Azure subscription | `foundry-agentic-loop-workflow` creates the Foundry project and runs **Specify → Implement → Verify → Deploy** to a solution deployed with azd |
 
-Start either mode from Chat or from the canvas. The canvas includes 61 industry scenarios.
+Start either mode from Chat or from the canvas. Its prompt template gallery opens with **Shape it with Copilot** for your own idea, followed by 61 industry templates you can filter by industry, capability, building block and pattern.
 
 ## Locked in by AGENTS.md
 
@@ -57,9 +57,9 @@ The workflow pauses for your approval of the spec (unless autonomy is `auto`) an
 
 | Type | Name | Description |
 | --- | --- | --- |
-| Skill | [Agentic Loop](../../skills/foundry-agentic-loop/) | One skill: setup, mode selection, defaults and working rules, plus guides for rapid prototyping, each SDD phase and improve mode |
-| Canvas | [Agentic Loop canvas](../../extensions/foundry-agentic-loop-canvas/) | Setup, project selection, scenarios, the live workflow view, exploration, optimization and costs |
-| Workflow | [Agentic Loop workflow](../../extensions/foundry-agentic-loop-workflow/) | The dynamic workflow that runs the four SDD phases in sequence behind evidence gates |
+| Skill | [Foundry Agentic Loop](../../skills/foundry-agentic-loop/) | One skill: setup, mode selection, defaults and working rules, plus guides for rapid prototyping, each SDD phase and improve mode |
+| Canvas | [Foundry Agentic Loop canvas](../../extensions/foundry-agentic-loop-canvas/) | Setup, project selection, the prompt template gallery, the live workflow view, exploration, optimization and costs |
+| Workflow | [Foundry Agentic Loop workflow](../../extensions/foundry-agentic-loop-workflow/) | The dynamic workflow that runs the four SDD phases in sequence behind evidence gates |
 
 ## Improve mode
 

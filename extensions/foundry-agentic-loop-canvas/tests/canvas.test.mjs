@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { request } from "node:http";
 import { Azure, projectIdentity, trustedEndpoint, foundryPortalUrl, azurePortalUrl } from "../lib/azure.mjs";
-import { Model, TABS, links, promptFor, validTarget, workIqStatus } from "../lib/model.mjs";
+import { GUIDED, Model, TABS, TAXONOMY, VIEWS, links, promptFor, templateLocked, validTarget, workIqStatus } from "../lib/model.mjs";
 import { readBody, startServer } from "../lib/server.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -240,6 +240,9 @@ test("saved settings migrate: retired tabs map to the shared tabs, retired keys 
         assert.equal(model.state.workiq, false, "only a boolean opts in to Work IQ");
         assert.equal(model.state.projectId, id);
         assert.equal(model.state.draft, "Keep my draft");
+        assert.equal(model.state.template, GUIDED, "a brief saved before prompt templates becomes the Shape it with Copilot idea");
+        assert.equal(model.state.started, false);
+        assert.equal(model.state.view, "gallery");
         assert(!Object.hasOwn(model.state, "estimate"));
         assert(!Object.hasOwn(model.state, "scope"));
         assert.equal(model.state.mode, null);
@@ -254,6 +257,77 @@ test("saved settings migrate: retired tabs map to the shared tabs, retired keys 
     await kept.load();
     assert.equal(kept.state.tab, "build");
     assert.equal(kept.state.workiq, true);
+    assert.deepEqual([kept.state.template, kept.state.started, kept.state.draft], [null, false, ""]);
+    const scenarios = [{ id: "retail-returns", industry: "Retail", prompt: "Build a returns assistant." }];
+    for (const [saved, expected] of [
+        [{ template: "retired-scenario", started: true, view: "carousel" }, [null, false, "", "gallery"]],
+        [{ template: "retired-scenario", started: true, draft: "My notes" }, [GUIDED, false, "My notes", "gallery"]],
+        [{ started: true, draft: "" }, [null, false, "", "gallery"]],
+        [{ template: GUIDED, started: "yes", draft: 42 }, [GUIDED, false, "", "gallery"]],
+        [{ template: "retail-returns", started: true, draft: "Edited", view: "list" }, ["retail-returns", true, "Edited", "list"]],
+    ]) {
+        await writeFile(storage, JSON.stringify(saved));
+        const model = new Model({ scenarios, storage });
+        await model.load();
+        assert.deepEqual([model.state.template, model.state.started, model.state.draft, model.state.view], expected, JSON.stringify(saved));
+    }
+});
+
+test("prompt templates: choosing one resets its draft, sending locks it, and unlocking keeps the text", async t => {
+    const directory = await mkdtemp(path.join(tmpdir(), "foundry-agentic-loop-template-"));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const storage = path.join(directory, "settings.json");
+    const scenarios = [
+        { id: "retail-returns", industry: "Retail", prompt: "Build a returns assistant." },
+        { id: "claims-triage", industry: "Insurance", prompt: "Build a claims triage agent." },
+    ];
+    const sent = [];
+    const model = new Model({ scenarios, storage, session: { send: async input => { sent.push(input.prompt); return `message-${sent.length}`; } } });
+    await model.load();
+    assert.deepEqual(VIEWS, ["gallery", "list"]);
+    assert.deepEqual([model.state.template, model.state.started, model.state.view], [null, false, "gallery"]);
+    await assert.rejects(model.preferences({ template: "unknown" }), /available prompt template/);
+    await model.preferences({ draft: "Orphan" });
+    assert.equal(model.state.draft, "", "a draft needs a template");
+    await model.preferences({ template: "retail-returns", draft: "Edited returns brief" });
+    assert.equal(model.state.draft, "Edited returns brief");
+    await model.preferences({ template: "retail-returns" });
+    assert.equal(model.state.draft, "Edited returns brief", "choosing the same template keeps its draft");
+    await model.preferences({ template: "claims-triage" });
+    assert.equal(model.state.draft, "", "switching templates resets the draft");
+    await model.preferences({ draft: "Claims idea", view: "list" });
+
+    const { prompt: _prompt, ...result } = await model.send({ kind: "scenario", scenarioId: "claims-triage", text: "  Claims idea  " }, "rapid");
+    assert.deepEqual(result, { messageId: "message-1", template: "claims-triage", started: true });
+    assert(sent[0].includes("Claims idea\n\nIndustry: Insurance") && !sent[0].includes("Build a claims triage agent."));
+    assert.deepEqual([model.state.template, model.state.started, model.state.draft, model.state.view], ["claims-triage", true, "Claims idea", "list"]);
+    for (const input of [{ template: "retail-returns" }, { template: "" }]) {
+        await assert.rejects(model.preferences(input), error => error.code === "template_locked", JSON.stringify(input));
+    }
+    await assert.rejects(model.send({ kind: "guided" }, "rapid"), error => error.code === "template_locked");
+    await assert.rejects(model.send({ kind: "scenario", scenarioId: "retail-returns" }, "rapid"), error => error.code === "template_locked");
+    assert.equal(sent.length, 1, "a locked template sends nothing");
+    const setup = await model.send({ kind: "workiq" }, "rapid");
+    assert(!Object.hasOwn(setup, "template"), "prompts that are not briefs neither lock nor change the template");
+    assert.equal(model.state.draft, "Claims idea");
+    await model.preferences({ draft: "Rerun notes", tab: "build" });
+    assert.deepEqual([model.state.tab, model.state.draft], ["build", "Rerun notes"], "a started template keeps an editable draft for reruns");
+    await model.send({ kind: "scenario", scenarioId: "claims-triage" }, "sdd");
+    assert(sent.at(-1).includes("Build a claims triage agent.") && sent.at(-1).includes("Workflow scenarioId: claims-triage"), "a rerun can send the locked template again");
+    assert.equal(model.state.draft, "", "an unedited send stores no draft");
+
+    await model.preferences({ started: false, draft: "Back to editing" });
+    assert.deepEqual([model.state.template, model.state.started, model.state.draft], ["claims-triage", false, "Back to editing"]);
+    await model.preferences({ started: true });
+    assert.equal(model.state.started, false, "only sending locks a template");
+    await model.preferences({ started: false, template: "retail-returns" });
+    assert.deepEqual([model.state.template, model.state.draft], ["retail-returns", ""], "unlocking and switching resets the draft");
+    await model.preferences({ template: "" });
+    assert.deepEqual([model.state.template, model.state.draft], [null, ""]);
+    const reloaded = new Model({ scenarios, storage });
+    await reloaded.load();
+    assert.deepEqual(reloaded.state, model.state);
+    assert.equal(templateLocked().code, "template_locked");
 });
 
 test("mode defaults to rapid, follows workflow runs, and an explicit choice wins until cleared", async t => {
@@ -316,6 +390,21 @@ test("guided prompts name the mode; only rapid prompts carry the selected projec
     const sdd = promptFor("guided", { project, mode: "sdd" });
     assert(sdd.includes("SDD mode") && sdd.includes("foundry-agentic-loop-workflow"));
     assert(!sdd.includes(id));
+});
+
+test("edited prompt templates keep their industry, run skills and workflow tag; guided ideas follow the mode", () => {
+    const scenario = { id: "retail-sales", prompt: "Build a sales assistant.", industry: "Retail", runSkills: ["roundup"] };
+    const edited = promptFor("scenario", { scenario, text: "  Build a returns assistant instead.  " });
+    assert(edited.endsWith("\n\nBuild a returns assistant instead.\n\nIndustry: Retail\nRun skills to reuse: roundup."));
+    assert(!edited.includes(scenario.prompt), "edited text replaces the template prompt");
+    assert.equal(promptFor("scenario", { scenario, text: "   " }), promptFor("scenario", { scenario }), "blank text falls back to the template");
+    const sdd = promptFor("scenario", { scenario, text: "Edited brief", mode: "sdd" });
+    assert(sdd.includes("\n\nEdited brief\n\nIndustry: Retail\nRun skills to reuse: roundup.\n\nWorkflow scenarioId: retail-sales\n"));
+    const idea = promptFor("guided", { text: "  A claims triage agent.  " });
+    assert(idea.endsWith("Ask focused questions and obtain approval before provisioning.\n\nMy idea:\nA claims triage agent."));
+    assert(promptFor("guided", { text: "A claims triage agent.", project }).includes("My idea:\nA claims triage agent.\nSelected Foundry project:"));
+    assert(promptFor("guided", { text: "A claims triage agent.", mode: "sdd" }).includes("then start the foundry-agentic-loop-workflow.\n\nMy idea:\nA claims triage agent.\n\n"));
+    assert.equal(promptFor("guided", { text: "   " }), promptFor("guided"));
 });
 
 test("change requests target the paused checkpoint and never resume the run", () => {
@@ -564,13 +653,15 @@ test("request bodies decode UTF-8 once, after all chunks arrive, and oversized b
     assert.equal(read, 5, "the whole oversized body is consumed");
 });
 
-test("server accepts a full-length CJK draft, rejects oversized bodies and forged tokens, and maps a mode lock to 409", async t => {
+test("server accepts a full-length CJK draft, rejects oversized bodies and forged tokens, and maps mode and template locks to 409", async t => {
     const scenarios = JSON.parse(await readFile(path.join(root, "assets/scenarios.json"), "utf8"));
     const entry = await startServer({
         assets: path.join(root, "public"), images: path.join(root, "assets/images"), scenarios,
         snapshot: async () => ({}),
         dispatch: async (action, input) => {
             if (action === "mode") throw Object.assign(new Error("Locked to SDD."), { code: "mode_locked" });
+            if (action === "prompt") throw templateLocked();
+            if (action === "setup") throw Object.assign(new Error("Setup failed."), { code: "internal_detail" });
             return { action, input };
         },
     });
@@ -590,7 +681,13 @@ test("server accepts a full-length CJK draft, rejects oversized bodies and forge
     assert.match((await oversized.json()).error, /128 KB/);
     const locked = await post(JSON.stringify({ action: "mode", input: { mode: "rapid" } }));
     assert.equal(locked.status, 409);
-    assert.deepEqual(await locked.json(), { error: "Locked to SDD." });
+    assert.deepEqual(await locked.json(), { error: "Locked to SDD.", code: "mode_locked" });
+    const template = await post(JSON.stringify({ action: "prompt", input: { kind: "guided" } }));
+    assert.equal(template.status, 409);
+    assert.deepEqual(await template.json(), { error: templateLocked().message, code: "template_locked" });
+    const failed = await post(JSON.stringify({ action: "setup", input: {} }));
+    assert.equal(failed.status, 400);
+    assert.deepEqual(await failed.json(), { error: "Setup failed." }, "only lock codes reach the panel");
     assert.equal((await post("{not json")).status, 400);
     const forged = `${key.slice(0, -1)}${key.endsWith("0") ? "1" : "0"}`;
     for (const token of [forged, key.slice(0, 8), `${key}0`]) {
@@ -599,14 +696,26 @@ test("server accepts a full-length CJK draft, rejects oversized bodies and forge
     }
 });
 
-test("packaged scenarios and enablement cards are complete and self-contained", async () => {
+test("packaged prompt templates and enablement cards are complete and self-contained", async () => {
     const scenarios = JSON.parse(await readFile(path.join(root, "assets/scenarios.json"), "utf8"));
     assert(scenarios.length >= 60);
     assert.equal(new Set(scenarios.map(row => row.id)).size, scenarios.length);
+    assert(!scenarios.some(row => row.id === GUIDED), "the Shape it with Copilot id is reserved");
+    const allowed = Object.fromEntries(Object.entries(TAXONOMY).map(([key, rows]) => [key, new Set(rows.map(([value]) => value))]));
     for (const row of scenarios) {
         for (const key of ["id", "name", "industry", "description", "prompt", "image"]) assert(typeof row[key] === "string" && row[key].trim(), `${row.id}.${key}`);
+        for (const key of ["description", "prompt"]) assert.match(row[key], /\S[.!?]$/, `${row.id}.${key} ends with a full sentence, so appended text reads cleanly`);
+        assert.doesNotMatch(row.description, /\(\d+ characters\)/, `${row.id}.description has an authoring note`);
         assert.match(row.image, /^images\/[a-z0-9-]+\.webp$/);
         await readFile(path.join(root, "assets", row.image));
+        for (const [key, values] of Object.entries(allowed)) {
+            assert(Array.isArray(row[key]) && row[key].length, `${row.id}.${key} needs at least one value`);
+            assert.equal(new Set(row[key]).size, row[key].length, `${row.id}.${key} repeats a value`);
+            for (const value of row[key]) assert(values.has(value), `${row.id}.${key}: ${value} is not in the taxonomy`);
+        }
+    }
+    for (const [key, values] of Object.entries(allowed)) {
+        for (const value of values) assert(scenarios.some(row => row[key].includes(value)), `${key}: no template uses ${value}`);
     }
     const { version, cards } = JSON.parse(await readFile(path.join(root, "public/enablement.json"), "utf8"));
     assert.equal(version, 1);

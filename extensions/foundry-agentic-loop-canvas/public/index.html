@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="canvas-token" content="__CANVAS_TOKEN__">
-    <title>Agentic Loop</title>
+    <title>Foundry Agentic Loop</title>
     <link rel="stylesheet" href="/app.css">
     <script type="module" src="/app.js"></script>
 </head>
@@ -14,8 +14,8 @@
 <header>
     <div class="brand">
         <svg class="loop" viewBox="0 0 32 32" aria-hidden="true"><path class="loop-track" pathLength="100" d="M16 16c-3-4-5-6-8-6a6 6 0 0 0 0 12c3 0 5-2 8-6s5-6 8-6a6 6 0 0 1 0 12c-3 0-5-2-8-6Z"/><path class="loop-flow" pathLength="100" d="M16 16c-3-4-5-6-8-6a6 6 0 0 0 0 12c3 0 5-2 8-6s5-6 8-6a6 6 0 0 1 0 12c-3 0-5-2-8-6Z"/></svg>
-        <h1>Agentic Loop</h1>
-        <a class="quiet icon-button brand-link" href="https://aka.ms/agentic-loop" target="_blank" rel="noopener noreferrer" title="Open the Agentic Loop website in your browser" aria-label="Open the Agentic Loop website in your browser"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7m0-7L10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></svg></a>
+        <h1>Foundry Agentic Loop</h1>
+        <a class="quiet icon-button brand-link" href="https://aka.ms/agentic-loop" target="_blank" rel="noopener noreferrer" title="Open the Foundry Agentic Loop website in your browser" aria-label="Open the Foundry Agentic Loop website in your browser"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7m0-7L10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></svg></a>
     </div>
     <div class="header-actions">
         <button id="how" class="quiet" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18M5 4v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4m-7 12v4m-4 0h8"/></svg><span class="label">How it works</span></button>
@@ -47,7 +47,7 @@
                 <div id="checks"><div class="skeleton"><span></span><span></span><span></span><p class="visually-hidden">Checking skills, extensions, tools and Azure sign-in…</p></div></div>
                 <div id="setup-actions" hidden>
                     <div id="setup-plugin-help" hidden>
-                        <div class="section-heading"><h3>Install the Agentic Loop plugin</h3></div>
+                        <div class="section-heading"><h3>Install the Foundry Agentic Loop plugin</h3></div>
                         <p id="setup-missing-plugin" class="muted"></p>
                         <p>One plugin brings the skills, this panel and the SDD workflow. The microsoft-foundry skill comes with the Azure skills plugin.</p>
                         <pre class="command"><code>copilot plugin install foundry-agentic-loop@awesome-copilot
@@ -101,35 +101,52 @@ copilot plugin install azure@awesome-copilot</code></pre>
                 </fieldset>
             </div>
         </details>
-        <div id="brief-step" class="step-head"><span class="step-glyph" aria-hidden="true">3</span><span class="step-title">Describe the outcome</span></div>
+        <div id="brief-step" class="step-head"><span class="step-glyph" aria-hidden="true">3</span><span id="brief-title" class="step-title">Choose a prompt template</span></div>
         <p id="brief-project-hint" class="warning" hidden>No Foundry project selected. Choose one above, or Copilot asks which project to use.</p>
-        <div class="workiq">
-            <input id="workiq-toggle" type="checkbox" aria-describedby="workiq-status">
-            <div><label for="workiq-toggle">Use Work IQ context</label><p id="workiq-status" class="muted">Checking Work IQ…</p></div>
-            <button id="workiq-setup" data-prompt="workiq" hidden>Set up Work IQ</button>
-        </div>
-        <div class="guided">
-            <div><h3>Shape it with Copilot</h3><p id="guided-text">Answer a few focused questions about agents, data, tools and the user experience.</p></div>
-            <div class="guided-actions"><button class="primary" data-prompt="guided">Guide me</button><button id="own-brief">Write a brief</button></div>
-        </div>
-        <div id="scenario-browser">
-            <div class="section-heading"><h3>Or start from an industry scenario</h3></div>
-            <label for="scenario-search" class="visually-hidden">Search scenarios</label><input id="scenario-search" type="search" placeholder="Search use cases, industries, capabilities">
-            <div class="filters">
-                <div><label for="industry">Industry</label><select id="industry"><option value="">All industries</option></select></div>
-                <div><label for="capability">Capability</label><select id="capability"><option value="">All capabilities</option></select></div>
-                <div><label for="sort">Sort</label><select id="sort"><option value="name">Name A–Z</option><option value="industry">Industry</option><option value="reverse">Name Z–A</option></select></div>
+        <div id="gallery">
+            <div class="gallery-bar">
+                <div class="search">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+                    <label for="template-search" class="visually-hidden">Search prompt templates</label>
+                    <input id="template-search" type="search" placeholder="Search prompt templates" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="layout-toggle" role="group" aria-label="Layout">
+                    <button class="quiet icon-button" data-layout="gallery" aria-pressed="true" aria-label="Gallery view" title="Gallery view"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg></button>
+                    <button class="quiet icon-button" data-layout="list" aria-pressed="false" aria-label="List view" title="List view"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg></button>
+                </div>
             </div>
-            <div class="result-heading"><p id="result-count" aria-live="polite"></p><button id="clear-filters" class="quiet">Clear filters</button></div>
-            <div id="scenarios" class="scenarios"></div>
+            <div id="facets" class="facets" role="group" aria-label="Filter prompt templates"></div>
+            <div id="chips" class="chips" hidden></div>
+            <div class="result-bar">
+                <p id="template-count" aria-live="polite"></p>
+                <div class="sort"><label for="template-sort">Sort</label><select id="template-sort"><option value="featured">Featured</option><option value="name">Name A–Z</option><option value="reverse">Name Z–A</option><option value="industry">Industry</option></select></div>
+            </div>
+            <ul id="templates" class="templates" data-layout="gallery" aria-label="Prompt templates"></ul>
         </div>
-        <div id="prompt-review" hidden>
-            <div class="actions"><button id="cancel-prompt"><span aria-hidden="true">←</span> Back to scenarios</button></div>
-            <h3 id="prompt-title" tabindex="-1">Your solution brief</h3>
-            <label for="prompt-text">Solution brief</label>
-            <textarea id="prompt-text" rows="10" maxlength="16000" placeholder="Describe the outcome, who uses it, the agents, data and tools. Copilot asks only what it needs."></textarea>
+        <div id="template-view" hidden>
+            <div class="template-top">
+                <button id="template-back" class="quiet"><span aria-hidden="true">←</span> All prompt templates</button>
+                <span id="template-lock" class="pill lock-pill" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Locked</span>
+            </div>
+            <div class="template-hero">
+                <div id="template-art" class="template-art"></div>
+                <div class="template-heading">
+                    <p id="template-industry" class="eyebrow"></p>
+                    <h3 id="prompt-title" tabindex="-1"></h3>
+                    <p id="template-description" class="muted"></p>
+                </div>
+            </div>
+            <dl id="template-tags" class="template-tags" hidden></dl>
+            <div class="prompt-head"><label id="prompt-label" for="prompt-text">Prompt</label><button id="template-reset" class="quiet" hidden>Reset to template</button></div>
+            <textarea id="prompt-text" rows="10" maxlength="16000"></textarea>
             <p id="review-target" class="muted" hidden></p>
-            <div class="actions"><button id="send-prompt" class="primary">Send to Chat</button></div>
+            <div class="send-row">
+                <button id="send-prompt" class="primary">Send to Chat</button>
+                <button id="template-unlock" hidden>Unlock</button>
+                <button id="track-build" data-go="build" hidden>Track progress</button>
+                <label id="workiq-switch" class="switch"><input id="workiq-toggle" type="checkbox" role="switch" aria-describedby="workiq-status"><span class="switch-track" aria-hidden="true"></span>Boost with Work IQ</label>
+            </div>
+            <div id="workiq-line" class="workiq-line"><p id="workiq-status" class="muted">Checking Work IQ…</p><button id="workiq-setup" class="quiet" data-prompt="workiq" hidden>Set up Work IQ</button></div>
             <p id="send-hint" class="muted"></p>
         </div>
     </section>
@@ -138,7 +155,7 @@ copilot plugin install azure@awesome-copilot</code></pre>
             <h2>Your prototype, step by step</h2>
             <p class="intro">Copilot builds in Chat. This tab tracks the milestones it records in your workspace.</p>
             <ol id="rapid-steps" class="phases" aria-label="Prototype milestones"></ol>
-            <div id="rapid-start" class="actions"><button class="primary" data-go="start">Choose a brief</button></div>
+            <div id="rapid-start" class="actions"><button class="primary" data-template-cta>Start with a prompt template</button></div>
             <div id="rapid-commands" hidden>
                 <div class="section-heading"><h3>Keep the loop going</h3></div>
                 <div class="actions"><button data-prompt="run">Run locally</button><button data-prompt="test">Run tests</button><button data-prompt="deploy">Deploy</button><button data-prompt="convert">Convert to SDD</button></div>
@@ -147,14 +164,14 @@ copilot plugin install azure@awesome-copilot</code></pre>
         <div id="sdd-progress" hidden>
             <div id="wf-empty">
                 <h2>Spec-driven development, phase by phase</h2>
-                <p class="intro">Choose a brief on Start to launch the workflow. This tab follows it live: each phase, its agents, the evidence it writes and the gate it must pass.</p>
+                <p id="wf-empty-intro" class="intro">Pick a prompt template on Start to launch the workflow. This tab follows it live: each phase, its agents, the evidence it writes and the gate it must pass.</p>
                 <ol class="phases preview">
                     <li class="phase" data-view="pending"><span class="phase-icon" aria-hidden="true"></span><div class="phase-body"><div class="phase-head"><h3>Specify</h3></div><p class="muted">EARS acceptance criteria, a frozen contract, workstreams and a deployment plan, checked by an independent reviewer.</p><p class="gate-note">Gate · you approve the spec and plan</p></div></li>
                     <li class="phase" data-view="pending"><span class="phase-icon" aria-hidden="true"></span><div class="phase-body"><div class="phase-head"><h3>Implement</h3></div><p class="muted">azd provisions the Foundry project and a hosted checkpoint proves the integration before agents, tools and app are built in parallel.</p><p class="gate-note">Gate · provisioned, checkpoint proven, tests pass</p></div></li>
                     <li class="phase" data-view="pending"><span class="phase-icon" aria-hidden="true"></span><div class="phase-body"><div class="phase-head"><h3>Verify</h3></div><p class="muted">Every acceptance criterion tested end to end, plus hosted invocations, traces and agent evaluations, with bounded fix loops.</p><p class="gate-note">Gate · criteria, evaluations and traces pass, or you decide</p></div></li>
                     <li class="phase" data-view="pending"><span class="phase-icon" aria-hidden="true"></span><div class="phase-body"><div class="phase-head"><h3>Deploy</h3></div><p class="muted">azd up ships agents and apps with keyless auth and monitoring, then reruns the end-to-end tests against the deployed endpoints.</p><p class="gate-note">Gate · you approve before azd up</p></div></li>
                 </ol>
-                <div class="actions"><button class="primary" data-go="start">Choose a brief</button></div>
+                <div class="actions"><button class="primary" data-template-cta>Start with a prompt template</button></div>
             </div>
             <div id="wf-run" hidden>
                 <div id="wf-picker-row" class="picker" hidden><label for="wf-picker">Run</label><select id="wf-picker"></select></div>
@@ -210,7 +227,7 @@ copilot plugin install azure@awesome-copilot</code></pre>
         </div>
         <div class="optimization-action">
             <h3>Improve the loop itself</h3>
-            <p class="muted">Analyze past runs, flight records and the lessons in docs/loop-sri.md, then propose evidence-backed changes to the Agentic Loop skill and workflow.</p>
+            <p class="muted">Analyze past runs, flight records and the lessons in docs/loop-sri.md, then propose evidence-backed changes to the Foundry Agentic Loop skill and workflow.</p>
             <div class="actions"><button data-prompt="improve">Improve in Chat</button></div>
         </div>
         <p class="muted">Copilot confirms the agent and prerequisites in Chat. Billable runs, recurring execution and changes to deployed agents require approval.</p>
@@ -240,11 +257,11 @@ copilot plugin install azure@awesome-copilot</code></pre>
 </aside>
 <dialog id="deck-dialog" aria-labelledby="deck-heading">
     <div class="dialog-bar">
-        <h2 id="deck-heading">How Agentic Loop works</h2>
+        <h2 id="deck-heading">How Foundry Agentic Loop works</h2>
         <a href="/deck.html" target="_blank" rel="noopener noreferrer">Open in browser ↗</a>
         <button id="deck-close" class="quiet icon-button" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
-    <iframe id="deck-frame" title="How Agentic Loop works, slide deck"></iframe>
+    <iframe id="deck-frame" title="How Foundry Agentic Loop works, slide deck"></iframe>
 </dialog>
 </body>
 </html>

@@ -213,7 +213,7 @@
         "Starts run_dynamic_workflow with name foundry-agentic-loop-workflow and args containing a self-contained brief, subscriptionId, location eastus2 and an environmentName of at most 20 characters.",
         "Does not create Foundry resources, scaffold code or run azd provision in Chat before the run; the workflow phases do that.",
         "Does not pass limits the user did not specify.",
-        "Reports the run ID, that the Agentic Loop canvas shows progress and that the run pauses at approve-spec-v1 and approve-deploy-v1, and does not poll the run."
+        "Reports the run ID, that the Foundry Agentic Loop canvas shows progress and that the run pauses at approve-spec-v1 and approve-deploy-v1, and does not poll the run."
       ]
     },
     {

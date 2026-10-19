@@ -85,7 +85,10 @@ export async function startServer({ assets, images, scenarios, dispatch, snapsho
                 return json(200, await dispatch(action, input ?? {}));
             }
             json(404, { error: "Not found." });
-        } catch (error) { json(error.status === 413 ? 413 : error.code === "mode_locked" ? 409 : 400, { error: error.message }); }
+        } catch (error) {
+            const locked = ["mode_locked", "template_locked"].includes(error.code);
+            json(error.status === 413 ? 413 : locked ? 409 : 400, { error: error.message, ...(locked ? { code: error.code } : {}) });
+        }
     });
     await new Promise((resolve, reject) => {
         server.once("error", reject);

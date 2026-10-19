@@ -1,6 +1,6 @@
-# Agentic Loop canvas
+# Foundry Agentic Loop canvas
 
-The GitHub Copilot App side panel for the `foundry-agentic-loop` plugin. It covers the whole Agentic Loop on Microsoft Foundry: check readiness, choose where to build, describe an outcome, follow the build live, then explore and improve the solution. Canvas ID: `foundry-agentic-loop-canvas`.
+The GitHub Copilot App side panel for the `foundry-agentic-loop` plugin. It covers the whole Agentic Loop on Microsoft Foundry: check readiness, choose where to build, start from a prompt template, follow the build live, then explore and improve the solution. Canvas ID: `foundry-agentic-loop-canvas`.
 
 ## Modes
 
@@ -17,7 +17,7 @@ Once a build starts, the Agentic Loop section of the workspace root `AGENTS.md` 
 
 | Tab | What it does |
 | --- | --- |
-| **Start** | The mode switch, then three steps. **Readiness** checks the plugins, extensions, CLI tools (azd 1.32.0 or later) and Azure sign-in, offers a Chat prompt for each gap and collapses once ready. **Foundry project** (rapid) discovers projects across subscriptions and stays in sync with `FOUNDRY_PROJECT` in the workspace `.env`; **Deployment target** (SDD) sets the subscription, region and azd environment. **Describe the outcome** takes a brief, guided questions or one of 61 industry scenarios, optionally with Work IQ context |
+| **Start** | The mode switch, then three steps. **Readiness** checks the plugins, extensions, CLI tools (azd 1.32.0 or later) and Azure sign-in, offers a Chat prompt for each gap and collapses once ready. **Foundry project** (rapid) discovers projects across subscriptions and stays in sync with `FOUNDRY_PROJECT` in the workspace `.env`; **Deployment target** (SDD) sets the subscription, region and azd environment. **Choose a prompt template** opens a gallery: **Shape it with Copilot** comes first, then 61 industry templates you can search, filter by industry, capability, building block and pattern, sort, and show as a gallery or list. Review or edit the prompt, optionally turn on **Boost with Work IQ**, then **Send to Chat**. Sending locks the template for the session. Until Copilot starts building, **Unlock** lets you edit the prompt or choose another template; in SDD you can also edit it and start a new run |
 | **Build** | Rapid shows the milestones Copilot records in the workspace (loop started, project linked, running locally, deployed) and the short commands **Run locally**, **Run tests**, **Deploy** and **Convert to SDD**. SDD follows each workflow run live: phases, gates, agents, artifacts and the activity log. Approve the spec or deployment, request changes, resume, pause or cancel. Completed runs show their outcome and endpoints; verified runs offer **Deploy from Chat** |
 | **Explore** | Opens the local and deployed apps, lists agents, model deployments, toolboxes and resource-group resources, and launches Agent Inspector |
 | **Optimize** | Starts the Foundry Agent Optimizer, automatic evaluations, an Agent Insights scan or **Improve the loop**, and shows session usage and month-to-date Azure spend |
@@ -26,9 +26,9 @@ While Copilot works, an enablement dock rotates 18 short lessons on building age
 
 ## Safety
 
-- Each Chat action starts a Copilot turn. Only the Start brief, written by you or started from a scenario, opens for review and editing; it is sent when you select **Send to Chat**. **Request changes** sends a fixed change request with the feedback you type. The other Chat buttons, such as **Set up in Chat**, **Guide me**, **Run locally**, **Fix in Chat**, **Inspect locally** and **Deploy from Chat**, send a fixed prompt for their step as soon as you select them.
+- Each Chat action starts a Copilot turn. Only a Start prompt template opens for review and editing; it is sent when you select **Send to Chat**. **Request changes** sends a fixed change request with the feedback you type. The other Chat buttons, such as **Set up in Chat**, **Guide me**, **Run locally**, **Fix in Chat**, **Inspect locally** and **Deploy from Chat**, send a fixed prompt for their step as soon as you select them.
 - The panel server listens on `127.0.0.1` only. It requires a per-panel token, applies a strict Content Security Policy and accepts only actions validated against their schemas.
-- **Use Work IQ context** is off by default. When on, briefs ask Copilot to query the `workiq` MCP server for relevant Microsoft 365 context, cite it by source type and confirm it with you, without copying confidential content into the workspace. The canvas only checks whether that server is configured; it never reads Microsoft 365 data.
+- **Boost with Work IQ** is off by default. When on, prompt templates ask Copilot to query the `workiq` MCP server for relevant Microsoft 365 context, cite it by source type and confirm it with you, without copying confidential content into the workspace. The canvas only checks whether that server is configured; it never reads Microsoft 365 data.
 - The canvas reads only `FOUNDRY_PROJECT`, `LOCAL_FRONTEND` and `DEPLOYED_FRONTEND` from `.env`. It accepts only validated Foundry project ARM IDs, and links only to `http` or `https` URLs without credentials. From `AGENTS.md` it uses only the Agentic Loop mode marker.
 
 ## Tests

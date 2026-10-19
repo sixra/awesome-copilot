@@ -25,13 +25,13 @@ Phases reconcile existing artifacts instead of starting over, so reruns are safe
    | --- | --- |
    | `brief` | Required. Self-contained, with the user's answers and decisions |
    | `subscriptionId`, `location`, `environmentName` | Azure target when known |
-   | `scenarioId` | Canvas scenario |
+   | `scenarioId` | Canvas prompt template |
    | `autonomy` | `gated` (default) pauses for spec approval; `auto` skips it |
    | `maxFixLoops` | Fix rounds per phase gate, 0–5 (default 2) |
    | `skipDeploy` | Stop after Verify |
 
    Pass `limits` only when the user sets them.
-6. Report the run ID and the checkpoints ahead. The run continues in the background, posting phase and gate lines in Chat; the Agentic Loop canvas Build tab shows live agents. No input is needed until a checkpoint. Do not poll; the run notifies when it pauses or ends.
+6. Report the run ID and the checkpoints ahead. The run continues in the background, posting phase and gate lines in Chat; the Foundry Agentic Loop canvas Build tab shows live agents. No input is needed until a checkpoint. Do not poll; the run notifies when it pauses or ends.
 
 ## Checkpoints and recovery
 
