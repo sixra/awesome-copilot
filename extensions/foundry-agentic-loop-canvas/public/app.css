@@ -43,8 +43,8 @@ pre, code { font-family: var(--mono); }
 [hidden] { display: none !important; }
 .visually-hidden { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
-/* Chrome: the project row sits under the title, aligned with it, and moves inline between brand and actions when wide. */
-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "brand actions" "project project"; align-items: center; column-gap: 12px; row-gap: 2px; padding: 12px 20px 10px; }
+/* Chrome: the project field sits under the title and moves inline between brand and actions when wide. */
+header { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "brand actions" "project project"; align-items: center; column-gap: 12px; row-gap: 4px; padding: 12px 20px; }
 .brand { grid-area: brand; display: flex; align-items: center; gap: 10px; min-width: 0; }
 .loop, .dock-loop { width: 28px; height: 28px; flex-shrink: 0; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .loop-track { stroke: var(--accent); transition: stroke 250ms var(--ease); }
@@ -58,21 +58,30 @@ body.is-busy .loop-flow { opacity: 1; }
 #how svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; flex-shrink: 0; }
 .icon-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.brand-link, .portal-link { width: 28px; height: 28px; min-height: 28px; border-radius: 6px; }
+.brand-link { width: 28px; height: 28px; min-height: 28px; border-radius: 6px; }
 .brand-link svg { width: 12px; height: 12px; }
 
-.project { grid-area: project; display: flex; align-items: center; gap: 4px; min-width: 0; }
+/* A select-like field: the Foundry logo opens the project in Foundry Portal; the rest changes or follows the project. */
+.project { grid-area: project; display: flex; min-width: 0; max-width: 560px; height: 32px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); transition: border-color 150ms var(--ease); }
+.project:has(:is(.project-bar, .portal-link[href]):hover) { border-color: color-mix(in srgb, var(--text) 30%, var(--border)); }
+.project > * { height: 100%; min-height: 0; border: 0; outline-offset: -2px; }
+.portal-link { width: 34px; border-right: 1px solid var(--border); border-radius: 7px 0 0 7px; }
 .portal-link svg { stroke: none; }
 .portal-link[href]:hover { background: var(--surface); }
 .portal-link[aria-disabled="true"] { cursor: default; }
 .portal-link[aria-disabled="true"] svg { filter: grayscale(1); opacity: .45; }
-.project-bar { display: inline-flex; align-items: center; gap: 6px; position: relative; min-width: 0; max-width: 100%; height: 28px; min-height: 28px; padding: 0 5px; border-color: transparent; background: transparent; font-size: 13px; white-space: nowrap; text-align: left; }
-/* One text run with a single ellipsis: the note is cut first and the name only once the note is gone. */
+.project-bar { flex: 1; display: flex; align-items: center; gap: 8px; position: relative; min-width: 0; padding: 0 10px; border-radius: 0 7px 7px 0; background: transparent; font-size: 13px; white-space: nowrap; text-align: left; }
+.project-label { flex: none; color: var(--muted); }
 .project-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #project-name { font-weight: 600; }
 #project-note { color: var(--muted); }
 #project-note::before { content: "·"; content: "·" / ", "; margin: 0 6px; }
-.project-chevron { width: 14px; height: 14px; flex-shrink: 0; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* fitProjectBar keeps the name whole: the SDD note leaves the screen (not the accessible name), then "Microsoft", then the label.
+   The note collapses as an inline, so it stays clipped inside the run and its accessible text keeps its punctuation. */
+.project-bar[data-fit]:not([data-fit="all"]) #project-note { font-size: 0; }
+.project-bar[data-fit]:not([data-fit="all"]) #project-note::before { margin: 0; }
+.project-bar[data-fit="short"] .project-label-brand, .project-bar[data-fit="name"] .project-label { display: none; }
+.project-chevron { width: 14px; height: 14px; flex-shrink: 0; margin-left: auto; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* In SDD the workflow owns the project, so the row navigates instead of opening the picker. */
 body[data-mode="sdd"] .project-chevron { rotate: -90deg; }
 
@@ -481,9 +490,9 @@ body.is-busy .dock { display: block; }
 @media (forced-colors: active) {
     .step-badge[data-kind] { forced-color-adjust: none; background: CanvasText; stroke: Canvas; box-shadow: 0 0 0 2px Canvas; }
 }
-@media (min-width: 720px) {
-    header { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "brand project actions"; padding-bottom: 12px; }
-    .project::before { content: ""; flex-shrink: 0; width: 1px; height: 20px; margin-right: 8px; background: var(--border); }
+/* Inline only once the field has room for its label beside a typical project name. */
+@media (min-width: 880px) {
+    header { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "brand project actions"; column-gap: 16px; }
 }
 @media (max-width: 560px) {
     .fields, .fields.pair { grid-template-columns: 1fr; }
@@ -492,11 +501,10 @@ body.is-busy .dock { display: block; }
     .template-tags div { grid-template-columns: 1fr; gap: 4px; }
 }
 @media (max-width: 400px) {
-    /* Keeps the title on one line; the picker's padding follows the brand gap so the name stays aligned with the title. */
-    header { column-gap: 8px; padding: 10px 14px 8px; }
+    /* Keeps the title on one line. */
+    header { column-gap: 8px; padding: 10px 14px; }
     .brand { gap: 8px; }
     h1 { font-size: 16px; }
-    .project-bar { padding-left: 3px; }
     main { padding: 20px 14px; }
     nav { padding: 0 4px; }
     nav button { padding: 12px 5px; font-size: 12px; }

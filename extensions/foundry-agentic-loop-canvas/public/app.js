@@ -220,6 +220,7 @@ function renderProjectBar() {
     $("project-bar").title = !sdd ? `${selected ? "Change the" : "Choose a"} Microsoft Foundry project`
         : project ? "Explore the project's resources" : "Follow the workflow on Build";
     renderPortalLink(project);
+    fitProjectBar();
     for (const button of document.querySelectorAll("[data-requires-project]")) button.disabled = !project;
     $("brief-project-hint").hidden = mode !== "rapid" || Boolean(selected);
     $("optimize-project-hint").hidden = Boolean(project);
@@ -246,6 +247,25 @@ function renderPortalLink(project) {
     link.title = project ? "This project can't be opened in Foundry Portal"
         : mode !== "sdd" ? "Choose a project to open it in Foundry Portal"
         : envProjectId ? "Available once the canvas can access this project" : "Available once the workflow creates the project";
+}
+
+// Picks the most explicit field that keeps the project name whole, comparing the text's room with its natural width.
+// When no level can, it keeps the most explicit label that still leaves the name readable, since the name is cut anyway.
+function fitProjectBar() {
+    const bar = $("project-bar");
+    const run = bar.querySelector(".project-text");
+    const readable = 10 * parseFloat(getComputedStyle(run).fontSize);
+    let fallback = "name";
+    for (const fit of ["all", "label", "short", "name"]) {
+        bar.dataset.fit = fit;
+        const room = run.getBoundingClientRect().width;
+        run.style.flexShrink = "0";
+        const needed = run.getBoundingClientRect().width;
+        run.style.removeProperty("flex-shrink");
+        if (needed <= room) return;
+        if (fallback === "name" && fit !== "all" && room >= readable) fallback = fit;
+    }
+    bar.dataset.fit = fallback;
 }
 
 function applyMode(next, preferredTab) {
@@ -1723,6 +1743,8 @@ $("project-bar").onclick = () => {
     ($("project").disabled ? $("step-where").querySelector("summary") : $("project")).focus({ preventScroll: true });
     switching.catch(error => notice(error.message, true));
 };
+// The field's width comes from the header grid, not its content, so refitting never resizes what is observed.
+new ResizeObserver(fitProjectBar).observe(document.querySelector(".project"));
 // Passing readiness collapses step 1 under the button, so its summary takes focus and scrolls back into view to show the result.
 $("recheck").onclick = () => busy($("recheck"), async () => {
     await setup();

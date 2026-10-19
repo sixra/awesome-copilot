@@ -11,7 +11,7 @@ The GitHub Copilot App side panel for the `foundry-agentic-loop` plugin. It cove
 
 Both modes use the same four tabs; only the content of Start and Build adapts.
 
-The header names the active Foundry project. In rapid mode, select it to change the project; in SDD, it opens Build until the workflow creates the project, then Explore. The Foundry logo beside it opens the project in Foundry Portal, in the directory of the project's subscription.
+The header's Microsoft Foundry project field names the active project. In rapid mode, select it to change the project; in SDD, it opens Build until the workflow creates the project, then Explore. The Foundry logo at its start opens the project in Foundry Portal, in the directory of the project's subscription.
 
 Once a build starts, the Agentic Loop section of the workspace root `AGENTS.md` locks the mode. The mode switch on Start then shows a lock, disables the other mode and offers **Open AGENTS.md**. To switch, ask Copilot in Chat; it confirms first, then rewrites the section.
 
