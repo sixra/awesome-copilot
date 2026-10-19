@@ -2,7 +2,18 @@
 
 Read only for Copilot SDK agents, SDK/identity troubleshooting, or the dependency-packaging fallback. Continue using Microsoft Agent Framework when the architecture selects it; this recipe does not change framework defaults.
 
-**Recipe revision 2 (2026-09-22).** Configuration/signatures are source-checked against `github/copilot-sdk` **v1.0.14** and the current Foundry runtime contract. Hosting telemetry details were checked against Azure AgentServer Core's current source on this date, not every published adapter version. This is not a claim that every SDK/runtime pair has passed a hosted deployment. Keep the project's approved compatible pins; record and validate its actual combination at the [hosted checkpoint](hosted-integration-checkpoint.md).
+**Recipe revision 3 (2026-10-19).** Configuration/signatures were source-checked against `github/copilot-sdk` **v1.0.14** and re-inspected on the installed packages below. The "v1.0.14" labels mark the first checked release, not an upper bound. This is not a claim that every SDK/runtime pair has passed a hosted deployment. Keep the project's approved compatible pins; record and validate its actual combination at the [hosted checkpoint](hosted-integration-checkpoint.md).
+
+| Surface used by this recipe | 1.0.14 | 1.0.20 (installed check) | Later |
+| --- | --- | --- | --- |
+| `create_session(*, provider=..., mcp_servers=...)` keyword-only | yes | yes | inspect |
+| `send_and_wait(prompt: str, *, request_headers=...)` | yes | yes | inspect |
+| `ProviderConfig.bearer_token_provider` refresh callback | yes | yes | inspect |
+| `MCPHTTPServerConfig.headers` static dict (no refresh callback) | yes | yes | inspect |
+| `CopilotClient(telemetry=TelemetryConfig)` and `get_status().version` | yes | yes | inspect |
+| `azure-ai-agentserver-responses` `ResponseEventStream` items ([hosted agent](foundry-hosted-agent.md#hosted-agent-protocol)) | 2.2.0 | 2.3.0 | inspect |
+
+For an unlisted version, inspect these signatures before coding and record the result with the compatibility record.
 
 ## Compatibility record first
 

@@ -32,7 +32,7 @@ Run every azd command from the workspace root, with `AZURE_DEV_USER_AGENT=micros
 | **Acceptance** | One automated test per EARS ID: contract tests for the frozen contract, and E2E through the frontend's `/api` proxy (Playwright when there is a UI). Run E2E cases in parallel at c = max(1, ⌊0.8 × TPM × minutes per case ÷ tokens per case⌋), measured from one case's Responses `usage` and duration (TPM = capacity × 1000), and record c and its inputs in `docs/verify.md`. A 429 after retries is a failure. |
 | **Hosted** | `azd ai agent invoke <agent> "<scenario>"` against the deployed version. Run `azd deploy <agent>` first if the agent code changed. Retry 424 or 502 warm-up responses with backoff. |
 | **Telemetry** | A trace from this run, including backend spans, reaches Application Insights (query `requests` or `dependencies` in the last 30 minutes). Local exporters sign in as the developer ([observability](observability.md)). |
-| **Evaluation** | Write at least 10 rows from the spec scenarios to `tests/eval/dataset.jsonl`. Run `azd ai agent eval generate --agent <svc> --dataset tests/eval/dataset.jsonl --evaluator builtin.task_adherence --evaluator builtin.intent_resolution`, adding `builtin.groundedness` when the agent is grounded. Then run `azd env set LAST_EVAL_ID ""` and `azd ai agent eval run --agent <svc>`, and check that its `Agent: <name> v<N>` line names that agent. |
+| **Evaluation** | Write at least 10 rows from the spec scenarios to `tests/eval/dataset.jsonl`. Run `azd ai agent eval generate --agent <svc> --dataset tests/eval/dataset.jsonl --out-file tests/eval/<svc>.eval.yaml --evaluator builtin.task_adherence --evaluator builtin.intent_resolution`, adding `builtin.groundedness` when the agent is grounded. Then run `azd ai agent eval run --agent <svc> --config tests/eval/<svc>.eval.yaml`, one config per agent, check that its `Agent: <name> v<N>` line names that agent and the version just deployed, and keep the config with the results. |
 | **Review** | A fresh-context reviewer checks the code and evidence against each requirement, the contract and the RBAC rows, and confirms from the container app revisions that no frontend or backend revision created after the Implement gate runs a new image (re-provisioning may add same-image revisions). |
 
 ## 4. Fix
@@ -62,7 +62,8 @@ Write `docs/verify.md` with:
 Pass only when:
 
 - every component started in this run;
-- every acceptance criterion has a passing test, an approved waiver or, when only the deployed app can prove it (such as Easy Auth or public ingress), a check deferred to Deploy;
+- every acceptance criterion has a passing test, a human-approved waiver listed in the workflow prompt (never self-granted) or, when only the deployed app can prove it (such as Easy Auth or public ingress), a check deferred to Deploy;
+- the report lists evidence items (`{claim, source, result}`, up to 12); a pass without evidence counts as failed;
 - each evaluator meets the spec's threshold (0.8 pass rate by default);
 - a trace reached Application Insights;
 - the review found no unresolved defects.

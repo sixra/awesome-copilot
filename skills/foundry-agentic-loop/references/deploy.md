@@ -16,7 +16,7 @@ Run these checks read-only and report every gap at once.
 
 ## 2. Deploy
 
-Inside a workflow run, the `approve-deploy-v1` approval covers this section. Otherwise ask first, summarizing the resources, cost, security and region impact for the named environment and subscription.
+Inside a workflow run, the `approve-deploy-v1` (or later `approve-deploy-r<n>-v1`) approval covers this section only for the fingerprint it recorded: first confirm `azd env get-values` and `az account show` match the approved environment, subscription, location and resource group, and if any differs, change nothing and report blocked. Report each health and E2E check as an evidence item. Otherwise ask first, summarizing the resources, cost, security and region impact for the named environment and subscription.
 
 1. When the infrastructure changed, run `azd provision --preview <layer> --no-prompt` for each `infra.layers` name (a plain `--preview` fails on multiple layers) and review deletions and replacements. Stop on surprises.
 2. Run `azd up --no-prompt`, or `azd deploy --no-prompt` when the infrastructure is unchanged. Wait for it to finish, record the exit code, and read back the [grants after deploy](azd-layout.md#grants-after-deploy).

@@ -11,7 +11,7 @@ SDD turns a brief into a deployed, reproducible solution: a new Foundry project 
 
 In each phase a lead does the work, a fresh-context reviewer reruns the checks, and fixers get up to `maxFixLoops` rounds. Only the reviewer's verdict passes a gate. Implement runs disjoint workstreams in parallel.
 
-Phases reconcile existing artifacts instead of starting over, so reruns are safe. Lessons go to `docs/LOOP.md`. Each run writes a flight record to `.agentic-loop/runs/<runId>.json`, with status `running`, `awaiting-approval`, `blocked`, `deployed`, `verified` or `error`, saved at the start, at the first step after a resume, at each gate and checkpoint, and at the end.
+Phases reconcile existing artifacts instead of starting over, so reruns are safe. Lessons go to `docs/LOOP.md`. Each run writes a flight record to `.agentic-loop/runs/<runId>.json`, with status `running`, `awaiting-approval`, `blocked`, `deployed`, `verified` or `error`, saved at the start, at the first step after a resume, at each gate and checkpoint, and at the end. A record that cannot be written pauses the run at `blocked-record-<step>`. One run is active per workspace: `.agentic-loop/active-run.json` holds its lease, and a second run refuses to start while that lease is under 30 minutes old.
 
 ## Start a run
 
@@ -29,8 +29,9 @@ Phases reconcile existing artifacts instead of starting over, so reruns are safe
    | `autonomy` | `gated` (default) pauses for spec approval; `auto` skips it |
    | `maxFixLoops` | Fix rounds per phase gate, 0–5 (default 2) |
    | `skipDeploy` | Stop after Verify |
+   | `from` | Rerun from this phase; refused unless the latest record passed every earlier phase |
 
-   Pass `limits` only when the user sets them.
+   Pass `limits` only when the user sets them; defaults are 250 subagents, 4 concurrent and 12 hours of active time.
 6. Report the run ID and the checkpoints ahead. The run continues in the background, posting phase and gate lines in Chat; the Foundry Agentic Loop canvas Build tab shows live agents. No input is needed until a checkpoint. Do not poll; the run notifies when it pauses or ends.
 
 ## Checkpoints and recovery
@@ -43,7 +44,9 @@ A pause posts a `Needs you:` line. Answer it in one message: what paused and why
 | --- | --- | --- |
 | `approve-spec-v1` | Spec ready for review | Summarize scope, assumptions, region and cost drivers; apply requested edits to the artifacts |
 | `approve-deploy-v1` | Verified and ready to deploy (always pauses) | Summarize resources, cost, security and region impact; apply requested edits without deploying |
-| `blocked-<phase>-r<n>` | A gate failed after its fix rounds, a subagent ended twice without a report (usually a provider error), or a decision is needed (permissions, quota, cost, security) | List every issue from that phase and round in the flight record's `phases`, not just the first from the log. Fix and verify each root cause in the artifacts, record the evidence and `docs/LOOP.md` lessons. Resuming starts round n+1, which continues from the current state; its review first confirms these issues are resolved. |
+| `approve-deploy-r<n>-v1` | The deployment plan, spec, verify report or azd target changed since deploy approval | Summarize what changed; approving records the new fingerprint |
+| `blocked-record-<step>` | The flight record could not be written | Fix the path or permission shown, then resume |
+| `blocked-<phase>-r<n>` | A gate failed after its fix rounds, a subagent ended twice without a report (usually a provider error), or a decision is needed (permissions, quota, cost, security) | List every issue from that phase and round in the flight record's `phases`, not just the first from the log. Fix and verify each root cause in the artifacts, record the evidence and `docs/LOOP.md` lessons. Resuming starts round n+1, which continues from the current state; its review first confirms these issues are resolved. To accept an issue instead, only on the user's explicit decision, write `[{"issue": "<exact issue>", "reason": "..."}]` to `.agentic-loop/waivers/<runId>.json` before resuming. After round 20, start a new run or rerun that phase with `from`. |
 
 - Resume with `run_dynamic_workflow` and `resumeFromRunId` only when the user asks. When a canvas prompt says "Do not resume the run", don't: the canvas resumes it.
 - **Liveness.** Workflow subagents don't appear in `list_agents` or `read_agent`, and one Implement step can run for over an hour without a record change. The canvas Build tab shows live subagent activity. Never cancel, pause or restart a run to unstick it; only the user decides that.
@@ -51,7 +54,7 @@ A pause posts a `Needs you:` line. Answer it in one message: what paused and why
 - **Effort.** Subagents inherit the session's model and reasoning effort. Prefer medium or high: maximum effort multiplies step time.
 - A run that ends in `error` with `workflow_limit_reached` resumes with only that limit raised, after approval. For other errors, read the run with `dynamic_workflows_manage` (`inspect-run`), fix the cause and start a new run.
 - Never weaken a gate, skip a phase or report unverified checks as passed.
-- Without the workflow, or for a single named phase, follow the phase guides yourself in order, checking each gate and pausing at the same approvals: ask before `azd provision`, `azd deploy` or `azd up`.
+- For a single named phase, start the workflow with `from`. Without the workflow, follow the phase guides yourself in order, checking each gate and pausing at the same approvals: ask before `azd provision`, `azd deploy` or `azd up`.
 
 ## SDD defaults
 
@@ -62,7 +65,7 @@ A pause posts a `Needs you:` line. Answer it in one message: what paused and why
 - **Infra:** scaffold the Basic sample with `azd ai agent init .` in an empty `.scaffold` folder, then move it into place ([scaffold](azd-layout.md#scaffold-into-an-existing-workspace)); never `azd init -t <template>` followed by agent init (it rewrites the provider). `azure.yaml` then uses two `infra.layers`: `foundry` (`provider: microsoft.foundry`: account, project and the model deployments in `services.ai-project`) and `app` (Bicep with AVM, `dependsOn: [foundry]`) for user-assigned identities, Log Analytics and Application Insights connected to the project, one ACR pulled by managed identity, the Container Apps environment and apps, and every RBAC row. Agents use `host: azure.ai.agent`; MCP servers, backend and frontend use `host: containerapp` with `docker.remoteBuild: true`. Cosmos DB for NoSQL only when state is needed. No private networking unless required. Layout: [azd-layout.md](azd-layout.md).
 - **Identity:** user-assigned managed identities. Bicep creates the [RBAC contract](rbac-contract.md) rows at provision; an idempotent `postdeploy` hook creates the runtime instance rows and the MCP Easy Auth allow-lists. The [RBAC preflight](rbac-preflight.md) runs in Specify; `BLOCKED` stops the run and hands the owner a ready-to-run grant block.
 - **Repository:** `.gitignore` covers `.azure/*` with `!.azure/deployment-plan.md`, `.env` and build output. Python dependencies follow the [dependency contract](foundry-hosted-agent.md#python-dependency-contract-requirementstxt) and are locked with `uv.lock` or pinned requirements. `.gitattributes` sets `* text=auto eol=lf`.
-- **Evaluations:** Verify always runs a small agent evaluation on spec scenarios (task adherence, groundedness when grounded, safety). Add recurring or CI evaluations only on request.
+- **Evaluations:** Verify always runs a small agent evaluation on spec scenarios (task adherence, intent resolution, and groundedness when grounded); content safety comes from Foundry guardrails. Add recurring or CI evaluations only on request.
 
 ## Teardown
 

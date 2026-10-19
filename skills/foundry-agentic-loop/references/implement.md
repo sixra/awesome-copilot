@@ -32,11 +32,11 @@ Validate with `az bicep build --file infra/app/main.bicep`. Then run `azd provis
 ## 3. Build
 
 1. **Contract first.** Code against the frozen contract in `docs/spec.md`. Contract changes go to the spec first.
-2. **Integration checkpoint.** Pass the [hosted integration checkpoint](hosted-integration-checkpoint.md) before fan-out. Build a minimal agent that loads one toolbox skill and makes one safe MCP tool call.
+2. **Integration checkpoint.** Pass the [hosted integration checkpoint](hosted-integration-checkpoint.md) before fan-out. Build a minimal agent that proves a model request, plus one toolbox skill load and one safe MCP tool call when the spec requires them; record excluded ones as `N/A`.
    1. Prove readiness and skill load locally with `azd ai agent run --no-client`, in the background, and `azd ai agent invoke --local "<probe>"`. `AgenticIdentityToken` tool calls work only hosted.
    2. Run `azd deploy <service>` for the MCP server, skill, connection, toolbox and agent services, in `uses` order.
    3. Prove the hosted version with `azd ai agent invoke <agent> "<probe>"`.
-3. **Workstreams.** Build the spec workstreams in parallel when subagents are available. Each worker owns exclusive workspace-relative files or folders, runs its acceptance checks and reports needed changes elsewhere as issues. Shared files stay with the lead: `azure.yaml`, `infra/`, `docs/`, `.env`, `.azure/`, `.agentic-loop/`, `AGENTS.md` and the root lockfiles.
+3. **Workstreams.** Build the spec workstreams in parallel when subagents are available. Each worker owns exclusive workspace-relative files or folders, runs its acceptance checks and reports needed changes elsewhere as issues. Shared files stay with the lead: `azure.yaml`, `infra/`, `docs/`, `.env`, `.azure/`, `.agentic-loop/`, `AGENTS.md` and the root lockfiles. After the workers finish, the workflow diffs `git status` against its pre-fan-out snapshot and hands any changed path outside the workstreams to integration as an issue.
 4. **Integration.** Integrate centrally. Run builds, linters and unit tests, and lock Python dependencies (`uv.lock` or pinned versions).
 
 **Deployments.** Implement deploys only the checkpoint services (MCP servers, skills, connections, toolbox and agents); the frontend, backend and workers run locally until Deploy. Reproduce agent defects locally first (`azd ai agent run` with `invoke --local`), and redeploy a hosted agent only for hosted-only behavior, once per verified fix. Redeploy only services whose source or configuration changed since their last verified deployment. After a transient `postdeploy` failure, rerun only the hook with `azd hooks run postdeploy`.

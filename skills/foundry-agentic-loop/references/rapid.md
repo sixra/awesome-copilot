@@ -25,9 +25,9 @@ Build a working solution quickly in an **existing** Foundry project, driven from
 
 ## 3. Minimal slice
 
-- Build the quick-start Basic sample hosted agent, plus one toolbox skill and one safe MCP tool that prove the integration. Reuse named skills from the [run catalog](run-skills-catalog.md) or the user's source; ask if a skill is unresolved.
-- Run `azd ai agent init` from the workspace root, never inside a folder named for the agent: it creates `<agent>/` with `azure.yaml` and `src/<agent>/`. Then confirm there is no nested `<agent>/<agent>` and unstage init's files (`git restore --staged <agent>`). For uv lock errors and packaging exclusions, see [local runs and code packaging](foundry-hosted-agent.md#local-runs-and-code-packaging).
-- Deploy only required custom FastMCP code, with `az containerapp up --source <mcp-dir>`. Reuse remote servers. Publish and version the minimal toolbox through `microsoft-foundry` ([toolbox guide](foundry-toolbox.md)).
+- Build the quick-start Basic sample hosted agent. Add one toolbox skill only when the architecture needs runtime skills, and one safe MCP tool only when it needs MCP tools; never add an unused capability to satisfy the checkpoint. Reuse named skills from the [run catalog](run-skills-catalog.md) or the user's source; ask if a skill is unresolved.
+- Scaffold as in [azd layout](azd-layout.md#scaffold-into-an-existing-workspace): run the sample's `initCommand` (from `microsoft-foundry`, with `-t`, never the deprecated `-m`) in an empty `.scaffold` folder, move the agent to `src/agents/<agent>` and update its `project:` path in `azure.yaml`, merge `azure.yaml` and `.azure/`, then remove `.scaffold` and confirm `git status --short` lists none of it. For uv lock errors and packaging exclusions, see [local runs and code packaging](foundry-hosted-agent.md#local-runs-and-code-packaging).
+- Deploy only required custom FastMCP code, with `az containerapp up --name <app> --source <mcp-dir> --resource-group <rg> --environment <env>` using the project's resource group and one Container Apps environment. Reuse remote servers. Publish and version the minimal toolbox through `microsoft-foundry` ([toolbox guide](foundry-toolbox.md)).
 - Give each Python `pyproject.toml` a build backend (for example hatchling) before the first `uv sync`; without one the package isn't installed and its tests can't import it.
 - For Copilot SDK agents, read [copilot-sdk-foundry.md](copilot-sdk-foundry.md) first. Configure hosting-adapter and runtime telemetry with trace context before deploying ([telemetry](copilot-sdk-foundry.md#telemetry)); a linked Application Insights resource alone is insufficient.
 - Do not build the full orchestration, UI or backend yet.
@@ -37,7 +37,7 @@ Build a working solution quickly in an **existing** Foundry project, driven from
 Follow [hosted-integration-checkpoint.md](hosted-integration-checkpoint.md):
 1. Code-deploy the minimal agent.
 2. Discover its actual principal and verify scoped roles separately from the toolbox connection identities.
-3. Using the deployed identity and caller context, prove a skill load, an MCP call and a model request. Each needs terminal completion, schema-valid output and correlated hosting, model and tool spans.
+3. Using the deployed identity and caller context, prove a model request, plus a skill load and an MCP call when the architecture includes them (record excluded ones as `N/A` with the reason). Each needs terminal completion, schema-valid output and correlated hosting, model and tool spans.
 4. Record the evidence under `## Hosted checkpoint` in the README, starting with `**Passed**` or `**Blocked**`, before expanding. The canvas tracks these README headings.
 
 ## 5. Expand
@@ -58,7 +58,7 @@ Code-deploy the expanded agents with `microsoft-foundry`. Recheck changed identi
 ## 8. Optional app deployment
 
 Only after the user confirms:
-1. Deploy the backend, then the frontend, with `az containerapp up --source <dir>` in the project's resource group. It rejects global flags such as `--output`, `--query` and `--only-show-errors`, so check the result with `az containerapp show`.
+1. Deploy the backend, then the frontend, with `az containerapp up --name <app> --source <dir> --resource-group <rg> --environment <env>`, reusing the project's resource group and Container Apps environment. Confirm each with `az containerapp show --name <app> --resource-group <rg> --query properties.provisioningState`.
 2. Move image pulls off the registry admin credentials that `up` creates: assign a managed identity, grant it `AcrPull`, set the app's registry to that identity and remove the password secret.
 3. Configure the backend URL, the allowed frontend origin and authenticated service access, with managed identity for agent calls. Read an internal backend's FQDN (`<app>.internal.<environment-domain>`) from `az containerapp show`; never construct it.
 4. Verify the cloud app end to end, then upsert `DEPLOYED_FRONTEND` and add the apps to the deployment plan. Return the URL and any sign-in requirements.

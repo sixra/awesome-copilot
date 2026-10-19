@@ -59,7 +59,7 @@ python ./scripts/check_rbac_preflight.py --subscription "$AZURE_SUBSCRIPTION_ID"
 
 Live mode shells out to the **Azure CLI** — `az ad signed-in-user show` to resolve the caller, `az group exists` for a named resource group, then `az role assignment list --assignee <id> --scope <scope> --include-inherited --include-groups` per scope. No extra Python dependencies, and `az` is already present in any azd-driven run. Pass `--assignee` to check a principal other than the signed-in user (a service principal or CI identity).
 
-`--from-file <observed.json>` replays a recorded set of assignments (or raw `az role assignment list` output) instead of calling Azure, so both the pass and the fail path can be exercised without a subscription.
+`--from-file <observed.json>` replays a recorded set of assignments (or raw `az role assignment list` output) instead of calling Azure; raw output names no principal, so pass `--assignee` with it. Malformed input is an ERROR, never a PASS. Both the pass and the fail path can be exercised without a subscription.
 
 ## Verdicts
 

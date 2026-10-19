@@ -18,7 +18,7 @@ End-to-end monitoring is **on by default**: every tier - **backend, hosted agent
 | --- | --- | --- |
 | **Backend** (API) | Azure Monitor OpenTelemetry distro (`configure_azure_monitor()` / `useAzureMonitor()` / `.UseAzureMonitor()`); auto-instruments inbound + outbound HTTP | Request/dependency spans, logs, metrics; W3C `traceparent` propagated to agents, MCP servers, and models |
 | **Hosted agent** (Copilot SDK or MAF) | See *Agent observability* below | `invoke_agent` / `chat` / `execute_tool` spans, GenAI metrics, prompts & responses (when content capture is on) |
-| **MCP server** | Azure Monitor OTel distro on the server process; record tool name, arguments, and result as span attributes | Tool-call spans that nest under the agent's `execute_tool` span via propagated trace context |
+| **MCP server** | Azure Monitor OTel distro on the server process; record tool name, status or error class, duration and input/output sizes or item counts as span attributes, never arguments or results (see capture below) | Tool-call spans that nest under the agent's `execute_tool` span via propagated trace context |
 | **Foundry models** | Foundry **server-side tracing** (automatic once App Insights is connected) plus model-SDK instrumentation when you call models from your own code | `gen_ai` chat spans: model, token usage, finish reason, and prompt/response content (when capture is on) |
 
 ## Agent observability
@@ -36,7 +36,7 @@ Content capture is **off by default** because spans then carry prompts, completi
 | MAF | `ENABLE_SENSITIVE_DATA=true` (or `enable_sensitive_telemetry()`) |
 | Copilot runtime | `telemetry={"capture_content": True}` |
 | Model SDK (OpenAI / Azure AI Inference) | `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` (or `AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED=true`) |
-| Backend / MCP server | add request/response bodies and tool args/results as span attributes explicitly |
+| Backend / MCP server | add request/response bodies and tool args/results as span attributes explicitly, behind a config flag that is off by default |
 
 - **Treat captured content as sensitive:** keep capture off unless the user approves it, for dev/test with synthetic data. In production gate it behind config, redact secrets and PII before export, and apply production log access and retention.
 - Set a distinct **cloud role name / `service.name`** per component (frontend, backend, agent, mcp-server) so the **Application Map** renders the topology and transactions correlate across tiers.

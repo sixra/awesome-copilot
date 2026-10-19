@@ -2,114 +2,22 @@
 
 Choose the model, version, SKU, capacity and region for each deployment the solution needs. SDD declares the deployments in `azure.yaml` under `services.ai-project.deployments[]` ([azd-layout.md](azd-layout.md#azureyaml)) and `azd provision` creates them. Rapid reuses the project's deployments and asks before adding one. Both record the selection in `.azure/deployment-plan.md`. Resolve live quota, availability and provisioning commands through `microsoft-foundry`.
 
-> Source of truth: [Foundry Models sold by Azure - Azure OpenAI](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure?tabs=global-standard&pivots=azure-openai) and [other providers](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure?tabs=global-standard&pivots=azure-direct-others). The lineup changes monthly; the tables below reflect the May 2026 catalog.
-## Preferred Models by Task & Modality
+> The catalog changes monthly. Resolve exact versions, SKUs, registration and regional availability live through `microsoft-foundry` and the [Azure-direct models](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure) and [region availability](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability) pages; never copy a version from memory.
 
-Always recommend the best-fit first, then offer alternatives. Prefer GA over Preview for production; flag Preview clearly.
+## Starting points by task
 
-### Chat & General Purpose (Text In / Text Out)
+Recommend the first fit, then offer alternatives only when cost, region, quota or registration blocks it. Prefer GA for production and flag Preview or registration-required models before deploying.
 
-| Priority | Model                                     | Format     | Version       | Why                                                                                  |
-| -------- | ----------------------------------------- | ---------- | ------------- | ------------------------------------------------------------------------------------ |
-| **Best** | `gpt-5.4-mini`                            | OpenAI     | `2026-03-17`  | Best price/perf in the GPT-5.4 family. Reasoning, vision, tools, 400K context.       |
-| Strong   | `gpt-5.4-nano`                            | OpenAI     | `2026-03-17`  | Cheapest GPT-5.4. Reasoning, vision, tools, 400K context.                            |
-| Strong   | `gpt-5-mini`                              | OpenAI     | `2025-08-07`  | Mature GPT-5 mini. No registration required.                                         |
-| Premium  | `gpt-5.5`                                 | OpenAI     | `2026-04-24`  | Top-tier reasoning, 1M context, computer-use. Tier 5/6 quota required.               |
-| Premium  | `gpt-5.4`                                 | OpenAI     | `2026-03-05`  | Flagship GPT-5.4, 1M context, computer-use.                                          |
-| Premium  | `gpt-5.4-pro`                             | OpenAI     | `2026-03-05`  | Deepest reasoning in the 5.4 family. Responses API only.                             |
-| Alt      | `DeepSeek-V4-Flash` *(Preview)*           | DeepSeek   | `1`           | 1M context, reasoning content, all regions.                                          |
-| Alt      | `DeepSeek-V3.2` *(Preview)*               | DeepSeek   | `1`           | Stable open-weight alternative, all regions.                                         |
-| Alt      | `Llama-4-Maverick-17B-128E-Instruct-FP8`  | Meta       | `1`           | Open-weight, 1M context, multimodal, all regions.                                    |
-
-### Advanced Reasoning & Complex Problem Solving
-
-| Priority | Model                          | Format     | Version       | Why                                                                       |
-| -------- | ------------------------------ | ---------- | ------------- | ------------------------------------------------------------------------- |
-| **Best** | `gpt-5.4`                      | OpenAI     | `2026-03-05`  | Strongest GA reasoning + 1M context + vision + computer-use.              |
-| Strong   | `gpt-5.4-pro`                  | OpenAI     | `2026-03-05`  | Maximum-depth reasoning, Responses API only.                              |
-| Strong   | `gpt-5.5`                      | OpenAI     | `2026-04-24`  | Latest flagship. Tier 5/6 quota required.                                 |
-| Strong   | `o4-mini`                      | OpenAI     | `2025-04-16`  | Excellent reasoning-to-cost ratio if 5.4 isn't available.                 |
-| Strong   | `o3`                           | OpenAI     | `2025-04-16`  | Mature reasoning baseline.                                                |
-| Alt      | `DeepSeek-R1-0528` *(Preview)* | DeepSeek   | `1`           | Open-weight reasoning, 163K context, all regions.                         |
-| Alt      | `Kimi-K2.6` *(Preview)*        | Moonshot   | `1`           | Multimodal reasoning, 262K context, tool calling, all regions.            |
-| Alt      | `grok-4`                       | xAI        | `1`           | 262K context reasoning. Registration required.                            |
-
-### Coding & Development
-
-| Priority | Model                                | Format     | Version       | Why                                                                       |
-| -------- | ------------------------------------ | ---------- | ------------- | ------------------------------------------------------------------------- |
-| **Best** | `gpt-5.3-codex`                      | OpenAI     | `2026-02-24`  | Optimized for Codex CLI / VS Code. Reasoning, 400K context.               |
-| Strong   | `gpt-5.2-codex`                      | OpenAI     | `2026-01-14`  | Prior Codex generation, 400K context.                                     |
-| Strong   | `gpt-5.1-codex-max`                  | OpenAI     | `2025-12-04`  | Supports `reasoning_effort=xhigh` for the hardest tasks.                  |
-| Strong   | `gpt-5.1-codex` / `gpt-5.1-codex-mini` | OpenAI   | `2025-11-13`  | Cost-tier Codex variants.                                                 |
-| Alt      | `gpt-4.1`                            | OpenAI     | `2025-04-14`  | 1M context, broad availability, great for very large codebases.           |
-| Alt      | `grok-code-fast-1` *(Preview)*       | xAI        | `1`           | External coding specialist. Registration required.                        |
-
-### Multimodal (Text + Image Input)
-
-| Priority | Model                                    | Format   | Version       | Why                                              |
-| -------- | ---------------------------------------- | -------- | ------------- | ------------------------------------------------ |
-| **Best** | `gpt-5.4-mini`                           | OpenAI   | `2026-03-17`  | Vision + reasoning, 400K context, cost-efficient.|
-| Strong   | `gpt-5.4`                                | OpenAI   | `2026-03-05`  | Vision + 1M context.                             |
-| Strong   | `gpt-5-mini`                             | OpenAI   | `2025-08-07`  | Mature vision option.                            |
-| Alt      | `Llama-4-Maverick-17B-128E-Instruct-FP8` | Meta     | `1`           | Open-weight multimodal, 1M context.              |
-| Alt      | `Kimi-K2.6` *(Preview)*                  | Moonshot | `1`           | Multimodal reasoning, 262K context.              |
-
-### Embeddings
-
-| Priority | Model                        | Format | Version | Why                                          |
-| -------- | ---------------------------- | ------ | ------- | -------------------------------------------- |
-| **Best** | `text-embedding-3-large`     | OpenAI | `1`     | Best quality, 3,072 dimensions, 8K input.    |
-| Smaller  | `text-embedding-3-small`     | OpenAI | `1`     | Cheaper, 1,536 dimensions.                   |
-| Alt      | `embed-v-4-0`                | Cohere | `1`     | Multilingual + image input, flexible dims.   |
-| Legacy   | `text-embedding-ada-002`     | OpenAI | `2`     | Older; only for compatibility.               |
-
-### Rerank / Text Classification
-
-| Priority | Model                     | Format | Version | Why                                       |
-| -------- | ------------------------- | ------ | ------- | ----------------------------------------- |
-| **Best** | `Cohere-rerank-v4.0-pro`  | Cohere | `1`     | Highest-quality rerank, multilingual.     |
-| Fast     | `Cohere-rerank-v4.0-fast` | Cohere | `1`     | Lower-latency rerank.                     |
-
-### Image Generation
-
-| Priority | Model                  | Format            | Version       | Why                                                                |
-| -------- | ---------------------- | ----------------- | ------------- | ------------------------------------------------------------------ |
-| **Best** | `gpt-image-1.5`        | OpenAI            | `1`           | Latest GPT image model, 4K-token prompts.                          |
-| Strong   | `gpt-image-1-mini`     | OpenAI            | `1`           | Cheaper GPT image option.                                          |
-| Alt      | `FLUX.2-pro` *(Prev.)* | BlackForestLabs   | `1`           | Multi-reference (up to 8 images), all regions.                     |
-| Alt      | `MAI-Image-2` *(Prev.)*| Microsoft         | `1`           | Microsoft text-to-image; limited regions (WCUS, EUS, WUS, WEU, SWC, SIN). |
-
-### Video Generation
-
-| Priority | Model     | Format | Version | Why                                       |
-| -------- | --------- | ------ | ------- | ----------------------------------------- |
-| **Best** | `sora-2`  | OpenAI | `1`     | Latest text-to-video. Preview.            |
-
-### Document Processing (PDF / Image -> Text)
-
-| Priority | Model                       | Format    | Version | Why                                                          |
-| -------- | --------------------------- | --------- | ------- | ------------------------------------------------------------ |
-| **Best** | `mistral-document-ai-2512`  | MistralAI | `1`     | Latest doc-AI: PDF/image to text/JSON/Markdown, all regions. |
-| Prior    | `mistral-document-ai-2505`  | MistralAI | `1`     | Previous GA, all regions.                                    |
-
-### Audio (Realtime / Speech / TTS)
-
-| Priority | Model                          | Format | Version       | Why                                                  |
-| -------- | ------------------------------ | ------ | ------------- | ---------------------------------------------------- |
-| **Best** | `gpt-realtime-1.5` *(Preview)* | OpenAI | `2026-02-23`  | Latest realtime speech-in / speech-out.              |
-| GA       | `gpt-realtime`                 | OpenAI | `2025-08-28`  | GA realtime audio.                                   |
-| Audio    | `gpt-audio-1.5` *(Preview)*    | OpenAI | `2026-02-23`  | Latest audio generation.                             |
-| STT      | `gpt-4o-transcribe` *(Prev.)*  | OpenAI | `2025-03-20`  | High-quality speech-to-text.                         |
-| TTS      | `gpt-4o-mini-tts`              | OpenAI | `2025-12-15`  | Steerable text-to-speech.                            |
-
-### Cost-Optimized Routing
-
-| Priority | Model          | Format    | Version       | Why                                                                                              |
-| -------- | -------------- | --------- | ------------- | ------------------------------------------------------------------------------------------------ |
-| **Best** | `model-router` | Microsoft | `2025-11-18`  | Auto-routes to the optimal underlying model. Up to ~60% savings. East US 2 & Sweden Central only.|
-
-> **Registration required** for: `gpt-5.5`, `gpt-5` (full), `gpt-image-1` family, `computer-use-preview`, `grok-4`, `grok-code-fast-1`. Request access before deploying.
+| Task | Start with | Consider when needed |
+| --- | --- | --- |
+| Chat, agents, tools | `gpt-5.4-mini` (SDD default) | a nano tier for cost; a flagship tier for hard reasoning or very long context |
+| Deep reasoning | the current GPT flagship | an o-series mini for cost |
+| Coding | the current Codex model | `gpt-4.1` for very large contexts |
+| Multimodal input | `gpt-5.4-mini` | the flagship for long context |
+| Embeddings | `text-embedding-3-large` | `text-embedding-3-small` for cost |
+| Rerank | Cohere rerank (current version) | its fast tier for latency |
+| Image, audio, video, document AI | the current GA model in that family | Preview models only with approval |
+| Cost-optimized routing | `model-router` | only where it is offered (few regions) |
 
 ## Joint region and capacity preflight
 
@@ -122,7 +30,7 @@ Treat placement as one subscription-specific decision, not a static model lookup
 | Foundry hosted agents | Hosted-agent availability for the target project/account shape |
 | Preview dependencies | Required provider/feature registration and regional availability |
 
-Start with the preferred region from the static catalog, then use the target subscription's live availability and quota checks through the maintained `microsoft-foundry` guidance. If any required resource fails, reject that candidate and rank alternatives that satisfy the **complete** resource set; do not move one resource independently unless the architecture explicitly supports cross-region placement.
+Start with the preferred region, then use the target subscription's live availability and quota checks through the maintained `microsoft-foundry` guidance. If any required resource fails, reject that candidate and rank alternatives that satisfy the **complete** resource set; do not move one resource independently unless the architecture explicitly supports cross-region placement.
 
 Write the placement decision to `./.azure/deployment-plan.md`:
 
@@ -143,25 +51,11 @@ Only after the joint preflight passes:
 - Declare each deployment in `azure.yaml` `services.ai-project.deployments[]` with its deployment `name`, model `name`, `format` (`OpenAI`, `Microsoft`, `MistralAI`, `Cohere`, `DeepSeek`, `Meta`, `xAI`, ...), `version`, and `sku` `name` (usually `GlobalStandard`) and `capacity` (thousands of tokens per minute).
 - Record the preferred and deployed locations, each deployment and the evidence in `.azure/deployment-plan.md`.
 
-## Region Availability
-
-As of the May 2026 catalog, **Global Standard** for the Azure-direct models from partners (DeepSeek, Meta, Mistral, Cohere, Moonshot, xAI, BFL, MAI text models) is available in **all** listed Azure regions. The constraint is almost always Azure OpenAI model availability, where coverage varies.
-
-### Pick a region for Azure OpenAI workloads
-
-| Tier | Regions                                   | What you get                                                                                                  |
-| ---- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **Best** | `eastus2`, `swedencentral`           | Broadest coverage: all GPT-5.x series, Codex, o-series, GPT-4.1, embeddings, audio, image, video, `model-router`. Default choice. |
-| Good     | `westus3`, `westus`, `westeurope`, `eastus`, `southindia`, `westcentralus` | Most mainstream Azure OpenAI models (GPT-5.x, GPT-4.1, o-series, embeddings). Some niche models (Codex, video, MAI-Image) may be missing. |
-| Standard | All other Azure regions (`australiaeast`, `brazilsouth`, `canadacentral`, `canadaeast`, `centralus`, `francecentral`, `germanywestcentral`, `italynorth`, `japaneast`, `japanwest`, `koreacentral`, `northcentralus`, `norwayeast`, `polandcentral`, `southafricanorth`, `southcentralus`, `spaincentral`, `switzerlandnorth`, `switzerlandwest`, `uaenorth`, `uksouth`, `westus2`) | GPT-4.1 series, o-series, embeddings, plus most direct-from-partner models on Global Standard. |
-
-> Some models have hard region restrictions: `model-router` (East US 2 / Sweden Central), `MAI-Image-2`/`MAI-Image-2e` (WCUS, EUS, WUS, WEU, SWC, SIN), `sora`/`sora-2` (limited), fine-tuning (North Central US, Sweden Central, East US 2 - varies by model). Always re-check the [region availability page](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability) before deploying.
-
 ## Workflow
 
 1. Take the task and modality (chat, reasoning, coding, multimodal, embeddings, rerank, image generation, video, audio, document AI) from the spec or brief; ask only when neither states it.
-2. Recommend the **Best** model from the matching table; offer alternatives only if cost, region, or registration is a blocker.
-3. Confirm the preferred region. Start with `eastus2`; prefer `swedencentral` for EU data residency.
+2. Recommend the starting point for the task and resolve its current GA version live.
+3. Confirm the preferred region. Start with `eastus2` (broadest Azure OpenAI coverage); prefer `swedencentral` for EU data residency.
 4. Confirm capacity. Defaults: **100** (chat / reasoning / coding), **30** (embeddings), **50** (image / audio). When one end-to-end request makes several model calls, size chat capacity to at least four times its estimated tokens, within the remaining quota, so Verify can run E2E cases in parallel. GlobalStandard bills per token, so the headroom costs nothing; record the sizing in the deployment plan.
 5. Flag any **registration-required** or **Preview** models explicitly before deploying.
 6. Run the joint live preflight for the model and every co-located required service; rank only complete placements.

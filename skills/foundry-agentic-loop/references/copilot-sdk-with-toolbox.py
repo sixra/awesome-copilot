@@ -1,7 +1,7 @@
 """Reference hosted agent: GitHub Copilot SDK + Foundry toolbox (tools and skills over MCP).
 
 Reference only: copilot-sdk-foundry.md is the recipe and wins on any conflict. Written against
-github-copilot-sdk 1.0.14; inspect the installed APIs first. Call `run_turn` from the Responses
+github-copilot-sdk 1.0.14 and re-checked on 1.0.20; inspect the installed APIs first. Call `run_turn` from the Responses
 handler that `azd ai agent init` scaffolds: create one credential and one client at startup and
 close them at shutdown, pass the request's `x-agent-foundry-call-id` from the adapter's verified
 request-context accessor, and stream the returned tool calls as output items before the message
@@ -53,6 +53,9 @@ SCOPE = "https://ai.azure.com/.default"  # model and toolbox audience; cognitive
 TOOLBOX_ENDPOINT = os.environ["TOOLBOX_ENDPOINT"]
 MODEL_BASE_URL = os.getenv("MODEL_API_BASE_URL")
 MODEL_DEPLOYMENT = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME")
+if bool(MODEL_BASE_URL) != bool(MODEL_DEPLOYMENT):
+    # One without the other would silently fall back to the Copilot default model.
+    raise RuntimeError("Set both MODEL_API_BASE_URL and AZURE_AI_MODEL_DEPLOYMENT_NAME, or neither.")
 WRITABLE = Path(tempfile.gettempdir())  # hosted containers are read-only except the temp dir
 SKILL_URI = re.compile(r"skill://([A-Za-z0-9_-]+)/SKILL\.md")
 TURN_TIMEOUT = 300.0
@@ -173,12 +176,14 @@ def _call_handler(toolbox: McpBridge, mcp_name: str, calls: list[ToolCall]):
 def toolbox_tools(toolbox: McpBridge, listed: list[dict[str, Any]], calls: list[ToolCall]) -> list[Tool]:
     """Wrap each tools/list entry as an SDK tool; MCP-sourced names look like label___tool."""
     tools: dict[str, Tool] = {}
+    sources: dict[str, str] = {}
     for spec in listed:
         mcp_name = spec["name"]
         name = re.sub(r"[.-]", "_", mcp_name)  # SDK tool names reject dots and hyphens
-        if name in tools:
-            log.warning("Skipping toolbox tool %s: duplicate SDK name %s", mcp_name, name)
-            continue
+        if name in sources:
+            # Dropping one would silently change the agent's capabilities; rename a tool instead.
+            raise ValueError(f"Toolbox tools {sources[name]!r} and {mcp_name!r} both map to {name!r}.")
+        sources[name] = mcp_name
         tools[name] = Tool(
             name=name,
             description=spec.get("description") or mcp_name,
@@ -269,7 +274,7 @@ async def run_turn(
     calls: list[ToolCall] = []
     headers = {"x-agent-foundry-call-id": call_id} if call_id else None
     options: dict[str, Any] = {}
-    if MODEL_BASE_URL and MODEL_DEPLOYMENT:
+    if MODEL_BASE_URL:
         options = {"provider": model_provider(credential), "model": MODEL_DEPLOYMENT}
     async with McpBridge(credential, call_id) as toolbox:
         tools = toolbox_tools(toolbox, (await toolbox.rpc("tools/list", {})).get("tools", []), calls)

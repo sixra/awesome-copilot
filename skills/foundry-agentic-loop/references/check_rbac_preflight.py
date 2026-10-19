@@ -299,16 +299,34 @@ def _normalize(assignments: object) -> list[dict[str, str]]:
 
 
 def load_from_file(path: str, assignee: str | None) -> tuple[dict[str, str], list[dict[str, str]]]:
-    with open(path, encoding="utf-8") as handle:
-        payload = json.load(handle)
+    """Load a recorded snapshot: {"principal": {"id", "display"}, "assignments": [...]}.
+
+    A bare list of assignments carries no principal, so it needs --assignee; the
+    report never prints a remediation command for an unknown principal.
+    """
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except json.JSONDecodeError as exc:
+        raise PreflightError(f"{path} is not valid JSON: {exc}") from exc
     if isinstance(payload, list):
         payload = {"assignments": payload}
+    if not isinstance(payload, dict):
+        raise PreflightError(f"{path} must hold an object or a list of assignments.")
     principal = payload.get("principal") or {}
+    assignments = payload.get("assignments")
+    if not isinstance(principal, dict) or not isinstance(assignments, list):
+        raise PreflightError(
+            f"{path} must hold 'principal' as an object and 'assignments' as a list."
+        )
+    principal_id = str(assignee or principal.get("id") or "").strip()
+    if not principal_id:
+        raise PreflightError(f"{path} names no principal -- pass --assignee.")
     resolved = {
-        "id": assignee or principal.get("id") or "(unknown)",
-        "display": principal.get("display") or principal.get("id") or assignee or "(unknown)",
+        "id": principal_id,
+        "display": str(principal.get("display") or principal_id),
     }
-    return resolved, _normalize(payload.get("assignments"))
+    return resolved, _normalize(assignments)
 
 
 def resolve_principal(assignee: str | None) -> dict[str, str]:
@@ -342,6 +360,8 @@ def resolve_assignments(principal_id: str, scopes: list[tuple[str, str]]) -> lis
                 "--include-groups",
             ]
         )
+        if not isinstance(listed, list):
+            raise PreflightError(f"az role assignment list returned no list for {scope}.")
         records.extend(_normalize(listed))
     return records
 
@@ -430,11 +450,11 @@ def main(argv: list[str] | None = None) -> int:
             scopes = drop_missing_group(scopes, args.subscription)
             principal = resolve_principal(args.assignee)
             assignments = resolve_assignments(principal["id"], scopes)
-    except PreflightError as exc:
+    except (PreflightError, OSError) as exc:
         print(f"RBAC pre-flight: ERROR -- {exc}", file=sys.stderr)
         return 1
-    except OSError as exc:
-        print(f"RBAC pre-flight: ERROR -- {exc}", file=sys.stderr)
+    except (TypeError, ValueError, KeyError, AttributeError) as exc:
+        print(f"RBAC pre-flight: ERROR -- unexpected input shape: {exc}", file=sys.stderr)
         return 1
 
     missing = find_missing(scopes, assignments)

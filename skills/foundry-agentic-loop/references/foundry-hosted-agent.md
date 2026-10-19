@@ -6,7 +6,7 @@ Reference for the `foundry-agentic-loop` skill: runtime concerns for an agent ho
 
 Default to the **Responses API** protocol for hosted agents. Responses exposes an OpenAI-compatible `/responses` endpoint, and the platform manages conversation history, streaming, and session lifecycle. Prefer it for new hosted agents and generated plans.
 
-A tool-using agent streams each tool call as output items, because evaluators score only output items; never return a bare `TextResponse` from it. With `azure-ai-agentserver-responses` 2.2.0 (check the installed API first), the `@app.response_handler` of `ResponsesAgentServerHost()` returns an async generator that creates `ResponseEventStream(response_id=context.response_id, request=request)`, yields `emit_created()` and `emit_in_progress()`, then the events of `output_item_function_call(name, call_id, arguments)` and `output_item_function_call_output(call_id, output)` for each call, then those of `output_item_message(text)`, kept last so `output_text` stays the answer, and finally `emit_completed()`.
+A tool-using agent streams each tool call as output items, because evaluators score only output items; never return a bare `TextResponse` from it. With `azure-ai-agentserver-responses` 2.2.0–2.3.0 (check the installed API first), the `@app.response_handler` of `ResponsesAgentServerHost()` returns an async generator that creates `ResponseEventStream(response_id=context.response_id, request=request)`, yields `emit_created()` and `emit_in_progress()`, then the events of `output_item_function_call(name, call_id, arguments)` and `output_item_function_call_output(call_id, output)` for each call, then those of `output_item_message(text)`, kept last so `output_text` stays the answer, and finally `emit_completed()`.
 
 Use the **invocations** protocol only when the user explicitly requests it, when an existing deployed agent already depends on it, or when a required sample/runtime is not yet available through Responses. If invocations is selected, document the reason in `./docs/spec.md` (SDD) or the root `README.md` (rapid).
 
@@ -39,7 +39,7 @@ Generated code must match the latest stable `github-copilot-sdk`, not a stale ex
 
 Compatibility checks belong to the generated application's implementation and CI, which run against its resolved lockfile; this skill bundles no SDK test suite. If companion-skill guidance conflicts with the installed package, follow the package API and report the defect upstream (issue or PR) instead of patching the third-party skill locally.
 
-When reviewing or correcting SDK code, state the resolved version, the Python minimum (3.11 for v1.0.14; hosted agents keep 3.13), and the session-creation, prompt-send, event and lifecycle shapes, so the correction can be checked.
+When reviewing or correcting SDK code, state the resolved version, the Python minimum (3.11 for v1.0.14–1.0.23; hosted agents keep 3.13), and the session-creation, prompt-send, event and lifecycle shapes, so the correction can be checked.
 
 ## Read-only container filesystem
 
