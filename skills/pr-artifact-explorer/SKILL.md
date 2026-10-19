@@ -29,7 +29,7 @@ Use `share { input, preset?, zoom?, width?, height? }` to produce a link, route,
 
 ## Workflow runs without a pull request
 
-Many runs have no PR: `schedule` (cron), `workflow_dispatch`, `push`, `release`, `workflow_run`, and others. Use `open_runs { repository, event?, status?, branch?, workflow?, excludePullRequests? }` to open the repository's **Workflow runs** list (for example `event: "schedule"` for cron runs), and `open_run { repository, runId }` to open one run and its artifacts. The same artifact preview, Browser view, sharing and Re-run behavior applies; artifacts opened from a run keep a `?run=<id>` route so breadcrumbs return to the run. Run rows show a lazily loaded artifact count and the list can hide runs with no artifacts or runs triggered by pull requests.
+Many runs have no PR: `schedule` (cron), `workflow_dispatch`, `push`, `release`, `workflow_run`, and others. Use `open_runs { repository, event?, status?, branch?, workflow?, excludePullRequests?, hasArtifacts? }` to open the repository's **Workflow runs** list (for example `event: "schedule"` for cron runs; `excludePullRequests` and `hasArtifacts` default to true, so pass false to include PR runs or runs with no artifacts), and `open_run { repository, runId }` to open one run and its artifacts. The same artifact preview, Browser view, sharing and Re-run behavior applies; artifacts opened from a run keep a `?run=<id>` route so breadcrumbs return to the run. Run rows show a lazily loaded artifact count; the branch filter autocompletes real branches. Routes use `nopr=0` and `artifacts=0` to turn those defaults off.
 
 ## Artifacts
 

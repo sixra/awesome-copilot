@@ -745,7 +745,8 @@ function runsHash(repository, filters = {}) {
   if (filters.status) query.set("status", filters.status);
   if (filters.branch) query.set("branch", filters.branch);
   if (filters.workflow) query.set("workflow", filters.workflow);
-  if (filters.excludePullRequests) query.set("nopr", "1");
+  if (filters.excludePullRequests === false) query.set("nopr", "0");
+  if (filters.hasArtifacts === false) query.set("artifacts", "0");
   if (Number(filters.page) > 1) query.set("page", String(Number(filters.page)));
   const suffix = query.toString();
   return `#/runs/${encodeURIComponent(repository)}${suffix ? `?${suffix}` : ""}`;
@@ -819,7 +820,8 @@ function parseRouteUnsafe() {
       status: query.get("status") ?? "",
       branch: query.get("branch") ?? "",
       workflow: query.get("workflow") ?? "",
-      excludePullRequests: query.get("nopr") === "1",
+      excludePullRequests: query.get("nopr") !== "0",
+      hasArtifacts: query.get("artifacts") !== "0",
       page: Math.max(1, Number(query.get("page")) || 1),
     };
   }
@@ -3602,29 +3604,49 @@ async function renderPull(route, sequence, { force = false } = {}) {
 }
 
 const RUN_EVENT_OPTIONS = [
-  ["", "All events"],
-  ["schedule", "Scheduled"],
-  ["workflow_dispatch", "Manual"],
-  ["push", "Push"],
-  ["release", "Release"],
-  ["workflow_run", "Workflow run"],
-  ["repository_dispatch", "API dispatch"],
-  ["merge_group", "Merge queue"],
-  ["pull_request", "Pull request"],
+  { value: "", label: "All events" },
+  { value: "schedule", label: "Scheduled" },
+  { value: "workflow_dispatch", label: "Manual" },
+  { value: "push", label: "Push" },
+  { value: "release", label: "Release" },
+  { value: "workflow_run", label: "Workflow run" },
+  { value: "repository_dispatch", label: "API dispatch" },
+  { value: "merge_group", label: "Merge queue" },
+  { value: "pull_request", label: "Pull request" },
 ];
 
 const RUN_STATUS_OPTIONS = [
-  ["", "All statuses"],
-  ["success", "Success"],
-  ["failure", "Failure"],
-  ["cancelled", "Cancelled"],
-  ["timed_out", "Timed out"],
-  ["skipped", "Skipped"],
-  ["in_progress", "In progress"],
-  ["queued", "Queued"],
+  { value: "", label: "All statuses" },
+  { value: "success", label: "Success", icon: "check-circle", className: "status-success" },
+  { value: "failure", label: "Failure", icon: "x-circle", className: "status-danger" },
+  { value: "cancelled", label: "Cancelled", icon: "x-circle", className: "status-muted" },
+  { value: "timed_out", label: "Timed out", icon: "clock", className: "status-danger" },
+  { value: "skipped", label: "Skipped", icon: "clock", className: "status-muted" },
+  { value: "in_progress", label: "In progress", icon: "sync", className: "status-attention" },
+  { value: "queued", label: "Queued", icon: "clock", className: "status-attention" },
 ];
 
-let runsHasArtifactsOnly = false;
+const RUN_FILTER_KINDS = ["event", "status", "workflow", "branch"];
+const RUN_BRANCH_DEBOUNCE_MS = 200;
+const runArtifactCounts = new Map();
+const runWorkflowCatalog = { repository: null, items: null };
+const runBranchState = {
+  repository: null,
+  query: "",
+  items: [],
+  status: "idle",
+  error: null,
+  sequence: 0,
+  timer: null,
+  controller: null,
+  cache: new Map(),
+};
+let pendingRunFocus = null;
+
+// Hiding PR runs and showing only runs with artifacts are on unless the route turns them off.
+function runToggleOn(value) {
+  return value !== false;
+}
 
 function repoTabsHtml(repository, active) {
   const tab = (name, href, iconName, label) =>
@@ -3642,7 +3664,8 @@ function runFiltersFromRoute(route) {
     status: route.status ?? "",
     branch: route.branch ?? "",
     workflow: route.workflow ?? "",
-    excludePullRequests: route.excludePullRequests === true,
+    excludePullRequests: runToggleOn(route.excludePullRequests),
+    hasArtifacts: runToggleOn(route.hasArtifacts),
     page: Number(route.page) > 1 ? Number(route.page) : 1,
   };
 }
@@ -3659,16 +3682,104 @@ function runRequestPath(repository, filters, { force = false } = {}) {
   return `/api/runs?${parameters}`;
 }
 
-function runSelectHtml(id, label, options, selected) {
-  const values = new Set(options.map(([value]) => value));
-  const all = values.has(selected) ? options : [...options, [selected, selected]];
+function runOptionHtml(kind, option, selected) {
   return `
-    <label class="sr-only" for="${id}">${escapeHtml(label)}</label>
-    <select id="${id}" class="form-select input-sm runs-filter-select" name="${id.replace("runs-", "")}" aria-label="${escapeHtml(label)}">
-      ${all
-        .map(([value, text]) => `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(text)}</option>`)
-        .join("")}
-    </select>`;
+    <button
+      class="artifact-filter-option"
+      type="button"
+      role="option"
+      aria-selected="${selected}"
+      data-run-filter-option="${kind}"
+      data-value="${escapeHtml(option.value)}"
+    >
+      <span class="artifact-filter-check">${selected ? icon("check") : ""}</span>
+      ${option.icon ? icon(option.icon, option.className ?? "") : ""}
+      <span class="artifact-filter-option-copy">${escapeHtml(option.label)}</span>
+      ${option.note ? `<span class="artifact-filter-option-count">${escapeHtml(option.note)}</span>` : ""}
+    </button>`;
+}
+
+function runOptionsHtml(kind, options, selectedValue) {
+  const known = options.some((option) => option.value === selectedValue);
+  const all = known || !selectedValue ? options : [...options, { value: selectedValue, label: selectedValue }];
+  return all.map((option) => runOptionHtml(kind, option, option.value === selectedValue)).join("");
+}
+
+function runPickerHtml({ kind, label, iconName, current, searchLabel = null, optionsHtml }) {
+  const lower = label.toLocaleLowerCase();
+  const filtered = Boolean(current);
+  return `
+    <div class="artifact-filter-picker run-filter-picker" data-run-picker="${kind}">
+      <button
+        class="app-button app-button-small artifact-filter-trigger${filtered ? " is-filtered" : ""}"
+        type="button"
+        data-toggle-run-filter="${kind}"
+        aria-haspopup="listbox"
+        aria-expanded="false"
+        aria-controls="run-${kind}-panel"
+        title="${escapeHtml(filtered ? `${label}: ${current}` : `Filter by ${lower}`)}"
+      >
+        ${icon(iconName)}
+        <span class="artifact-filter-trigger-label">${escapeHtml(filtered ? current : label)}</span>
+        ${icon("chevron-down")}
+      </button>
+      <div id="run-${kind}-panel" class="artifact-filter-panel run-filter-panel" hidden>
+        <div class="artifact-filter-panel-header">
+          <strong>Filter by ${escapeHtml(lower)}</strong>
+          <button class="artifact-filter-close" type="button" data-close-run-filter aria-label="Close ${escapeHtml(lower)} filter">${icon("x")}</button>
+        </div>
+        ${
+          searchLabel
+            ? `<div class="pull-author-filter-wrap">
+                ${icon("search")}
+                <label class="sr-only" for="run-${kind}-search">${escapeHtml(searchLabel)}</label>
+                <input id="run-${kind}-search" class="form-control" type="search" role="combobox" aria-autocomplete="list" aria-controls="run-${kind}-options" aria-expanded="true" placeholder="${escapeHtml(searchLabel)}" autocomplete="off" autocapitalize="none" spellcheck="false" data-run-search="${kind}" />
+              </div>`
+            : ""
+        }
+        <div id="run-${kind}-options" class="artifact-filter-options run-filter-options" role="listbox" aria-label="${escapeHtml(label)}">${optionsHtml}</div>
+      </div>
+    </div>`;
+}
+
+function runWorkflowOptions(repository) {
+  const items = runWorkflowCatalog.repository === repository ? runWorkflowCatalog.items ?? [] : [];
+  return [
+    { value: "", label: "All workflows" },
+    ...items.map((workflow) => ({
+      value: workflow.ref,
+      label: workflow.name,
+      note: /\.ya?ml$/.test(workflow.ref) ? workflow.ref : "",
+    })),
+  ];
+}
+
+function runWorkflowLabel(repository, value) {
+  if (!value) return "";
+  return runWorkflowOptions(repository).find((option) => option.value === value)?.label ?? value;
+}
+
+function runToggleHtml(name, label, pressed, title) {
+  return `<button class="app-button app-button-small artifact-filter-trigger run-toggle${pressed ? " is-filtered" : ""}" type="button" data-run-toggle="${name}" aria-pressed="${pressed}" title="${escapeHtml(title)}">${pressed ? icon("check") : ""}<span>${escapeHtml(label)}</span></button>`;
+}
+
+function runFiltersActive(filters) {
+  return Boolean(filters.event || filters.status || filters.workflow || filters.branch);
+}
+
+function runControlsHtml(repository, filters) {
+  const eventLabel = RUN_EVENT_OPTIONS.find((option) => option.value === filters.event)?.label ?? filters.event;
+  const statusLabel = RUN_STATUS_OPTIONS.find((option) => option.value === filters.status)?.label ?? filters.status;
+  return `
+    <div class="artifact-filter-controls run-filter-controls" data-run-filters data-repository="${escapeHtml(repository)}">
+      ${runPickerHtml({ kind: "event", label: "Event", iconName: "workflow", current: filters.event ? eventLabel : "", optionsHtml: runOptionsHtml("event", RUN_EVENT_OPTIONS, filters.event) })}
+      ${runPickerHtml({ kind: "status", label: "Status", iconName: "check-circle", current: filters.status ? statusLabel : "", optionsHtml: runOptionsHtml("status", RUN_STATUS_OPTIONS, filters.status) })}
+      ${runPickerHtml({ kind: "workflow", label: "Workflow", iconName: "play", current: runWorkflowLabel(repository, filters.workflow), searchLabel: "Filter workflows", optionsHtml: runOptionsHtml("workflow", runWorkflowOptions(repository), filters.workflow) })}
+      ${runPickerHtml({ kind: "branch", label: "Branch", iconName: "git-branch", current: filters.branch, searchLabel: "Find a branch", optionsHtml: runOptionsHtml("branch", [{ value: "", label: "Any branch" }], filters.branch) })}
+      ${runToggleHtml("excludePullRequests", "Hide PR runs", filters.excludePullRequests, "Hide runs triggered by pull requests")}
+      ${runToggleHtml("hasArtifacts", "Has artifacts", filters.hasArtifacts, "Hide runs that produced no artifacts on this page")}
+      ${runFiltersActive(filters) ? `<button class="app-button app-button-small app-button-invisible" type="button" data-run-reset>${icon("x")} Clear filters</button>` : ""}
+    </div>`;
 }
 
 function runStatusLabel(run) {
@@ -3691,10 +3802,25 @@ function runLinkedPullsHtml(run, repository) {
     .join("");
 }
 
+function runStatusIconHtml(run) {
+  const label = runStatusLabel(run);
+  return `<span class="run-status" title="${escapeHtml(label)}">${runStatusIcon(run)}<span class="sr-only">${escapeHtml(label)}</span></span>`;
+}
+
+function runArtifactBadgeHtml(count) {
+  if (count === undefined) return `<span class="run-artifact-pending">${icon("sync", "spin")} Checking artifacts…</span>`;
+  if (count === null) return "";
+  return count
+    ? `${icon("package")} ${count.toLocaleString()} artifact${count === 1 ? "" : "s"}`
+    : "No artifacts";
+}
+
 function runRowHtml(run, repository) {
+  const count = runArtifactCounts.get(`${repository}#${run.id}`);
+  const countAttribute = count === undefined ? "" : ` data-artifact-count="${count === null ? "unknown" : count}"`;
   return `
-    <div class="Box-row run-row" data-run-row="${run.id}">
-      ${runStatusIcon(run)}
+    <div class="Box-row run-row" data-run-row="${run.id}"${countAttribute}>
+      ${runStatusIconHtml(run)}
       <div class="Box-row-main">
         <div class="pull-row-title-line">
           <a class="Box-row-title" href="${runHash(repository, run.id)}">${titleHtml(run.title ?? run.name ?? `Run ${run.id}`)}</a>
@@ -3709,22 +3835,23 @@ function runRowHtml(run, repository) {
         </div>
       </div>
       <div class="Box-row-actions color-fg-muted">
-        <span class="run-artifact-count" data-run-artifacts="${run.id}" aria-live="polite"></span>
+        <span class="run-artifact-count" data-run-artifacts="${run.id}" aria-live="polite">${runArtifactBadgeHtml(count)}</span>
       </div>
     </div>`;
 }
 
-function runsPageHtml(payload, route) {
-  const repository = normalizeRepository(route.repository);
-  const filters = runFiltersFromRoute(route);
-  const runs = payload.runs ?? [];
-  const total = Number(payload.totalCount) || runs.length;
-  const first = runs.length ? (payload.page - 1) * payload.perPage + 1 : 0;
-  const last = first ? first + runs.length - 1 : 0;
-  const pageLink = (page, label, enabled) =>
-    enabled
-      ? `<a class="app-button app-button-small" href="${escapeHtml(runsHash(repository, { ...filters, page }))}">${label}</a>`
-      : `<button class="app-button app-button-small" type="button" disabled>${label}</button>`;
+function runListSkeletonHtml() {
+  return `<div class="loading-list" role="status" aria-label="Loading workflow runs">
+    ${Array.from({ length: 5 }, () => `
+      <div class="skeleton-row">
+        <span class="skeleton"></span>
+        <span><span class="skeleton d-block"></span><span class="skeleton short d-block"></span></span>
+        <span class="skeleton"></span>
+      </div>`).join("")}
+  </div>`;
+}
+
+function runsPageHtml(repository, filters) {
   return `
     <div class="page-header">
       <div>
@@ -3735,91 +3862,286 @@ function runsPageHtml(payload, route) {
         <p class="page-subtitle">Browse workflow runs from any trigger, including scheduled, manual, push and release runs that have no pull request.</p>
       </div>
       <div class="page-actions">
-        <button class="app-button" type="button" data-refresh-view>${icon("sync")} Refresh</button>
         <a class="app-button" href="https://github.com/${escapeHtml(repository)}/actions" target="_blank" rel="noreferrer">
           ${icon("link-external")} View on GitHub
         </a>
       </div>
     </div>
     ${repoTabsHtml(repository, "runs")}
-    <form class="runs-filter-form" data-runs-filter-form data-repository="${escapeHtml(repository)}" aria-label="Filter workflow runs">
-      ${runSelectHtml("runs-event", "Event", RUN_EVENT_OPTIONS, filters.event)}
-      ${runSelectHtml("runs-status", "Status", RUN_STATUS_OPTIONS, filters.status)}
-      ${runSelectHtml("runs-workflow", "Workflow", [["", "All workflows"]], filters.workflow)}
-      <label class="sr-only" for="runs-branch">Branch</label>
-      <input id="runs-branch" class="form-control input-sm runs-filter-branch" name="branch" type="text" placeholder="Branch" autocomplete="off" autocapitalize="none" spellcheck="false" value="${escapeHtml(filters.branch)}" />
-      <label class="runs-filter-check"><input id="runs-nopr" name="nopr" type="checkbox"${filters.excludePullRequests ? " checked" : ""} /> Hide pull request runs</label>
-      <label class="runs-filter-check"><input id="runs-has-artifacts" type="checkbox"${runsHasArtifactsOnly ? " checked" : ""} /> Has artifacts</label>
-    </form>
     <section class="Box run-list-box" aria-label="Workflow runs">
-      <div class="Box-header toolbar">
-        <h2 class="Box-title">${icon("workflow")} ${total.toLocaleString()} workflow run${total === 1 ? "" : "s"}</h2>
+      <div class="Box-header toolbar artifact-toolbar run-list-toolbar">
+        <h2 class="Box-title">${icon("workflow")}<span id="run-list-heading-label">Workflow runs</span></h2>
         <span class="toolbar-spacer"></span>
-        <span id="run-list-artifact-note" class="color-fg-muted f6" aria-live="polite"></span>
+        ${runControlsHtml(repository, filters)}
+        <button class="app-button app-button-small artifact-refresh" type="button" data-refresh-view>${icon("sync")} Refresh</button>
       </div>
-      <div id="run-list-rows">${
-        runs.length
-          ? runs.map((run) => runRowHtml(run, repository)).join("")
-          : `<div class="blankslate">${icon("workflow")}<h2>No workflow runs match</h2><p>Adjust the event, status, branch or workflow filters.</p></div>`
-      }</div>
-      <div class="Box-footer">
-        <span>${runs.length ? `Showing ${first.toLocaleString()}–${last.toLocaleString()} of ${total.toLocaleString()}` : "Nothing to show"}${payload.capped ? " · GitHub exposes only the newest 1,000 runs for a search" : ""}</span>
-        <span class="run-pager">${pageLink(filters.page - 1, `${icon("chevron-left")} Newer`, payload.hasPrevious)}${pageLink(filters.page + 1, `Older ${icon("chevron-right")}`, payload.hasMore)}</span>
-      </div>
+      <div id="run-list-rows" aria-busy="true">${runListSkeletonHtml()}</div>
+      <div id="run-list-footer" class="Box-footer" hidden></div>
     </section>`;
 }
 
+function runListEmptyHtml(filters, { artifactsHidden = false, nextHref = null } = {}) {
+  if (artifactsHidden) {
+    return `<div class="blankslate" id="run-list-empty">
+      ${icon("package")}
+      <h2>No runs with artifacts on this page</h2>
+      <p>${nextHref ? "Older runs may have artifacts, or show runs that produced none." : "Show runs that produced no artifacts to see everything on this page."}</p>
+      <div class="blankslate-actions">
+        <button class="app-button app-button-small" type="button" data-run-toggle="hasArtifacts">Show runs without artifacts</button>
+        ${nextHref ? `<a class="app-button app-button-small" href="${escapeHtml(nextHref)}">Older runs ${icon("chevron-right")}</a>` : ""}
+      </div>
+    </div>`;
+  }
+  const hint =
+    filters.event === "pull_request" && filters.excludePullRequests
+      ? "Pull request runs are hidden. Turn off Hide PR runs to see them."
+      : "Adjust the event, status, branch or workflow filters.";
+  return `<div class="blankslate">
+    ${icon("workflow")}
+    <h2>No workflow runs match</h2>
+    <p>${escapeHtml(hint)}</p>
+    ${runFiltersActive(filters) ? `<div class="blankslate-actions"><button class="app-button app-button-small" type="button" data-run-reset>Clear filters</button></div>` : ""}
+  </div>`;
+}
+
+function updateRunList(payload, repository, filters) {
+  const rowsHost = document.getElementById("run-list-rows");
+  const footer = document.getElementById("run-list-footer");
+  const heading = document.getElementById("run-list-heading-label");
+  if (!rowsHost || !footer || !heading) return;
+  const runs = payload.runs ?? [];
+  const total = Number(payload.totalCount) || runs.length;
+  const first = runs.length ? (payload.page - 1) * payload.perPage + 1 : 0;
+  const last = first ? first + runs.length - 1 : 0;
+  const nextHref = payload.hasMore ? runsHash(repository, { ...filters, page: filters.page + 1 }) : null;
+  const pageLink = (page, label, enabled) =>
+    enabled
+      ? `<a class="app-button app-button-small" href="${escapeHtml(runsHash(repository, { ...filters, page }))}">${label}</a>`
+      : `<button class="app-button app-button-small" type="button" disabled>${label}</button>`;
+  heading.textContent = `${total.toLocaleString()} workflow run${total === 1 ? "" : "s"}`;
+  rowsHost.removeAttribute("aria-busy");
+  rowsHost.innerHTML = runs.length
+    ? `${runs.map((run) => runRowHtml(run, repository)).join("")}<div hidden data-run-empty-host>${runListEmptyHtml(filters, { artifactsHidden: true, nextHref })}</div>`
+    : runListEmptyHtml(filters);
+  footer.hidden = false;
+  footer.innerHTML = `
+    <span>${runs.length ? `Showing ${first.toLocaleString()}–${last.toLocaleString()} of ${total.toLocaleString()}` : "Nothing to show"}${payload.capped ? " · GitHub exposes only the newest 1,000 runs for a search" : ""}<span id="run-list-artifact-note"></span></span>
+    <span class="run-pager">${pageLink(filters.page - 1, `${icon("chevron-left")} Newer`, payload.hasPrevious)}${pageLink(filters.page + 1, `Older ${icon("chevron-right")}`, payload.hasMore)}</span>`;
+}
+
+function showRunListError(error) {
+  const rowsHost = document.getElementById("run-list-rows");
+  if (!rowsHost) return renderError(error);
+  rowsHost.removeAttribute("aria-busy");
+  rowsHost.innerHTML = `<div class="flash flash-error run-list-error">
+    <strong>Unable to load workflow runs</strong>
+    <div class="mt-1">${escapeHtml(error instanceof Error ? error.message : String(error))}</div>
+    <button class="app-button app-button-small mt-2" type="button" data-refresh-view>${icon("sync")} Retry</button>
+  </div>`;
+}
+
 function applyRunArtifactFilter() {
+  const only = runFiltersFromRoute(parseRoute()).hasArtifacts;
   const rows = [...document.querySelectorAll("[data-run-row]")];
   let hidden = 0;
   for (const row of rows) {
-    const empty = row.dataset.artifactCount === "0";
-    row.hidden = runsHasArtifactsOnly && empty;
+    row.hidden = only && row.dataset.artifactCount === "0";
     if (row.hidden) hidden++;
   }
   const note = document.getElementById("run-list-artifact-note");
   if (note) {
-    note.textContent = runsHasArtifactsOnly && hidden
-      ? `${hidden.toLocaleString()} run${hidden === 1 ? "" : "s"} without artifacts hidden`
+    note.textContent = only && hidden
+      ? ` · ${hidden.toLocaleString()} without artifacts hidden`
       : "";
   }
+  const emptyHost = document.querySelector("[data-run-empty-host]");
+  if (emptyHost) emptyHost.hidden = !(rows.length && hidden === rows.length);
+}
+
+function setRunArtifactBadge(row, count) {
+  const badge = row.querySelector("[data-run-artifacts]");
+  row.dataset.artifactCount = count === null ? "unknown" : String(count);
+  if (badge) badge.innerHTML = runArtifactBadgeHtml(count);
 }
 
 async function loadRunArtifactCounts(repository, runs, sequence) {
-  const ids = runs.map((run) => run.id);
-  if (!ids.length) return;
-  try {
-    const payload = await api(`/api/runs/artifact-counts?repo=${encodeURIComponent(repository)}&ids=${ids.join(",")}`);
-    if (sequence !== renderSequence) return;
-    for (const [id, count] of Object.entries(payload.counts ?? {})) {
-      const row = document.querySelector(`[data-run-row="${id}"]`);
-      const badge = row?.querySelector("[data-run-artifacts]");
-      if (!row || !badge || count == null) continue;
-      row.dataset.artifactCount = String(count);
-      badge.innerHTML = count
-        ? `${icon("package")} ${count.toLocaleString()} artifact${count === 1 ? "" : "s"}`
-        : "No artifacts";
+  const missing = runs.filter((run) => !runArtifactCounts.has(`${repository}#${run.id}`)).map((run) => run.id);
+  for (let index = 0; index < missing.length; index += 30) {
+    const chunk = missing.slice(index, index + 30);
+    try {
+      const payload = await api(`/api/runs/artifact-counts?repo=${encodeURIComponent(repository)}&ids=${chunk.join(",")}`);
+      if (sequence !== renderSequence) return;
+      for (const id of chunk) {
+        const count = payload.counts?.[id];
+        runArtifactCounts.set(`${repository}#${id}`, typeof count === "number" ? count : null);
+      }
+    } catch {
+      if (sequence !== renderSequence) return;
+      for (const id of chunk) runArtifactCounts.set(`${repository}#${id}`, null);
     }
-    applyRunArtifactFilter();
-  } catch {
-    // Badges are an enhancement; the list stays usable without them.
   }
+  for (const run of runs) {
+    const row = document.querySelector(`[data-run-row="${run.id}"]`);
+    if (row) setRunArtifactBadge(row, runArtifactCounts.get(`${repository}#${run.id}`) ?? null);
+  }
+  applyRunArtifactFilter();
 }
 
-async function loadRunWorkflows(repository, selected, sequence) {
-  try {
-    const payload = await api(`/api/workflows?repo=${encodeURIComponent(repository)}`);
-    if (sequence !== renderSequence) return;
-    const select = document.getElementById("runs-workflow");
-    if (!select) return;
-    const options = (payload.workflows ?? []).map((workflow) => [workflow.ref, workflow.name]);
-    if (selected && !options.some(([value]) => value === selected)) options.push([selected, selected]);
-    select.innerHTML = [["", "All workflows"], ...options]
-      .map(([value, text]) => `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(text)}</option>`)
-      .join("");
-  } catch {
-    // The workflow picker is optional; filtering by event, status and branch still works.
+async function loadRunWorkflows(repository, sequence) {
+  if (runWorkflowCatalog.repository !== repository) {
+    runWorkflowCatalog.repository = repository;
+    runWorkflowCatalog.items = null;
   }
+  if (!runWorkflowCatalog.items) {
+    try {
+      const payload = await api(`/api/workflows?repo=${encodeURIComponent(repository)}`);
+      runWorkflowCatalog.items = payload.workflows ?? [];
+    } catch {
+      return;
+    }
+  }
+  if (sequence !== renderSequence) return;
+  const filters = runFiltersFromRoute(parseRoute());
+  const trigger = document.querySelector('[data-toggle-run-filter="workflow"]');
+  if (trigger && filters.workflow) {
+    const label = runWorkflowLabel(repository, filters.workflow);
+    trigger.querySelector(".artifact-filter-trigger-label").textContent = label;
+    trigger.title = `Workflow: ${label}`;
+  }
+  renderRunWorkflowOptions(document.getElementById("run-workflow-search")?.value ?? "");
+}
+
+function renderRunWorkflowOptions(filterText = "") {
+  const host = document.getElementById("run-workflow-options");
+  if (!host) return;
+  const repository = document.querySelector("[data-run-filters]")?.dataset.repository;
+  const selected = runFiltersFromRoute(parseRoute()).workflow;
+  const needle = filterText.trim().toLocaleLowerCase();
+  const options = runWorkflowOptions(repository).filter(
+    (option) =>
+      !needle ||
+      option.label.toLocaleLowerCase().includes(needle) ||
+      option.value.toLocaleLowerCase().includes(needle),
+  );
+  host.innerHTML = options.length
+    ? runOptionsHtml("workflow", options, selected)
+    : `<div class="run-filter-status">No workflows match “${escapeHtml(filterText.trim())}”.</div>`;
+}
+
+function branchOptionNote(branch) {
+  if (branch.isDefault) return "default";
+  return branch.protected ? "protected" : "";
+}
+
+function renderRunBranchOptions() {
+  const host = document.getElementById("run-branch-options");
+  if (!host) return;
+  const state = runBranchState;
+  const selected = runFiltersFromRoute(parseRoute()).branch;
+  const query = state.query.trim();
+  if (state.status === "error") {
+    host.innerHTML = `<div class="run-filter-status run-filter-error" role="alert">${escapeHtml(state.error ?? "Branches could not be loaded.")}<button class="app-button app-button-small" type="button" data-run-branch-retry>${icon("sync")} Retry</button></div>`;
+    return;
+  }
+  if (state.status === "loading" && !state.items.length) {
+    host.innerHTML = `<div class="run-filter-status" role="status">${icon("sync", "spin")} Loading branches…</div>`;
+    return;
+  }
+  const options = state.items.map((branch) => ({ value: branch.name, label: branch.name, note: branchOptionNote(branch) }));
+  if (!query) options.unshift({ value: "", label: "Any branch" });
+  host.innerHTML = options.length
+    ? runOptionsHtml("branch", options, selected)
+    : `<div class="run-filter-status">No branches match “${escapeHtml(query)}”.</div>`;
+  host.setAttribute("aria-busy", String(state.status === "loading"));
+}
+
+async function loadRunBranches(repository, query) {
+  const state = runBranchState;
+  const sequence = ++state.sequence;
+  state.controller?.abort();
+  state.repository = repository;
+  state.query = query;
+  const key = `${repository}\n${query}`;
+  const cached = state.cache.get(key);
+  if (cached) {
+    state.items = cached;
+    state.status = "ready";
+    state.error = null;
+    renderRunBranchOptions();
+    return;
+  }
+  state.status = "loading";
+  state.error = null;
+  renderRunBranchOptions();
+  const controller = new AbortController();
+  state.controller = controller;
+  try {
+    const payload = await api(
+      `/api/branches?repo=${encodeURIComponent(repository)}&q=${encodeURIComponent(query)}`,
+      { signal: controller.signal },
+    );
+    if (sequence !== state.sequence) return;
+    state.items = payload.branches ?? [];
+    state.status = "ready";
+    if (state.cache.size >= 50) state.cache.delete(state.cache.keys().next().value);
+    state.cache.set(key, state.items);
+  } catch (error) {
+    if (error?.name === "AbortError" || sequence !== state.sequence) return;
+    state.status = "error";
+    state.error = error instanceof Error ? error.message : String(error);
+  }
+  renderRunBranchOptions();
+}
+
+function setRunFilterPanelOpen(kind, open) {
+  for (const candidate of RUN_FILTER_KINDS) {
+    const panel = document.getElementById(`run-${candidate}-panel`);
+    const trigger = document.querySelector(`[data-toggle-run-filter="${candidate}"]`);
+    const isOpen = candidate === kind && open;
+    if (panel) panel.hidden = !isOpen;
+    if (trigger) trigger.setAttribute("aria-expanded", String(isOpen));
+    trigger?.closest(".run-filter-picker")?.classList.toggle("is-open", isOpen);
+  }
+  if (!kind || !open) return;
+  const repository = document.querySelector("[data-run-filters]")?.dataset.repository;
+  const search = document.getElementById(`run-${kind}-search`);
+  if (kind === "branch" && repository) {
+    if (search) search.value = "";
+    void loadRunBranches(repository, "");
+  } else if (kind === "workflow") {
+    if (search) search.value = "";
+    renderRunWorkflowOptions("");
+  }
+  const target = search ?? document.querySelector(`#run-${kind}-options [aria-selected="true"]`) ?? document.querySelector(`#run-${kind}-options [role="option"]`);
+  target?.focus();
+}
+
+function applyRunFilter(patch, focusSelector = null) {
+  const route = parseRoute();
+  if (route.name !== "runs") return;
+  const repository = normalizeRepository(route.repository);
+  const next = { ...runFiltersFromRoute(route), ...patch, page: 1 };
+  if (patch.event === "pull_request") next.excludePullRequests = false;
+  pendingRunFocus = focusSelector;
+  setRunFilterPanelOpen(null, false);
+  const hash = runsHash(repository, next);
+  if (location.hash === hash) {
+    pendingRunFocus = null;
+    return;
+  }
+  location.hash = hash;
+}
+
+function moveRunOptionFocus(input, delta) {
+  const panel = input.closest(".run-filter-panel");
+  const options = [...(panel?.querySelectorAll('[role="option"]') ?? [])];
+  if (!options.length) return false;
+  const current = options.findIndex((option) => option === document.activeElement || option.classList.contains("is-active"));
+  const next = Math.max(0, Math.min(options.length - 1, current < 0 ? (delta > 0 ? 0 : options.length - 1) : current + delta));
+  for (const option of options) option.classList.toggle("is-active", option === options[next]);
+  options[next].scrollIntoView({ block: "nearest" });
+  input.setAttribute("aria-activedescendant", options[next].id || "");
+  return true;
 }
 
 async function renderRuns(route, sequence, { force = false } = {}) {
@@ -3830,25 +4152,35 @@ async function renderRuns(route, sequence, { force = false } = {}) {
     { label: repository, href: pullsHashForRepository(repository) },
     { label: "Workflow runs" },
   ]);
-  loadingView();
-  const payload = await api(runRequestPath(repository, filters, { force }));
-  if (sequence !== renderSequence) return;
-  updateAccountFromPayload(payload);
+  if (force) {
+    for (const key of [...runArtifactCounts.keys()]) {
+      if (key.startsWith(`${repository}#`)) runArtifactCounts.delete(key);
+    }
+    runBranchState.cache.clear();
+    runWorkflowCatalog.items = null;
+  }
+  if (runBranchState.repository !== repository) {
+    runBranchState.items = [];
+    runBranchState.status = "idle";
+    runBranchState.cache.clear();
+  }
   view.removeAttribute("aria-busy");
-  view.innerHTML = runsPageHtml(payload, { ...route, repository });
-  void loadRunWorkflows(repository, filters.workflow, sequence);
-  void loadRunArtifactCounts(repository, payload.runs ?? [], sequence);
-}
-
-function navigateRunFilters(form) {
-  const repository = form.dataset.repository;
-  location.hash = runsHash(repository, {
-    event: form.elements.event.value,
-    status: form.elements.status.value,
-    workflow: form.elements.workflow.value,
-    branch: form.elements.branch.value.trim(),
-    excludePullRequests: form.elements.nopr.checked,
-  });
+  view.innerHTML = runsPageHtml(repository, filters);
+  if (pendingRunFocus) {
+    document.querySelector(pendingRunFocus)?.focus();
+    pendingRunFocus = null;
+  }
+  void loadRunWorkflows(repository, sequence);
+  try {
+    const payload = await api(runRequestPath(repository, filters, { force }));
+    if (sequence !== renderSequence) return;
+    updateAccountFromPayload(payload);
+    updateRunList(payload, repository, filters);
+    void loadRunArtifactCounts(repository, payload.runs ?? [], sequence);
+    applyRunArtifactFilter();
+  } catch (error) {
+    if (sequence === renderSequence) showRunListError(error);
+  }
 }
 
 function runDetailHtml(payload, repository, artifactBox) {
@@ -5682,6 +6014,9 @@ document.addEventListener("pointerdown", (event) => {
   if (!event.target.closest?.(".artifact-filter-picker")) {
     setArtifactFilterPanelOpen(null, false);
   }
+  if (!event.target.closest?.(".run-filter-picker")) {
+    setRunFilterPanelOpen(null, false);
+  }
   if (
     currentArtifact?.fileTree?.filterMenuOpen &&
     !event.target.closest?.("[data-file-tree-filter-root]")
@@ -5739,26 +6074,10 @@ accountAvatar.addEventListener("error", () => {
 });
 
 view.addEventListener("submit", (event) => {
-  const runsForm = event.target.closest("[data-runs-filter-form]");
-  if (runsForm) {
-    event.preventDefault();
-    navigateRunFilters(runsForm);
-    return;
-  }
   const form = event.target.closest("[data-pull-query-form]");
   if (!form) return;
   event.preventDefault();
   void commitPullQuery(form.querySelector("#pull-query"));
-});
-
-view.addEventListener("change", (event) => {
-  if (event.target.id === "runs-has-artifacts") {
-    runsHasArtifactsOnly = event.target.checked;
-    applyRunArtifactFilter();
-    return;
-  }
-  const runsForm = event.target.closest("[data-runs-filter-form]");
-  if (runsForm) navigateRunFilters(runsForm);
 });
 
 view.addEventListener("input", (event) => {
@@ -5773,6 +6092,19 @@ view.addEventListener("input", (event) => {
   }
   if (event.target.id === "pull-author-filter") {
     renderPullAuthorOptions(event.target.value);
+    return;
+  }
+  if (event.target.matches?.("[data-run-search]")) {
+    if (event.target.dataset.runSearch === "workflow") {
+      renderRunWorkflowOptions(event.target.value);
+    } else {
+      window.clearTimeout(runBranchState.timer);
+      const repository = document.querySelector("[data-run-filters]")?.dataset.repository;
+      runBranchState.timer = window.setTimeout(
+        () => void loadRunBranches(repository, event.target.value.trim()),
+        RUN_BRANCH_DEBOUNCE_MS,
+      );
+    }
     return;
   }
   if (event.target.id === "artifact-filter") {
@@ -5832,6 +6164,49 @@ view.addEventListener("click", (event) => {
   }
   if (event.target.id === "pull-query") {
     renderPullQuerySuggestions(event.target);
+    return;
+  }
+  const runFilterTrigger = event.target.closest("[data-toggle-run-filter]");
+  if (runFilterTrigger) {
+    event.preventDefault();
+    setRunFilterPanelOpen(
+      runFilterTrigger.dataset.toggleRunFilter,
+      runFilterTrigger.getAttribute("aria-expanded") !== "true",
+    );
+    return;
+  }
+  if (event.target.closest("[data-close-run-filter]")) {
+    event.preventDefault();
+    const trigger = document.querySelector('[data-toggle-run-filter][aria-expanded="true"]');
+    setRunFilterPanelOpen(null, false);
+    trigger?.focus();
+    return;
+  }
+  const runFilterOption = event.target.closest("[data-run-filter-option]");
+  if (runFilterOption) {
+    event.preventDefault();
+    const kind = runFilterOption.dataset.runFilterOption;
+    applyRunFilter({ [kind]: runFilterOption.dataset.value }, `[data-toggle-run-filter="${kind}"]`);
+    return;
+  }
+  const runToggle = event.target.closest("[data-run-toggle]");
+  if (runToggle) {
+    event.preventDefault();
+    const name = runToggle.dataset.runToggle;
+    const current = runFiltersFromRoute(parseRoute())[name];
+    applyRunFilter({ [name]: !current }, `[data-run-toggle="${name}"]`);
+    return;
+  }
+  if (event.target.closest("[data-run-reset]")) {
+    event.preventDefault();
+    applyRunFilter({ event: "", status: "", workflow: "", branch: "" });
+    return;
+  }
+  if (event.target.closest("[data-run-branch-retry]")) {
+    event.preventDefault();
+    const repository = document.querySelector("[data-run-filters]")?.dataset.repository;
+    runBranchState.cache.clear();
+    void loadRunBranches(repository, runBranchState.query);
     return;
   }
   const artifactFilterTrigger = event.target.closest("[data-toggle-artifact-filter]");
@@ -6151,6 +6526,36 @@ view.addEventListener("keyup", (event) => {
 });
 
 view.addEventListener("keydown", (event) => {
+  const runSearch = event.target.matches?.("[data-run-search]") ? event.target : null;
+  if (runSearch && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+    if (moveRunOptionFocus(runSearch, event.key === "ArrowDown" ? 1 : -1)) event.preventDefault();
+    return;
+  }
+  if (runSearch && event.key === "Enter") {
+    event.preventDefault();
+    const panel = runSearch.closest(".run-filter-panel");
+    const options = [...panel.querySelectorAll('[role="option"]')];
+    const target = options.find((option) => option.classList.contains("is-active")) ?? (runSearch.value.trim() ? options[0] : null);
+    target?.click();
+    return;
+  }
+  const runOption = event.target.closest?.("[data-run-filter-option]");
+  if (runOption && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+    const options = [...runOption.closest(".run-filter-options").querySelectorAll('[role="option"]')];
+    const next = options[options.indexOf(runOption) + (event.key === "ArrowDown" ? 1 : -1)];
+    if (next) {
+      event.preventDefault();
+      next.focus();
+    }
+    return;
+  }
+  const openRunFilter = document.querySelector('[data-toggle-run-filter][aria-expanded="true"]');
+  if (event.key === "Escape" && openRunFilter) {
+    event.preventDefault();
+    setRunFilterPanelOpen(null, false);
+    openRunFilter.focus();
+    return;
+  }
   if (event.target.id === "pull-query") {
     const input = event.target;
     const suggestions = document.getElementById("pull-query-suggestions");

@@ -168,7 +168,7 @@ async function initialRouteFromInput(input) {
   }
   if (input.runId && input.repository) return runHash(repository, input.runId);
   if (input.view === "runs" && input.repository) {
-    return runsHash(repository, { event: input.event, status: input.status, branch: input.branch, workflow: input.workflow, excludePullRequests: input.excludePullRequests === true });
+    return runsHash(repository, { event: input.event, status: input.status, branch: input.branch, workflow: input.workflow, excludePullRequests: input.excludePullRequests, hasArtifacts: input.hasArtifacts });
   }
   if (input.url) {
     const parsed = await api("/api/targets/parse", { method: "POST", body: { input: input.url, repository } });
@@ -306,6 +306,11 @@ function installJobPanel() {
   jobPanel.setAttribute("aria-live", "polite");
   jobPanel.hidden = true;
   document.body.append(jobPanel);
+  // Keep toasts above the panel rather than overlapping it in the same corner.
+  new ResizeObserver(() => {
+    const height = jobPanel.hidden ? 0 : jobPanel.offsetHeight;
+    document.documentElement.style.setProperty("--job-panel-offset", height ? `${height + 8}px` : "0px");
+  }).observe(jobPanel);
   jobPanel.addEventListener("click", (event) => {
     const button = event.target instanceof Element ? event.target.closest("[data-job-action]") : null;
     if (!button) return;
@@ -399,21 +404,37 @@ function jobCardHtml(job) {
       return `<form class="job-prompt" data-limit-kind="${escapeHtml(prompt.kind)}" data-limit-unit="${escapeHtml(prompt.unit)}">
         <div><strong>${escapeHtml(prompt.label)}</strong> is ${escapeHtml(formatLimitValue(prompt.current, prompt.unit))}, above your ${escapeHtml(formatLimitValue(prompt.limit, prompt.unit))} warning. ${active ? "Work is continuing." : ""} Allow a larger value (at least ${escapeHtml(formatLimitValue(prompt.minimum, prompt.unit))}).</div>
         <label>New limit ${unitLabel ? `(${unitLabel})` : ""} <input type="number" name="value" min="${min}" value="${min}" required class="form-control input-sm"></label>
-        <button type="submit" class="btn btn-sm">Allow larger</button>
+        <button type="submit" class="app-button app-button-small">Allow larger</button>
       </form>`;
     })
     .join("");
   const status = { running: "Running", succeeded: "Done", failed: "Failed", cancelled: "Cancelled", interrupted: "Interrupted" }[job.status] ?? job.status;
+  const progress = job.progress ?? {};
+  const received = Number(progress.receivedBytes) || 0;
+  const total = Number(progress.totalBytes) || 0;
+  const rate = Number(progress.bytesPerSecond) || 0;
+  const eta = formatRemainingTime(progress.etaSeconds);
+  const leftDetail = pct == null ? "Working…" : `${Math.round(pct)}%${total ? ` · ${formatBytes(received)} of ${formatBytes(total)}` : received ? ` · ${formatBytes(received)}` : ""}`;
+  const rightDetail = [rate > 0 ? `${formatBytes(rate)}/s` : "", eta ?? ""].filter(Boolean).join(" · ");
+  const stage = job.stage && active ? String(job.stage).replace(/^./, (c) => c.toLocaleUpperCase()) : "";
+  const meta = [stage, job.attempt > 1 ? `Attempt ${job.attempt}` : "", job.repository ?? ""].filter(Boolean).join(" · ");
   return `<section class="job-card" data-job-id="${escapeHtml(job.id)}" data-status="${escapeHtml(job.status)}">
-    <strong>${escapeHtml(title)}</strong>
-    <div class="job-meta">${escapeHtml(status)}${job.stage && active ? ` · ${escapeHtml(job.stage)}` : ""}${job.attempt > 1 ? ` · attempt ${job.attempt}` : ""}</div>
-    ${active ? `<progress ${pct == null ? "" : `value="${pct}" max="100"`} aria-label="Progress"></progress>` : ""}
+    <div class="job-card-head">
+      ${icon(job.kind === "stream" ? "file-zip" : "download", "job-card-icon")}
+      <div class="job-card-title">
+        <strong title="${escapeHtml(title)}">${escapeHtml(title)}</strong>
+        ${meta ? `<span class="job-meta">${escapeHtml(meta)}</span>` : ""}
+      </div>
+      <span class="job-status" data-status="${escapeHtml(job.status)}">${escapeHtml(status)}</span>
+    </div>
+    ${active ? `<progress ${pct == null ? "" : `value="${pct}" max="100"`} aria-label="Progress for ${escapeHtml(title)}"></progress>
+    <div class="job-progress-meta"><span>${escapeHtml(leftDetail)}</span><span>${escapeHtml(rightDetail)}</span></div>` : ""}
     ${job.error ? `<div class="job-error">${escapeHtml(job.error)}</div>` : ""}
     ${prompts}
     <div class="job-actions">
-      ${active ? `<button type="button" class="btn btn-sm" data-job-action="cancel" data-job-id="${escapeHtml(job.id)}">Cancel</button>` : ""}
-      ${!active && job.kind !== "stream" && job.status !== "succeeded" ? `<button type="button" class="btn btn-sm btn-primary" data-job-action="retry" data-job-id="${escapeHtml(job.id)}">Retry</button>` : ""}
-      ${!active ? `<button type="button" class="btn btn-sm" data-job-action="dismiss" data-job-id="${escapeHtml(job.id)}">Dismiss</button>` : ""}
+      ${active ? `<button type="button" class="app-button app-button-small" data-job-action="cancel" data-job-id="${escapeHtml(job.id)}">Cancel</button>` : ""}
+      ${!active && job.kind !== "stream" && job.status !== "succeeded" ? `<button type="button" class="app-button app-button-small app-button-primary" data-job-action="retry" data-job-id="${escapeHtml(job.id)}">Retry</button>` : ""}
+      ${!active ? `<button type="button" class="app-button app-button-small" data-job-action="dismiss" data-job-id="${escapeHtml(job.id)}">Dismiss</button>` : ""}
     </div>
   </section>`;
 }
@@ -424,7 +445,10 @@ function renderJobPanel() {
   const warnings = jobWarnings.map((text) => `<div class="flash flash-warn">${escapeHtml(text)}</div>`).join("");
   jobPanel.hidden = visible.length === 0 && !warnings;
   if (jobPanel.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
-  jobPanel.innerHTML = `${warnings}${visible.map(jobCardHtml).join("")}`;
+  const running = visible.filter((job) => job.status === "running").length;
+  const heading = running ? `${running} running` : `${visible.length} need${visible.length === 1 ? "s" : ""} attention`;
+  jobPanel.innerHTML = `<header class="job-panel-head"><strong>Background jobs</strong>${visible.length ? `<span class="Counter">${escapeHtml(heading)}</span>` : ""}</header>
+    <div class="job-panel-body">${warnings}${visible.map(jobCardHtml).join("")}</div>`;
 }
 
 /* ---------- docs ---------- */
@@ -479,11 +503,11 @@ const DOCS_SECTIONS = [
     <h2>Browse a repository's runs</h2>
     <ol class="docs-steps">
       <li><strong>Open the tab.</strong> Choose a repository, then select <strong>Workflow runs</strong> beside Pull requests. You can also press <kbd>g</kbd> then <kbd>b</kbd> and enter a request such as <code>show scheduled runs in github/awesome-copilot</code>, or paste a GitHub <code>/actions</code> or <code>/actions/runs/123</code> link.</li>
-      <li><strong>Narrow the list.</strong> Filter by event (Scheduled, Manual, Push, Release and more), status, workflow and branch. <strong>Hide pull request runs</strong> removes runs triggered by pull requests, leaving only the runs that have no PR.</li>
+      <li><strong>Narrow the list.</strong> Use the Event (Scheduled, Manual, Push, Release and more), Status, Workflow and Branch filters. In Branch, start typing to find a branch; suggestions come from the repository, and the default branch is listed first. <strong>Hide PR runs</strong> and <strong>Has artifacts</strong> start on, so you see runs that have no pull request and produced something to inspect. Select either button to turn it off, or <strong>Clear filters</strong> to reset the pickers.</li>
       <li><strong>Open a run.</strong> The run page lists its artifacts. Inspect one to browse its files, preview it, use Browser view, copy a share link, or re-run the workflow, exactly as you would from a pull request.</li>
     </ol>
     <h2>Find runs that have artifacts</h2>
-    <p>Each row shows how many artifacts its run produced once that count loads. Select <strong>Has artifacts</strong> to hide runs that have none on the current page. A run that was triggered by a pull request shows a link to that PR.</p>
+    <p>Each row shows how many artifacts its run produced once that count loads. Because <strong>Has artifacts</strong> is on by default, runs with none are hidden on the current page; if that hides every run, Explorer says so and offers to show them or check older runs. A run that was triggered by a pull request shows a link to that PR.</p>
     <h2>Limits worth knowing</h2>
     <p>Each page shows 30 runs, and GitHub exposes only the newest 1,000 runs for a filtered search. Artifacts expire after the repository's retention period, so an old scheduled run may list its artifacts as expired.</p>
     <div class="docs-next"><strong>Next</strong><a href="#/docs/sharing">Share a run or artifact</a><a href="#/docs/recovery">Re-run a workflow</a></div>`],
@@ -533,7 +557,7 @@ const DOCS_SECTIONS = [
     <p><strong>Controlled current state</strong> captures the isolated Chromium session, not the embedded iframe. A form edited only in the iframe is not transferred when you switch modes.</p>
     <details class="docs-details"><summary>Set up Chromium if capture is unavailable</summary><p>Setup is explicit; Explorer does not install anything silently. Run <code>npm install</code> in the extension folder (installs optional <code>playwright-core</code>) and <code>npx playwright-core install chromium</code>.</p><p>You can set <code>PR_ARTIFACT_EXPLORER_CHROMIUM</code> to a Chromium or Chrome executable. The old <code>PR_ARTIFACT_EXPLORER_PLAYWRIGHT</code> variable is no longer supported and must be unset. Installed Chrome and Edge are tried as a fallback.</p><p>Files are saved in the session’s <code>artifact-explorer-screenshots</code> folder.</p></details>`],
   ["jobs", "Work that keeps going", `
-    <p class="docs-lead">You can keep reviewing while an artifact downloads. Downloads, extraction, and indexing run as background jobs; leaving the page or restarting the canvas does not cancel them.</p>
+    <p class="docs-lead">You can keep reviewing while an artifact downloads. Downloads, extraction, and indexing run as background jobs; leaving the page or restarting the canvas does not cancel them. Their progress appears in a panel at the bottom right showing percent, bytes, speed and time left.</p>
     <h2>A warning is not a stop sign</h2>
     <p>Soft limits flag work larger or slower than your current warning settings: download size, ZIP entry count, directory size, decompressed file size, and idle time. When a limit is crossed, the job panel shows the live value and <strong>work continues</strong>.</p>
     <ol class="docs-steps">

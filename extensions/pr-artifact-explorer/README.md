@@ -13,7 +13,7 @@ Artifact Explorer is a community-built Copilot canvas extension with the interna
 ## What it does
 
 - Navigates repositories, pull requests, workflow runs, artifacts, and files with persistent breadcrumbs.
-- Browses workflow runs that have no pull request. A repository-level **Workflow runs** tab lists runs from any trigger (scheduled/cron, manual, push, release, and more) with event, status, branch and workflow filters, a "Hide pull request runs" toggle, paging, linked-PR chips, and lazily loaded artifact counts with a "Has artifacts" filter. A run page lists its artifacts and reuses the same preview, Browser view, sharing and Re-run features.
+- Browses workflow runs that have no pull request. A repository-level **Workflow runs** tab lists runs from any trigger (scheduled/cron, manual, push, release, and more) with event, status, workflow and branch pickers (the branch picker autocompletes real branches), paging, and linked-PR chips. "Hide PR runs" and "Has artifacts" are on by default, so the list starts with runs that have no pull request and produced artifacts; turn either off to see everything. Artifact counts load lazily per run. A run page lists its artifacts and reuses the same preview, Browser view, sharing and Re-run features.
 - Loads pull requests progressively, caches result pages, and supports query filters for fast review.
 - Bounds artifact discovery to the newest 30 workflow runs per head commit and reports when older runs are omitted.
 - Downloads an artifact once, indexes its ZIP, and streams entries directly from the archive without extracting them to disk.
@@ -23,7 +23,7 @@ Artifact Explorer is a community-built Copilot canvas extension with the interna
 - Keeps large files available for direct download and falls back to the original artifact archive when a ZIP entry uses an unsupported encoding.
 - Provides per-artifact cleanup, clear-all cleanup, and a cache usage view.
 - Uses a responsive Primer interface that follows Copilot's light and dark themes.
-- Runs downloads, indexing, and decompression as recoverable background jobs that are independent of any request or view. Closing the view, retrying, or restarting the canvas never kills them, and a completed ZIP is reused on retry. A provider termination is reported honestly as `interrupted` with a Retry action.
+- Runs downloads, indexing, and decompression as recoverable background jobs that are independent of any request or view, with progress (percent, bytes, speed, time left) in a sized panel that toast messages stack above. Closing the view, retrying, or restarting the canvas never kills them, and a completed ZIP is reused on retry. A provider termination is reported honestly as `interrupted` with a Retry action.
 - Soft limits (download size, ZIP entries, central-directory size, streamed entry size, idle time) never stop work. When one is crossed the job keeps running and the canvas asks for a larger value; the new limit must be at least the live value at submission and is checked atomically against live progress.
 - Supports ZIP64 and validates the full central directory. The only hard stops are real integrity, safe-integer, path, and free-disk guards; there are no hidden size ceilings.
 - Provides a browser-style preview for localhost and HTTP(S) URLs: Mobile/Tablet/Desktop/Native/Custom viewport presets, windowed zoom (separate from the viewport), back/forward/refresh, natural-language navigation, and a keyboard-hint overlay (`?`). Pages that forbid framing are reported, never bypassed.
@@ -75,7 +75,7 @@ Reload extensions, then ask Copilot to open the `pr-artifact-explorer` canvas. Y
 ## Agent actions
 
 - `open_pull_request { repository, pullNumber }` - navigate an open canvas to a pull request.
-- `open_runs { repository, event?, status?, branch?, workflow?, excludePullRequests? }` - open a repository's workflow runs (for example `event: "schedule"` for cron runs), whether or not they belong to a pull request.
+- `open_runs { repository, event?, status?, branch?, workflow?, excludePullRequests?, hasArtifacts? }` - open a repository's workflow runs (for example `event: "schedule"` for cron runs). `excludePullRequests` and `hasArtifacts` default to true; pass false to include PR runs or runs with no artifacts.
 - `open_run { repository, runId }` - open one workflow run and its artifacts.
 - `open_target { input }` - open any share link, URL, issue/PR, workflow run or Actions page, artifact, or route.
 - `inspect_artifact { repository, artifactId }` - start a recoverable job to download, index, detect, and open an Actions artifact.

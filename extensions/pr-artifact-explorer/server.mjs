@@ -37,6 +37,7 @@ import {
   getRepository,
   getWorkflowRun,
   GitHubApiError,
+  listBranches,
   listRepositoryContributors,
   listPullRequestArtifacts,
   listRunArtifactCounts,
@@ -834,6 +835,22 @@ async function handleApi(req, res, entry, url) {
       { force: url.searchParams.get("refresh") === "1" },
     );
     return sendJson(res, 200, { repository, workflows, account: auth.active });
+  }
+
+  if (req.method === "GET" && path === "/api/branches") {
+    const repository = normalizeRepository(url.searchParams.get("repo"));
+    const query = url.searchParams.get("q") ?? "";
+    const { auth } = await resolveAuth(repository);
+    const load = () => listBranches(auth.activeToken, repository, query);
+    // Branch names are case-sensitive, but cache keys are case-folded, so only the unfiltered list is cached.
+    const payload = query.trim()
+      ? await load()
+      : await pullRequestCache.get(
+          pullRequestCacheKey(auth.active, "branches", [repository]),
+          load,
+          { force: url.searchParams.get("refresh") === "1" },
+        );
+    return sendJson(res, 200, { repository, ...payload, account: auth.active });
   }
 
   if (req.method === "GET" && path === "/api/runs") {

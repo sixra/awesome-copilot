@@ -797,6 +797,56 @@ export async function getWorkflowRun(token, repository, runId) {
   };
 }
 
+export const MAX_BRANCH_SUGGESTIONS = 30;
+
+// Branch names cannot contain control characters, "..", or dot-only path segments.
+export function normalizeBranchQuery(value) {
+  const query = String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 100);
+  const segments = query.split("/");
+  if (query.includes("..") || segments.some((segment) => segment === ".")) return null;
+  return query;
+}
+
+export async function listBranches(token, repository, query = "") {
+  const normalized = normalizeBranchQuery(query);
+  if (normalized === null) return { branches: [], defaultBranch: null };
+  const base = `/repos/${repositoryPath(repository)}`;
+  if (!normalized) {
+    const [info, payload] = await Promise.all([
+      githubRequest(token, base),
+      githubRequest(token, `${base}/branches?per_page=${MAX_BRANCH_SUGGESTIONS}`),
+    ]);
+    const defaultBranch = info?.default_branch ?? null;
+    const branches = (payload ?? []).map((branch) => ({
+      name: branch.name,
+      protected: branch.protected === true,
+      isDefault: branch.name === defaultBranch,
+    }));
+    if (defaultBranch && !branches.some((branch) => branch.isDefault)) {
+      branches.unshift({ name: defaultBranch, protected: false, isDefault: true });
+    }
+    branches.sort((left, right) => Number(right.isDefault) - Number(left.isDefault));
+    return { branches: branches.slice(0, MAX_BRANCH_SUGGESTIONS), defaultBranch };
+  }
+  const prefix = normalized.split("/").map(encodeURIComponent).join("/");
+  let refs;
+  try {
+    refs = await githubRequest(
+      token,
+      `${base}/git/matching-refs/heads/${prefix}?per_page=${MAX_BRANCH_SUGGESTIONS}`,
+    );
+  } catch (error) {
+    if (error instanceof GitHubApiError && error.status === 404) refs = [];
+    else throw error;
+  }
+  const branches = (Array.isArray(refs) ? refs : [])
+    .map((ref) => String(ref.ref ?? "").replace(/^refs\/heads\//, ""))
+    .filter(Boolean)
+    .slice(0, MAX_BRANCH_SUGGESTIONS)
+    .map((name) => ({ name, protected: false, isDefault: false }));
+  return { branches, defaultBranch: null };
+}
+
 export async function listRunArtifactCounts(token, repository, runIds) {
   const ids = [...new Set((runIds ?? []).map(Number))]
     .filter((id) => Number.isSafeInteger(id) && id > 0)

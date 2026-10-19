@@ -64,14 +64,24 @@ export function runsUrl(target) {
   return qualifiers.length ? `${base}?${new URLSearchParams({ query: qualifiers.join(" ") })}` : base;
 }
 
+// Hiding PR runs and showing only runs with artifacts are on unless a link says otherwise, so only an explicit 0/1 is kept.
+function explicitToggle(value) {
+  if (value === true || value === "1" || value === "true") return true;
+  if (value === false || value === "0" || value === "false") return false;
+  return undefined;
+}
+
 function runFilters(source) {
-  const filters = normalizeRunFilters(source);
+  const filters = normalizeRunFilters({ ...source, excludePullRequests: false });
   const result = {};
   if (filters.event) result.event = filters.event;
   if (filters.status) result.status = filters.status;
   if (filters.branch) result.branch = filters.branch;
   if (filters.workflow) result.workflow = filters.workflow;
-  if (filters.excludePullRequests) result.excludePullRequests = true;
+  const excludePullRequests = explicitToggle(source.excludePullRequests);
+  if (excludePullRequests !== undefined) result.excludePullRequests = excludePullRequests;
+  const hasArtifacts = explicitToggle(source.hasArtifacts);
+  if (hasArtifacts !== undefined) result.hasArtifacts = hasArtifacts;
   if (filters.page > 1) result.page = filters.page;
   return result;
 }
@@ -82,7 +92,8 @@ function runsQueryString(target) {
   if (target.status) query.set("status", target.status);
   if (target.branch) query.set("branch", target.branch);
   if (target.workflow) query.set("workflow", target.workflow);
-  if (target.excludePullRequests) query.set("nopr", "1");
+  if (target.excludePullRequests !== undefined) query.set("nopr", target.excludePullRequests ? "1" : "0");
+  if (target.hasArtifacts !== undefined) query.set("artifacts", target.hasArtifacts ? "1" : "0");
   if (target.page > 1) query.set("page", String(target.page));
   return query.toString();
 }
@@ -221,6 +232,7 @@ function fromExplorerPath(route, query) {
         branch: query.get("branch"),
         workflow: query.get("workflow"),
         excludePullRequests: query.get("nopr"),
+        hasArtifacts: query.get("artifacts"),
         page: query.get("page"),
       }),
     };
@@ -329,6 +341,9 @@ function naturalLanguage(text) {
     else if (/\bpush(?:es)?\b/.test(lower)) filters.event = "push";
     if (/\b(?:fail|failed|failing|failures?)\b/.test(lower)) filters.status = "failure";
     if (/\b(?:without|no|not|non)[\s-]+(?:from\s+)?(?:a\s+)?(?:pr|prs|pull requests?)\b/.test(lower)) filters.excludePullRequests = true;
+    else if (/\b(?:including|with|and|all)\b.*\b(?:pr|prs|pull requests?)\b|\ball (?:workflow )?runs\b/.test(lower)) filters.excludePullRequests = false;
+    if (/\b(?:with|that have|having)\s+artifacts?\b/.test(lower)) filters.hasArtifacts = true;
+    else if (/\b(?:all (?:workflow )?runs|without artifacts?|even without artifacts?|no artifacts?)\b/.test(lower)) filters.hasArtifacts = false;
     return { kind: "runs", repository, ...runFilters(filters) };
   }
   if (repository && /\b(?:open|show|go to|browse|view|pulls?)\b/.test(lower)) {

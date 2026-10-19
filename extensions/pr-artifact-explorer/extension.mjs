@@ -93,7 +93,8 @@ const RUN_FILTER_PROPERTIES = {
   status: { type: "string", description: "Run status or conclusion filter, e.g. success, failure or in_progress." },
   branch: { type: "string", description: "Branch name filter." },
   workflow: { type: "string", description: "Workflow file name (e.g. ci.yml) or numeric workflow id." },
-  excludePullRequests: { type: "boolean", description: "Hide runs triggered by pull requests." },
+  excludePullRequests: { type: "boolean", description: "Hide runs triggered by pull requests. Defaults to true in the canvas; pass false to include them." },
+  hasArtifacts: { type: "boolean", description: "Show only runs that produced artifacts. Defaults to true in the canvas; pass false to include runs without artifacts." },
 };
 
 function viewFragment(url, input = {}) {
@@ -195,7 +196,7 @@ const session = await joinSession({
               kind: "runs",
               repository,
               ...Object.fromEntries(
-                Object.entries(ctx.input ?? {}).filter(([key, value]) => key in RUN_FILTER_PROPERTIES && value),
+                Object.entries(ctx.input ?? {}).filter(([key, value]) => key in RUN_FILTER_PROPERTIES && value !== undefined && value !== null && value !== ""),
               ),
             };
             const route = routeFor(target);

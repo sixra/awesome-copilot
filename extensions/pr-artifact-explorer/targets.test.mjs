@@ -208,3 +208,15 @@ test("natural language reaches scheduled and non-PR runs", () => {
   assert.throws(() => parseTarget("show scheduled runs"), TargetError);
   assert.throws(() => parseTarget("dotnet runs fine"), TargetError);
 });
+test("hide-PR and has-artifacts toggles are on by default and only explicit values round-trip", () => {
+  assert.equal(parseTarget(`${R} actions`).excludePullRequests, undefined);
+  assert.equal(routeFor({ kind: "runs", repository: R }), "#/runs/github%2Fawesome-copilot");
+  const off = parseTarget("#/runs/github%2Fawesome-copilot?nopr=0&artifacts=0");
+  assert.deepEqual(off, { kind: "runs", repository: R, excludePullRequests: false, hasArtifacts: false });
+  assert.equal(routeFor(off), "#/runs/github%2Fawesome-copilot?nopr=0&artifacts=0");
+  assert.deepEqual(parseTarget("#/runs/github%2Fawesome-copilot?nopr=1&artifacts=1"), { kind: "runs", repository: R, excludePullRequests: true, hasArtifacts: true });
+  assert.deepEqual(parseTarget("#/runs/github%2Fawesome-copilot?nopr=maybe"), { kind: "runs", repository: R });
+  assert.deepEqual(parseTarget("show all runs", { defaultRepository: R }), { kind: "runs", repository: R, excludePullRequests: false, hasArtifacts: false });
+  assert.deepEqual(parseTarget(`show scheduled runs with artifacts in ${R}`), { kind: "runs", repository: R, event: "schedule", hasArtifacts: true });
+  assert.deepEqual(parseTarget(`show runs including pull requests in ${R}`), { kind: "runs", repository: R, excludePullRequests: false });
+});

@@ -3,9 +3,11 @@ import test from "node:test";
 
 import {
   getWorkflowRun,
+  listBranches,
   listRunArtifactCounts,
   listWorkflowRuns,
   listWorkflows,
+  normalizeBranchQuery,
   normalizeRunFilters,
 } from "./github.mjs";
 import { prepareRerun } from "./rerun.mjs";
@@ -166,6 +168,43 @@ test("artifact counts are bounded, tolerate per-run failures and never throw for
 
   const many = await listRunArtifactCounts("token", "o/r", Array.from({ length: 80 }, (_, index) => index + 1));
   assert.equal(Object.keys(many).length, 30);
+});
+
+test("branch suggestions list the default branch first and match by prefix", async (t) => {
+  const calls = mockFetch(t, (url) => {
+    if (url.pathname === "/repos/o/r") return json({ default_branch: "main" });
+    if (url.pathname === "/repos/o/r/branches") {
+      return json([{ name: "alpha", protected: false }, { name: "main", protected: true }, { name: "zeta", protected: false }]);
+    }
+    if (url.pathname === "/repos/o/r/git/matching-refs/heads/release/1") {
+      return json([{ ref: "refs/heads/release/1.0" }, { ref: "refs/heads/release/1.1" }]);
+    }
+    if (url.pathname.startsWith("/repos/o/r/git/matching-refs/heads/nope")) return json({ message: "Not Found" }, 404);
+    return json({ message: "unexpected" }, 500);
+  });
+  const listed = await listBranches("token", "o/r");
+  assert.deepEqual(listed.branches.map((branch) => branch.name), ["main", "alpha", "zeta"]);
+  assert.equal(listed.branches[0].isDefault, true);
+  assert.equal(listed.branches[0].protected, true);
+  assert.equal(listed.defaultBranch, "main");
+
+  const matched = await listBranches("token", "o/r", " release/1 ");
+  assert.deepEqual(matched.branches.map((branch) => branch.name), ["release/1.0", "release/1.1"]);
+  assert.equal(calls.at(-1).searchParams.get("per_page"), "30");
+
+  assert.deepEqual((await listBranches("token", "o/r", "nope")).branches, []);
+});
+
+test("branch queries that could traverse the API path are rejected without a request", async (t) => {
+  const calls = mockFetch(t, () => json([]));
+  for (const query of ["../x", "a/../b", "./x", "a/./b", "..", "x\u0000y/../z"]) {
+    assert.deepEqual(await listBranches("token", "o/r", query), { branches: [], defaultBranch: null }, query);
+  }
+  assert.equal(normalizeBranchQuery("  feature/x \u0007"), "feature/x");
+  assert.equal(normalizeBranchQuery("a".repeat(300)).length, 100);
+  await listBranches("token", "o/r", "feat ure/é#?");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].pathname, "/repos/o/r/git/matching-refs/heads/feat%20ure/%C3%A9%23%3F");
 });
 
 test("re-run context works for a run that has no pull request or artifact", async (t) => {
