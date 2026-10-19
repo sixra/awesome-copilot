@@ -582,24 +582,57 @@ function updateProject(project, picked = false) {
     renderWhere(picked);
     renderStartMark();
     renderBuild();
-    $("resource-context").innerHTML = project ? `<div class="context"><span class="muted">Resource group · ${escape(project.location)}</span><strong>${escape(project.resourceGroup)}</strong><p class="muted">This resource group will also host additional resources such as Application Insights and Container Apps.</p></div>` : "";
     renderProjects();
 }
 
-function applyResources(result) {
+function applyResources(result, picked = false) {
     projects = result.projects;
     $("subscription").innerHTML = result.subscriptions.map(row => `<option value="${escape(row.id)}">${escape(row.name)}</option>`).join("");
     resourceSubscription = result.subscriptionId ?? result.selected?.subscriptionId ?? "";
     $("subscription").value = resourceSubscription;
-    updateProject(result.selected);
+    updateProject(result.selected, picked);
     if (result.warnings?.length) notice(`Some resources could not be listed: ${result.warnings.join("; ")}`, true);
 }
 
-function renderProjects() {
-    const query = $("project-search").value.toLowerCase();
-    const filtered = projects.filter(project => `${project.name} ${project.account} ${project.resourceGroup}`.toLowerCase().includes(query));
-    $("projects").innerHTML = filtered.map(project => `<button class="project-option" data-project="${escape(project.id)}" aria-pressed="${project.id === selected?.id}"><strong>${project.id === selected?.id ? "✓ " : ""}${escape(project.name)}</strong><small>${escape(project.account)} · ${escape(project.resourceGroup)}</small></button>`).join("") ||
-        `<p class="muted">${projects.length ? "No matching projects. Try a different search." : "No Foundry projects found in this subscription. Create one below or choose another subscription."}</p>`;
+const PROJECT_INTRO = "Copilot builds in this project. Its resource group brings the rest of your solution together.";
+let projectOptions = "";
+
+// A native dropdown keeps the picker compact: projects are grouped by resource group, and typing a name jumps to it.
+// status is "loading" while discovery runs, or the Error when discovery found nothing to keep.
+function renderProjects(status) {
+    const select = $("project");
+    const loading = status === "loading";
+    const error = status instanceof Error ? status : null;
+    const listed = !loading && projects.some(project => project.id === selected?.id);
+    let markup;
+    if (loading || !projects.length) {
+        markup = `<option value="">${loading ? "Discovering projects…" : error ? "Projects unavailable" : "No projects found"}</option>`;
+    } else {
+        const groups = new Map(), names = new Map();
+        for (const project of [...projects].sort((a, b) => a.resourceGroup.localeCompare(b.resourceGroup) || a.name.localeCompare(b.name))) {
+            groups.set(project.resourceGroup, [...(groups.get(project.resourceGroup) ?? []), project]);
+            names.set(project.name, (names.get(project.name) ?? 0) + 1);
+        }
+        // Same-named projects in different Foundry resources are told apart by their account.
+        const label = project => escape(project.name) + (names.get(project.name) > 1 ? ` · ${escape(project.account)}` : "");
+        markup = (listed ? "" : '<option value="" disabled>Choose a project</option>') +
+            [...groups].map(([group, rows]) => `<optgroup label="${escape(group)}">${rows.map(project =>
+                `<option value="${escape(project.id)}">${label(project)}</option>`).join("")}</optgroup>`).join("");
+    }
+    // Unchanged options are not rewritten, so the 5-second project sync leaves an open dropdown alone.
+    if (markup !== projectOptions) {
+        select.innerHTML = markup;
+        projectOptions = markup;
+    }
+    // Also reverts a choice the server rejected.
+    select.value = listed ? selected.id : "";
+    select.disabled = loading || !projects.length;
+    const help = $("project-help");
+    help.classList.toggle("error", Boolean(error));
+    help.innerHTML = error ? `${escape(error.message)} Refresh to retry.`
+        : !loading && !projects.length ? "No Foundry projects in this subscription. Create one below or choose another subscription."
+        : listed ? `Application Insights, Container Apps and other solution resources deploy to resource group <strong>${escape(selected.resourceGroup)}</strong>${selected.location ? ` (${escape(selected.location)})` : ""}.`
+        : PROJECT_INTRO;
 }
 
 async function monitoring() {
@@ -620,12 +653,14 @@ async function monitoring() {
 async function discover(subscriptionId) {
     if (discovering) return;
     discovering = true;
+    const refocus = document.activeElement === $("subscription");
     $("subscription").disabled = true;
     renderWhere();
-    $("projects").innerHTML = '<p class="loading">Discovering Foundry projects…</p>';
+    renderProjects("loading");
     try {
         const result = await api("discover", subscriptionId ? { subscriptionId } : {});
-        applyResources(result);
+        // A subscription the user chose counts as a pick, so step 2 stays open on the project discovery selects.
+        applyResources(result, Boolean(subscriptionId));
         announce(`${projects.length} Foundry ${projects.length === 1 ? "project" : "projects"} found.`);
         await monitoring();
     } catch (error) {
@@ -636,11 +671,17 @@ async function discover(subscriptionId) {
             notice(`Could not refresh Foundry projects: ${error.message} Current selection kept.`, true);
         } else {
             updateProject(null);
-            failure($("projects"), error);
+            renderProjects(error);
             announce(`Could not discover Foundry projects: ${error.message}`, true);
             $("monitoring").innerHTML = "";
         }
-    } finally { discovering = false; $("subscription").disabled = false; renderWhere(); }
+    } finally {
+        discovering = false;
+        $("subscription").disabled = false;
+        renderWhere();
+        // Disabling the focused subscription dropdown drops focus to the page; return it so keyboard users keep their place.
+        if (refocus && (!document.activeElement || document.activeElement === document.body)) $("subscription").focus({ preventScroll: true });
+    }
 }
 
 // The industry filter groups by sector, the text before ":" (for example "Government: Ops and infra").
@@ -1346,10 +1387,6 @@ document.addEventListener("click", event => {
         });
         return;
     }
-    if (button.dataset.project) {
-        busy(button, async () => { updateProject(await api("select", { projectId: button.dataset.project }), true); await monitoring(); });
-        return;
-    }
     if (button.dataset.prompt) busy(button, async () => {
         const kind = button.dataset.prompt;
         await api("prompt", { kind, ...(button.dataset.run ? { runId: button.dataset.run } : {}) });
@@ -1390,7 +1427,7 @@ $("project-bar").onclick = () => {
     $("step-where").open = true;
     const switching = selectTab("start");
     $("step-where").scrollIntoView({ block: "start", behavior: "instant" });
-    $("step-where").querySelector("summary").focus({ preventScroll: true });
+    ($("project").disabled ? $("step-where").querySelector("summary") : $("project")).focus({ preventScroll: true });
     switching.catch(error => notice(error.message, true));
 };
 $("recheck").onclick = () => busy($("recheck"), async () => {
@@ -1412,7 +1449,14 @@ $("refresh-foundry").onclick = () => busy($("refresh-foundry"), async () => {
     notice("Microsoft Foundry Canvas workspace state refreshed.");
 });
 $("subscription").onchange = () => discover($("subscription").value);
-$("project-search").oninput = renderProjects;
+// The server serializes selections, so responses arrive in order and the last one wins.
+$("project").onchange = () => {
+    const projectId = $("project").value;
+    if (!projectId || projectId === selected?.id) return;
+    api("select", { projectId })
+        .then(project => { updateProject(project, true); return monitoring(); })
+        .catch(error => { renderProjects(); notice(error.message, true); });
+};
 $("inventory-search").oninput = renderInventory;
 $("inventory-kind").onchange = renderInventory;
 $("inventory-reset").onclick = () => {
