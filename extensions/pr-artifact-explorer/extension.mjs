@@ -351,7 +351,7 @@ const session = await joinSession({
           handler: wrap(async (ctx) => {
             const active = jobRegistry.activeJobs().length;
             const result = await restartInstance(ctx.instanceId, (message) =>
-              session.log(message, { level: "debug" }),
+              session.log(message, { level: "info", ephemeral: true }).catch(() => {}),
             );
             if (!result) throw new CanvasError("not_open", "The canvas is not open.");
             return { restarted: true, samePort: result.samePort, jobsPreserved: active, url: result.entry.url };
@@ -573,7 +573,7 @@ const session = await joinSession({
         const entry = await startInstance(
           ctx.instanceId,
           ctx.input,
-          (message) => session.log(message, { level: "debug" }),
+          (message) => session.log(message, { level: "info", ephemeral: true }).catch(() => {}),
         );
         return {
           title: "Artifact Explorer",
