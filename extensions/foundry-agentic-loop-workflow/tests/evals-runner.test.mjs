@@ -1,7 +1,8 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync } from "node:fs";
+import os from "node:os";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,8 +13,8 @@ import {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const skillDir = path.resolve(here, "..", "..", "..", "skills", "foundry-agentic-loop");
 const evalsDir = path.join(skillDir, "evals");
-// Scratch space inside the test folder, removed after the run.
-const scratch = path.join(here, `.tmp-evals-${process.pid}`);
+// Scratch space outside the source tree (realpath avoids the macOS /var symlink), removed after the run.
+const scratch = realpathSync(mkdtempSync(path.join(os.tmpdir(), "al-evals-")));
 const stub = path.join(scratch, "stub-copilot.mjs");
 const log = path.join(scratch, "calls.jsonl");
 
