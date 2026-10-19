@@ -88,17 +88,30 @@ export function trustedEndpoint(endpoint) {
     return url.href.replace(/\/$/, "");
 }
 
-export function foundryPortalUrl(projectId, kind, name, agentVersion) {
+const GUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
+
+// Foundry portal routes address a project as base64url(subscription GUID),resource group,,account,project.
+function foundryProjectRoot(projectId) {
     const project = projectIdentity(projectId);
-    if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(project.subscriptionId)) {
-        throw new Error("Cannot link to Foundry: invalid subscription ID.");
-    }
+    if (!GUID.test(project.subscriptionId)) throw new Error("Cannot link to Foundry: invalid subscription ID.");
+    const subscription = Buffer.from(project.subscriptionId.replaceAll("-", ""), "hex").toString("base64url");
+    const scope = [subscription, project.resourceGroup, "", project.account, project.name].map(encodeURIComponent).join(",");
+    return `https://ai.azure.com/nextgen/r/${scope}`;
+}
+
+// tid opens the portal in the subscription's directory, so accounts that belong to several tenants land in the right one.
+export function foundryProjectUrl(projectId, tenantId) {
+    const url = new URL(`${foundryProjectRoot(projectId)}/home`);
+    if (typeof tenantId === "string" && GUID.test(tenantId)) url.searchParams.set("tid", tenantId);
+    return url.href;
+}
+
+export function foundryPortalUrl(projectId, kind, name, agentVersion) {
+    const root = foundryProjectRoot(projectId);
     if (typeof name !== "string" || !name.trim() || name === "." || name === "..") {
         throw new Error("Cannot link to Foundry: missing or invalid resource name.");
     }
-    const subscription = Buffer.from(project.subscriptionId.replaceAll("-", ""), "hex").toString("base64url");
-    const scope = [subscription, project.resourceGroup, "", project.account, project.name].map(encodeURIComponent).join(",");
-    const base = `https://ai.azure.com/nextgen/r/${scope}/build`;
+    const base = `${root}/build`;
     if (kind === "model") return `${base}/models/deployments/${encodeURIComponent(name)}/playground`;
     if (kind === "toolbox") return `${base}/toolboxes/${encodeURIComponent(name)}`;
     if (kind !== "agent") throw new Error("Unsupported Foundry portal resource type.");

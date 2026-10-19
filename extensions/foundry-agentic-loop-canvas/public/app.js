@@ -211,19 +211,41 @@ function activeProject() {
 
 function renderProjectBar() {
     const project = activeProject();
-    if (mode === "sdd") {
-        $("project-label").textContent = "Foundry project · created by the workflow";
-        $("project-name").textContent = project?.name ?? (envProjectId ? envProjectId.split("/").at(-1) : "Not created yet");
-    } else {
-        $("project-label").textContent = "Microsoft Foundry project";
-        $("project-name").textContent = selected?.name ?? "Choose a project";
-    }
+    const sdd = mode === "sdd";
+    $("project-name").textContent = sdd
+        ? project?.name ?? (envProjectId ? envProjectId.split("/").at(-1) : "Not created yet")
+        : selected?.name ?? "Choose a project";
+    $("project-note").hidden = !sdd;
+    $("project-note").textContent = project || envProjectId ? "created by the workflow" : "the workflow creates it";
+    $("project-bar").title = !sdd ? `${selected ? "Change the" : "Choose a"} Microsoft Foundry project`
+        : project ? "Explore the project's resources" : "Follow the workflow on Build";
+    renderPortalLink(project);
     for (const button of document.querySelectorAll("[data-requires-project]")) button.disabled = !project;
     $("brief-project-hint").hidden = mode !== "rapid" || Boolean(selected);
     $("optimize-project-hint").hidden = Boolean(project);
     $("optimize-project-hint").textContent = mode === "sdd"
         ? "The SDD workflow creates your Foundry project during Implement. Project actions unlock once it exists."
         : "Select a project on Start to enable project actions.";
+}
+
+// Without a linkable project the anchor drops its href, so it leaves the tab order but stays announced as a dimmed link.
+function renderPortalLink(project) {
+    const link = $("project-portal");
+    if (project?.portalUrl) {
+        link.href = project.portalUrl;
+        link.removeAttribute("role");
+        link.removeAttribute("aria-disabled");
+        link.ariaLabel = `Open ${project.name} in Foundry Portal (opens in a new tab)`;
+        link.title = `Open ${project.name} in Foundry Portal`;
+        return;
+    }
+    link.removeAttribute("href");
+    link.setAttribute("role", "link");
+    link.setAttribute("aria-disabled", "true");
+    link.ariaLabel = "Open in Foundry Portal";
+    link.title = project ? "This project can't be opened in Foundry Portal"
+        : mode !== "sdd" ? "Choose a project to open it in Foundry Portal"
+        : envProjectId ? "Available once the canvas can access this project" : "Available once the workflow creates the project";
 }
 
 function applyMode(next, preferredTab) {

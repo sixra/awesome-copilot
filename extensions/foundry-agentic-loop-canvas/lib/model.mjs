@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { AZD_MINIMUM, outcome, projectIdentity } from "./azure.mjs";
+import { AZD_MINIMUM, foundryProjectUrl, outcome, projectIdentity } from "./azure.mjs";
 import { frontendStatus } from "./frontends.mjs";
 import { ARTIFACTS, LESSONS, checkpointInfo, flightRecordPath } from "./live.mjs";
 
@@ -80,6 +80,12 @@ function azureTarget(target = {}, subscriptions = []) {
         `Azure region: ${location === "auto" ? "recommend one from live model, quota and hosted-agent availability" : location}`,
         `azd environment: ${environmentName || "derive a short name from the solution"}`,
     ].join("\n");
+}
+
+// A project the portal cannot address (such as a malformed subscription ID) is still listed, just without a portal link.
+function projectPortalUrl(projectId, tenantId) {
+    try { return foundryProjectUrl(projectId, tenantId); }
+    catch { return null; }
 }
 
 function changeRequest(runId, checkpoint, feedback) {
@@ -286,16 +292,18 @@ export class Model {
     async discover(subscriptionId, requiredProjectId) {
         const subscriptions = await this.azure.subscriptions();
         const requested = subscriptionId ?? this.state.subscriptionId ?? subscriptions[0]?.id;
-        const id = subscriptions.find(row => row.id.toLowerCase() === requested?.toLowerCase())?.id;
+        const subscription = subscriptions.find(row => row.id.toLowerCase() === requested?.toLowerCase());
+        const id = subscription?.id;
         if (!requested) throw new Error("No enabled Azure subscriptions found. Sign in and recheck access.");
         if (!id) throw new Error("The selected subscription is no longer accessible. Select another subscription.");
         const result = await this.azure.projects(id);
+        const projects = result.projects.map(project => ({ ...project, portalUrl: projectPortalUrl(project.id, subscription.tenantId) }));
         const preferredId = requiredProjectId ?? this.state.projectId;
-        const selected = result.projects.find(project => project.id.toLowerCase() === preferredId?.toLowerCase());
+        const selected = projects.find(project => project.id.toLowerCase() === preferredId?.toLowerCase());
         if (requiredProjectId && !selected) throw new Error(`The FOUNDRY_PROJECT in .env could not be found or accessed.${result.warnings.length ? ` ${result.warnings.join("; ")}` : ""}`);
         const previous = { subscriptions: this.subscriptions, projects: this.projects, warnings: this.projectWarnings, state: { ...this.state } };
         this.subscriptions = subscriptions;
-        this.projects = result.projects;
+        this.projects = projects;
         this.projectWarnings = result.warnings;
         this.state.subscriptionId = id;
         this.state.projectId = selected?.id ?? this.projects[0]?.id ?? null;

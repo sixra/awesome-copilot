@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { request } from "node:http";
-import { Azure, projectIdentity, trustedEndpoint, foundryPortalUrl, azurePortalUrl } from "../lib/azure.mjs";
+import { Azure, projectIdentity, trustedEndpoint, foundryPortalUrl, foundryProjectUrl, azurePortalUrl } from "../lib/azure.mjs";
 import { GUIDED, Model, TABS, TAXONOMY, VIEWS, links, promptFor, templateLocked, validTarget, workIqStatus } from "../lib/model.mjs";
 import { readBody, startServer } from "../lib/server.mjs";
 
@@ -117,6 +117,32 @@ test("Foundry portal links encode project scope, resource names and agent versio
     assert.throws(() => foundryPortalUrl(id, "agent", ".."));
     assert.throws(() => foundryPortalUrl(id, "unsupported", "tools"));
     assert.throws(() => foundryPortalUrl(id.replace(project.subscriptionId, "bad"), "model", "model"));
+});
+
+test("Foundry project links open the project home in the subscription's directory", () => {
+    const home = "https://ai.azure.com/nextgen/r/EREREREREREREREREREREQ,rg-demo,,demo,demo-project/home";
+    const tenantId = "33333333-3333-3333-3333-333333333333";
+    assert.equal(foundryProjectUrl(id), home);
+    assert.equal(foundryProjectUrl(id, tenantId), `${home}?tid=${tenantId}`);
+    assert.equal(foundryProjectUrl(id, "not-a-tenant&tid=other"), home, "a malformed tenant is dropped, not encoded");
+    assert(foundryProjectUrl(id.replace("rg-demo", "rg, special").replace("demo-project", "project#one")).endsWith(",rg%2C%20special,,demo,project%23one/home"));
+    assert.throws(() => foundryProjectUrl(id.replace(project.subscriptionId, "1111")), /invalid subscription ID/);
+    assert.throws(() => foundryProjectUrl("/subscriptions/x"), /Not a Microsoft Foundry project/);
+});
+
+test("discovered projects carry a portal link in their subscription's directory", async t => {
+    const directory = await mkdtemp(path.join(tmpdir(), "foundry-agentic-loop-test-"));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const tenantId = "33333333-3333-3333-3333-333333333333";
+    const unaddressable = { ...project, id: id.replace(project.subscriptionId, "1111"), name: "unaddressable" };
+    const model = new Model({
+        azure: { subscriptions: async () => [{ id: project.subscriptionId, tenantId }], projects: async () => ({ projects: [project, unaddressable], warnings: [] }) },
+        scenarios: [], storage: path.join(directory, "settings.json"),
+    });
+    const result = await model.discover();
+    assert.equal(result.selected.portalUrl, `${foundryProjectUrl(id)}?tid=${tenantId}`);
+    assert.equal(result.projects[1].portalUrl, null, "a project the portal cannot address stays listed without a link");
+    assert.equal(project.portalUrl, undefined, "discovery does not mutate the Azure rows");
 });
 
 test("Azure portal links use the full resource ID and encode fragment delimiters", () => {
