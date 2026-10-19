@@ -116,6 +116,53 @@ test("target saver leaves a newer edit alone when an older save fails", async ()
     assert.deepEqual(restored, [], "the newer edit wins without a rollback");
 });
 
+test("target saver still reports a failed field when a different field saves afterwards", async () => {
+    const timers = fakeTimers();
+    const gate = deferred();
+    const restored = [];
+    const saved = [];
+    const saver = new TargetSaver({
+        save: async input => {
+            if (input.subscriptionId) { await gate.promise; throw new Error("No access."); }
+            saved.push(input);
+        },
+        restore: async error => { restored.push(error.message); },
+        ...timers,
+    });
+    saver.schedule({ subscriptionId: "other" });
+    saver.flush();
+    saver.schedule({ environmentName: "contoso" });
+    const send = saver.flush();
+    gate.resolve();
+    const result = await send;
+    assert.equal(result.ok, false, "a send must not proceed with a target the user did not select");
+    assert.equal(result.error.message, "No access.");
+    assert.deepEqual(saved, [{ environmentName: "contoso" }]);
+    assert.deepEqual(restored, ["No access."]);
+    assert.deepEqual(await saver.flush(), { ok: true });
+});
+
+test("target saver reports a failed field once the queued edit after it is discarded", async () => {
+    const timers = fakeTimers();
+    const gate = deferred();
+    const restored = [];
+    const saver = new TargetSaver({
+        save: async () => { await gate.promise; throw new Error("Rejected."); },
+        restore: async error => { restored.push(error.message); },
+        ...timers,
+    });
+    saver.schedule({ location: "bad" });
+    const first = saver.flush();
+    saver.schedule({ environmentName: "x" });
+    gate.resolve();
+    assert.equal((await first).ok, false);
+    assert.deepEqual(restored, []);
+    saver.discard("environmentName");
+    await saver.chain;
+    assert.deepEqual(restored, ["Rejected."]);
+    assert.equal(saver.saving, false);
+});
+
 test("target saver discards an invalid pending field", () => {
     const timers = fakeTimers();
     const saver = new TargetSaver({ save: async () => {}, ...timers });

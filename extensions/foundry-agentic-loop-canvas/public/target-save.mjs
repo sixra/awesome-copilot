@@ -1,6 +1,7 @@
 // Saves the SDD target (environment, subscription, location) one request at a time. Edits are merged and debounced;
 // flush() saves whatever is pending now and resolves once every save so far has settled, so a send never carries a
-// stale target. A failed save restores the server's target unless a newer edit is already on its way.
+// stale target. A failed field stays failed until a later save of that same field succeeds; once nothing else is
+// queued, any field still failed is reported and the server's target is restored.
 // Timers are wrapped because browsers reject setTimeout and clearTimeout called as methods of another object.
 export class TargetSaver {
     constructor({ save, restore = async () => {}, delay = 400, onChange = () => {}, setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = id => clearTimeout(id) }) {
@@ -8,6 +9,7 @@ export class TargetSaver {
         this.pending = null;
         this.timer = null;
         this.inflight = 0;
+        this.failed = new Map();
         this.chain = Promise.resolve({ ok: true });
     }
 
@@ -30,18 +32,22 @@ export class TargetSaver {
             this.timer = null;
         }
         this.onChange(this.saving);
+        if (!this.saving && this.failed.size) this.flush();
     }
 
     flush() {
         this.clearTimer(this.timer);
         this.timer = null;
-        // An earlier failure was already reported and the controls restored, so it no longer blocks.
-        if (!this.pending && !this.inflight) return Promise.resolve({ ok: true });
         if (this.pending) {
             const input = this.pending;
             this.pending = null;
             this.inflight++;
             this.chain = this.chain.then(() => this.#run(input));
+        } else if (!this.inflight) {
+            // An earlier failure was already reported and the controls restored, so it no longer blocks.
+            if (!this.failed.size) return Promise.resolve({ ok: true });
+            this.inflight++;
+            this.chain = this.chain.then(() => this.#finish({ ok: true }));
         }
         return this.chain;
     }
@@ -50,12 +56,22 @@ export class TargetSaver {
         let result;
         try {
             await this.save(input);
+            for (const key of Object.keys(input)) this.failed.delete(key);
             result = { ok: true };
         } catch (error) {
+            for (const key of Object.keys(input)) this.failed.set(key, error);
             result = { ok: false, error };
-            if (!this.pending && this.inflight === 1) {
-                try { await this.restore(error); } catch { /* The next poll or save brings the target back in line. */ }
-            }
+        }
+        return this.#finish(result);
+    }
+
+    // The last queued save reports any field that is still failed, whichever save failed it.
+    async #finish(result) {
+        if (!this.pending && this.inflight === 1 && this.failed.size) {
+            const error = [...this.failed.values()].at(-1);
+            this.failed.clear();
+            result = { ok: false, error };
+            try { await this.restore(error); } catch { /* The next poll or save brings the target back in line. */ }
         }
         this.inflight--;
         this.onChange(this.saving);
