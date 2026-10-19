@@ -27,12 +27,14 @@ safe-outputs:
     title-prefix: "[bot] "
     base-branch: main
     allowed-files:
+      - "website/src/content/docs/learning-hub/*.md"
       - "website/src/content/docs/learning-hub/**/*.md"
   push-to-pull-request-branch:
     target: "*"
     required-title-prefix: "[bot] "
     required-labels: [automated-update, copilot-updates]
     allowed-files:
+      - "website/src/content/docs/learning-hub/*.md"
       - "website/src/content/docs/learning-hub/**/*.md"
   close-pull-request:
     target: "*"
@@ -69,6 +71,12 @@ Look for:
 ## Step 2 — Compare against the current Learning Hub
 
 Read the pages in the current Learning Hub and compare the features documented there against what you found in Step 1, with the exception of the `cli-for-beginners` section as we handle updates to that separately. Any suggested changes to those pages will be rejected.
+
+Also exclude `website/src/content/docs/learning-hub/app-for-beginners/` and
+`website/public/images/learning-hub/copilot-app-for-beginners/`. The
+`app-for-beginners-sync` workflow owns this source-faithful course mirror.
+Do not rewrite its lessons or assets from feature research, or change its
+course card and cross-links independently of that sync.
 
 Identify:
 

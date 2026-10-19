@@ -253,6 +253,7 @@ The public-submission policy builds on those rules and also requires `license` p
 
 1. **Open an issue** using the external plugin issue form. Automation applies the `external-plugin` and `awaiting-review` labels.
 2. **Automated intake validation** checks that the required fields are present and correctly formatted for a GitHub-hosted plugin. Invalid submissions are labeled `requires-submitter-fixes` with a comment explaining what must be fixed before maintainer review.
+   Intake also checks the repository owner's type using the GitHub API. Organization-owned repositories receive `first party` for the `Microsoft`, `GitHub`, `Azure`, `dotnet`, `MicrosoftDocs`, or `microsoftgraph` organizations (case-insensitive), or `third party` for any other organization. User-owned repositories receive neither label. On the triage board, `first party` skips AI review and creates an `Accept` recommendation with `/approve`; this is only a triage recommendation. Submissions must still pass automated validation and quality gates, and a human maintainer must review and approve them before listing. Ownership labels are updated on each intake pass.
 3. **Automated quality gates** run after metadata validation:
    - `vally lint` against the submitted plugin path/ref/sha
    - install smoke test via Copilot CLI against an ephemeral marketplace entry generated from the submission
@@ -276,6 +277,33 @@ When a pull request updates `plugins/external.json` (for example, version update
    - `requires-submitter-fixes` when quality checks fail due to plugin issues
    - `awaiting-review` when checks cannot complete because of infrastructure/transient errors
 
+##### Website README
+
+External plugin detail pages load their README from GitHub during website data
+generation. No documentation copy or extra listing field is needed in this repo.
+The source comes from `plugins/external.json`: `source.repo`, `source.path`, and
+the revision in `source.sha` (preferred) or `source.ref`. Listings without either
+revision use the repository's default branch (`HEAD`).
+
+The build tries `README.md`, `readme.md`, and `Readme.md` in the plugin directory,
+then the repository root. Keep that README current upstream; pinned listings show
+documentation for the listed revision, so updating the listing refreshes its docs.
+Relative links and images resolve against the upstream README; paths beginning
+with a single `/` resolve from the repository root at the same revision.
+Remote Markdown uses the same HTML sanitizer as local documentation. JavaScript
+frontmatter is rejected before it can execute, and README bodies are excluded
+from the catalog page's client-side data.
+
+Downloads are limited to GitHub's raw-content host, six plugins at a time, with
+a ten-second timeout per request and a 512 KiB limit per README. Missing READMEs
+or download/rendering errors are logged and leave a source-repository link on
+the page instead of failing the entire website build.
+
+Run `node --test eng/lib/external-plugin-readme.test.mjs` to check retrieval.
+After `npm run website:build`, run
+`node --test website/scripts/external-plugin-readme.test.mjs` to check remote
+Markdown rendering, relative URLs, sanitization, and the generated plugin pages.
+
 ##### Maintainer review responsibilities
 
 Maintainers are responsible for confirming that the submission:
@@ -289,6 +317,8 @@ Maintainers are responsible for confirming that the submission:
 ##### Review cadence and label semantics
 
 - `external-plugin`: applied to every public external plugin submission and retained on approved issues so scheduled review automation can find them later
+- `first party`: the submitted repository is owned by a first-party organization (`Microsoft`, `GitHub`, `Azure`, `dotnet`, `MicrosoftDocs`, or `microsoftgraph`)
+- `third party`: the submitted repository is owned by another organization; user-owned repositories have neither ownership label
 - `awaiting-review`: initial intake state before automation finishes validating the issue
 - `ready-for-review`: the issue passed automated intake checks and is waiting on a maintainer decision
 - `requires-submitter-fixes`: automated intake found metadata or quality-gate issues; submitter updates are required before human review

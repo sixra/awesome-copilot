@@ -1,12 +1,12 @@
 // Extension: external-plugin-review-board
 // Kanban board for triaging external plugin submissions with AI review,
-// quick approve/reject, and an issue detail view. Board state is persisted to
-// ./state/board.json (gitignored) so it survives reloads and new sessions.
+// quick approve/reject, and an issue detail view. Board state is persisted under
+// session.workspacePath so writes do not change the extension fingerprint.
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
-import { BoardStore, RECOMMENDATIONS } from "./lib/state.mjs";
+import { BoardStore, isReadyForApproval, reviewBlockedReason, RECOMMENDATIONS } from "./lib/state.mjs";
 import * as gh from "./lib/github.mjs";
 import { buildReviewPrompt, buildRereviewPrompt, REVIEW_FIELDS_SCHEMA } from "./lib/review-prompt.mjs";
 import { startBoardServer, expectedError } from "./lib/server.mjs";
@@ -18,11 +18,12 @@ const PUBLIC_DIR = path.join(EXT_DIR, "public");
 const GUIDANCE_PATH = path.join(EXT_DIR, "review-guidance.md");
 const DETAIL_TTL_MS = 2 * 60 * 1000;
 
-const store = await new BoardStore(path.join(EXT_DIR, "state", "board.json"), REPO).load();
+let store;
 const servers = new Map();
 const detailCache = new Map();
 let refreshInFlight = null;
 let session;
+const decisionsInFlight = new Set();
 
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -49,7 +50,7 @@ async function refresh() {
     refreshInFlight ??= (async () => {
         try {
             await resolvePendingDecisions();
-            const issues = await gh.listReadyIssues(store.state.repo);
+            const issues = await gh.listBoardIssues(store.state.repo);
             detailCache.clear();
             return await store.syncIssues(issues);
         } finally {
@@ -69,7 +70,20 @@ async function getIssue(number, { force = false } = {}) {
 
 async function startReview({ numbers, instanceId, send }) {
     const items = store.pendingReview(numbers);
-    if (!items.length) return { queued: [], message: "Nothing to review — all items already have an AI review." };
+    if (!items.length) {
+        const wanted = numbers?.length ? new Set(numbers.map(Number)) : null;
+        const blocked = store.snapshot().items.filter((item) =>
+            !item.decision && !item.pendingDecision && !item.reviewEligible &&
+            item.reviewStatus !== "queued" &&
+            (wanted ? wanted.has(item.number) : item.reviewStatus !== "reviewed"),
+        ).length;
+        return {
+            queued: [],
+            message: blocked
+                ? `Nothing to review — ${blocked} submission(s) blocked by intake. AI review requires ready-for-review with no pending intake labels. Check the intake feedback on the issues and refresh after intake completes.`
+                : "Nothing to review — no eligible unreviewed items remain.",
+        };
+    }
     const queued = items.map((item) => item.number);
     const snapshots = await store.markQueued(queued);
     const prompt = buildReviewPrompt({
@@ -96,7 +110,11 @@ const MAX_GUIDANCE_LENGTH = 4000;
 async function startRereview({ number, guidance, instanceId, send }) {
     const item = store.getItem(Number(number));
     if (item.decision) throw new Error(`#${item.number} was already actioned (${item.decision.kind}).`);
+    if (item.pendingDecision) throw new Error(`#${item.number} has a posted command awaiting workflow confirmation.`);
     if (item.reviewStatus === "queued") throw new Error(`#${item.number} is already queued for review.`);
+    if (!isReadyForApproval(item.labels ?? [])) {
+        throw new Error(`#${item.number}: ${reviewBlockedReason(item.labels)}`);
+    }
     const text = String(guidance ?? "").trim().slice(0, MAX_GUIDANCE_LENGTH);
     const snapshots = await store.markQueued([item.number], { rereviewGuidance: text || null });
     const prompt = buildRereviewPrompt({
@@ -128,14 +146,25 @@ function stripCommand(text, command) {
 }
 
 async function postDecision({ number, kind, comment }) {
+    if (decisionsInFlight.has(number)) throw new Error(`#${number} already has a GitHub action in progress.`);
+    decisionsInFlight.add(number);
+    try {
+        return await postDecisionCommand({ number, kind, comment });
+    } finally {
+        decisionsInFlight.delete(number);
+    }
+}
+
+async function postDecisionCommand({ number, kind, comment }) {
     if (kind !== "approve" && kind !== "reject") throw new Error(`Unknown decision "${kind}".`);
     const item = store.getItem(number);
     if (item.decision) throw new Error(`#${number} was already actioned (${item.decision.kind}).`);
+    if (item.pendingDecision) throw new Error(`#${number} already has a posted command awaiting workflow confirmation. Refresh the board.`);
 
     const status = await gh.getIssueStatus(store.state.repo, number);
     if (status.state !== "OPEN") throw new Error(`#${number} is ${status.state.toLowerCase()}. Refresh the board.`);
-    if (kind === "approve" && !status.labels.includes("ready-for-review")) {
-        throw new Error(`#${number} is no longer labelled ready-for-review, so /approve would be ignored.`);
+    if (kind === "approve" && !isReadyForApproval(status.labels)) {
+        throw new Error(`#${number} is pending intake or is no longer ready-for-review, so /approve would be ignored.`);
     }
 
     const text = stripCommand(comment, kind);
@@ -158,6 +187,7 @@ function boardSummary() {
     return {
         repo: snapshot.repo,
         lastRefreshedAt: snapshot.lastRefreshedAt,
+        pendingReviewCount: store.pendingReview().length,
         counts: Object.fromEntries(
             snapshot.columns.map((column) => [column.id, snapshot.items.filter((i) => i.column === column.id).length]),
         ),
@@ -166,6 +196,8 @@ function boardSummary() {
             title: item.title,
             author: item.author,
             column: item.column,
+            reviewEligible: item.reviewEligible,
+            reviewBlockedReason: item.reviewBlockedReason,
             aiRecommendation: item.review?.recommendation ?? null,
             manualOverride: item.manualColumn ?? null,
             suggestedComment: item.review?.suggestedComment ?? null,
@@ -213,6 +245,7 @@ function routesFor(instanceId) {
 function wrap(fn) {
     return async (ctx) => {
         try {
+            if (!store) throw new CanvasError("not_ready", "The extension is still starting. Retry the action.");
             return await fn(ctx);
         } catch (error) {
             if (error instanceof CanvasError) throw error;
@@ -232,18 +265,18 @@ session = await joinSession({
             actions: [
                 {
                     name: "get_board",
-                    description: "Return every board item with its column, AI recommendation, suggested comment, and decision.",
+                    description: "Return every board item with its review eligibility, blocked reason, column, AI recommendation, suggested comment, and decision.",
                     handler: wrap(() => boardSummary()),
                 },
                 {
                     name: "refresh",
-                    description: "Fetch open ready-for-review external plugin issues; adds new ones and removes closed ones.",
+                    description: "Fetch open external plugin submissions in active intake states; adds new ones and removes inactive ones.",
                     handler: wrap(() => refresh()),
                 },
                 {
                     name: "start_review",
                     description:
-                        "Queue items for AI review (defaults to every item without a review) and return review instructions to follow.",
+                        "Queue intake-ready items for AI review (defaults to eligible items without a review) and return review instructions to follow. Pending intake submissions cannot be forced into review.",
                     inputSchema: {
                         type: "object",
                         additionalProperties: false,
@@ -316,6 +349,7 @@ session = await joinSession({
                 },
             ],
             open: async (ctx) => {
+                if (!store) throw new CanvasError("not_ready", "The extension is still starting. Retry opening it.");
                 let entry = servers.get(ctx.instanceId);
                 if (!entry) {
                     entry = await startBoardServer({
@@ -330,6 +364,7 @@ session = await joinSession({
                             },
                         },
                     });
+
                     servers.set(ctx.instanceId, entry);
                 }
                 if (!store.state.lastRefreshedAt) {
@@ -350,3 +385,11 @@ session = await joinSession({
         }),
     ],
 });
+
+if (!session.workspacePath) {
+    throw new Error("External Plugin Review Board requires a session workspace for persistent state. Enable infinite sessions.");
+}
+store = await new BoardStore(
+    path.join(session.workspacePath, "extensions", CANVAS_ID, "state", "board.json"),
+    REPO,
+).load();
