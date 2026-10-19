@@ -84,6 +84,20 @@ addEventListener("hashchange", () => go(fromHash()));
 addEventListener("message", event => {
     if (event.origin === location.origin && event.data?.type === "deck-theme") applyTheme(event.data.theme);
 });
+// The GitHub Copilot App opens canvas links in the system browser, but its handler may not run in this iframe.
+// This mirrors its rule; whichever handler runs first prevents the default and the other yields.
+if (framed) document.addEventListener("click", event => {
+    if (!event.isTrusted || event.defaultPrevented || event.button !== 0 || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return;
+    const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+    if (!anchor || anchor.hasAttribute("download") || anchor.target !== "_blank") return;
+    let url;
+    try { url = new URL(anchor.href, document.baseURI); } catch { return; }
+    const host = url.hostname;
+    if (!["http:", "https:"].includes(url.protocol) || url.origin === location.origin
+        || ["localhost", "127.0.0.1", "::1", "[::1]"].includes(host) || host.endsWith(".localhost")) return;
+    event.preventDefault();
+    window.open(url.href, "_blank", "noopener,noreferrer");
+});
 
 let swipe = null;
 scroller.addEventListener("pointerdown", event => {

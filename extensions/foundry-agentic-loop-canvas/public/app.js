@@ -10,6 +10,13 @@ const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const toTime = value => typeof value === "number" ? value : Date.parse(value ?? "");
 const clock = (value, seconds = false) => Number.isFinite(toTime(value)) ? new Date(toTime(value)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}) }) : "";
 const iso = value => Number.isFinite(toTime(value)) ? new Date(toTime(value)).toISOString() : "";
+// The GitHub Copilot App opens canvas links in the system browser but ignores these loopback hosts.
+const isLoopback = href => {
+    try {
+        const host = new URL(href).hostname;
+        return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(host) || host.endsWith(".localhost");
+    } catch { return false; }
+};
 function setMark(id, text, label = "", tone = "") {
     const mark = $(id);
     mark.textContent = text;
@@ -555,7 +562,7 @@ async function frontends(retry = false) {
         const configured = result.frontends.filter(row => row.configured);
         $("frontend-links").innerHTML = configured.map(row => `<div class="inventory-row"><strong>${escape(row.label)}</strong>${row.error
             ? `<p class="error">${escape(row.error)}</p>`
-            : `<span class="frontend-url">${escape(row.url)}</span><div class="actions"><button data-frontend="${escape(row.key)}" aria-label="Open ${escape(row.label)} in integrated browser">Open in integrated browser</button><a href="${escape(row.url)}" target="_blank" rel="noopener noreferrer" aria-label="Open ${escape(row.label)} in external browser">Open in external browser ↗</a></div>`}</div>`).join("") ||
+            : `<span class="frontend-url">${escape(row.url)}</span><div class="actions"><button data-frontend="${escape(row.key)}" aria-label="Open ${escape(row.label)} in integrated browser">Open in integrated browser</button>${isLoopback(row.url) ? "" : `<a href="${escape(row.url)}" target="_blank" rel="noopener noreferrer" aria-label="Open ${escape(row.label)} in external browser">Open in external browser ↗</a>`}</div>`}</div>`).join("") ||
             `<p class="muted">${mode === "sdd" ? "No frontend yet. The workflow records it during Implement and Deploy." : "No frontend configured. Finish the build first."}</p>`;
         if (live) renderWorkflow(live);
         if (changed && mode === "rapid" && result.frontends.some(row => row.key === "local" && row.configured) && !["explore", "build"].includes(activeTab)) {
@@ -1304,7 +1311,9 @@ function calloutHtml(run) {
     if (run.status === "completed") {
         const deployed = frontendState?.frontends.find(row => row.key === "deployed" && row.configured && !row.error);
         const endpoints = run.outcome?.endpoints?.length
-            ? `<ul class="endpoints" aria-label="Endpoints">${run.outcome.endpoints.map(row => `<li><a href="${escape(row.url)}" target="_blank" rel="noopener noreferrer">${escape(row.name)} <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a></li>`).join("")}</ul>` : "";
+            ? `<ul class="endpoints" aria-label="Endpoints">${run.outcome.endpoints.map(row => isLoopback(row.url)
+                ? `<li>${escape(row.name)} <code>${escape(row.url)}</code></li>`
+                : `<li><a href="${escape(row.url)}" target="_blank" rel="noopener noreferrer">${escape(row.name)} <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a></li>`).join("")}</ul>` : "";
         if (run.outcome?.status === "verified") {
             return box("success", "Verified, ready to deploy", `<p>Specified, implemented and verified. This run skipped Deploy; Copilot asks for your approval before azd up.</p>${endpoints}
                 <div class="actions"><button class="primary" data-prompt="deploy" data-run="${escape(run.runId)}" data-key="deploy">Deploy from Chat</button>${artifactButton(run, "docs/verify.md", "Open verification report")}${artifactButton(run, ".azure/deployment-plan.md", "Open deployment plan")}${improve}</div>`);

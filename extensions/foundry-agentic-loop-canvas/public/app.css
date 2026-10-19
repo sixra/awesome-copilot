@@ -317,7 +317,8 @@ main { flex: 1 0 auto; width: 100%; max-width: 1120px; margin: 0 auto; padding: 
 .since { color: var(--muted); font-variant-numeric: tabular-nums; }
 .result { color: var(--text); overflow-wrap: anywhere; }
 .endpoints { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 13px; }
-.endpoints a { overflow-wrap: anywhere; }
+.endpoints a, .endpoints code { overflow-wrap: anywhere; }
+.endpoints code { color: var(--muted); font-size: 12px; }
 .changes { margin-top: 14px; padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--tone, var(--muted)) 25%, var(--border)); }
 .changes label { margin-top: 0; }
 .changes textarea, .guidance textarea { min-height: 88px; }
