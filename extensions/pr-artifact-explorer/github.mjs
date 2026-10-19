@@ -717,6 +717,7 @@ function mapWorkflowRun(run) {
     actor: run.actor?.login ?? null,
     actorAvatarUrl: run.actor?.avatar_url ?? null,
     updatedAt: run.updated_at ?? null,
+    startedAt: run.run_started_at ?? null,
     pullRequests: (run.pull_requests ?? [])
       .map((pull) => Number(pull?.number))
       .filter((number) => Number.isSafeInteger(number) && number > 0),

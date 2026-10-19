@@ -1875,21 +1875,62 @@ select {
   display: none;
 }
 
-.run-row .Label {
-  display: inline-flex;
-  min-height: 20px;
-  margin-left: var(--base-size-4, 4px);
-  padding: 0 7px;
-  border: 1px solid var(--app-border);
-  border-radius: 2em;
-  color: var(--app-fg-muted);
-  font-size: var(--text-body-size-small, 12px);
+
+.run-row {
   align-items: center;
+  gap: var(--base-size-12, 12px);
 }
 
 .run-row .Box-row-title {
-  font-size: 16px;
-  line-height: 24px;
+  font-size: var(--text-body-size-medium, 14px);
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.run-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--base-size-4, 4px);
+  color: var(--app-fg-muted);
+  font-size: var(--text-body-size-small, 12px);
+}
+
+.run-trigger .run-pr-link {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: none;
+  color: var(--app-fg-muted);
+}
+
+.run-branch {
+  max-width: 220px;
+  padding: 0 var(--base-size-8, 8px);
+  overflow: hidden;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--app-accent) 15%, transparent);
+  color: var(--app-accent);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-body-size-small, 12px);
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: none;
+}
+
+.run-row-side {
+  display: flex;
+  min-width: 150px;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-body-size-small, 12px);
+  align-items: flex-end;
+}
+
+.run-time {
+  display: inline-flex;
+  gap: var(--base-size-4, 4px);
+  align-items: center;
 }
 
 .run-artifact-count {

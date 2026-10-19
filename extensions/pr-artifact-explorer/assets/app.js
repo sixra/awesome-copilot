@@ -3815,31 +3815,40 @@ function runArtifactBadgeHtml(count) {
     : "No artifacts";
 }
 
+function runDurationText(run) {
+  if (run.status !== "completed" || !run.startedAt || !run.updatedAt) return "";
+  const seconds = Math.max(0, Math.round((new Date(run.updatedAt) - new Date(run.startedAt)) / 1000));
+  if (!Number.isFinite(seconds)) return "";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours) return `${hours}h ${minutes}m`;
+  return minutes ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
+}
+
 function runRowHtml(run, repository) {
   const count = runArtifactCounts.get(`${repository}#${run.id}`);
   const countAttribute = count === undefined ? "" : ` data-artifact-count="${count === null ? "unknown" : count}"`;
+  const duration = runDurationText(run);
+  const trigger = runLinkedPullsHtml(run, repository) || escapeHtml(runEventLabel(run.event));
   return `
     <div class="Box-row run-row" data-run-row="${run.id}"${countAttribute}>
       ${runStatusIconHtml(run)}
       <div class="Box-row-main">
-        <div class="pull-row-title-line">
-          <a class="Box-row-title" href="${runHash(repository, run.id)}">${titleHtml(run.title ?? run.name ?? `Run ${run.id}`)}</a>
-          <span class="Label">${escapeHtml(runEventLabel(run.event))}</span>
-          ${runLinkedPullsHtml(run, repository)}
-        </div>
-        <div class="Box-row-meta pull-row-meta">
-          <span>${escapeHtml(run.name ?? "Workflow")} #${escapeHtml(String(run.number ?? run.id))}${Number(run.attempt) > 1 ? ` · attempt ${Number(run.attempt)}` : ""}</span>
-          ${run.branch ? `<span class="branch-name">${escapeHtml(run.branch)}</span>` : ""}
+        <a class="Box-row-title" href="${runHash(repository, run.id)}">${titleHtml(run.title ?? run.name ?? `Run ${run.id}`)}</a>
+        <div class="Box-row-meta run-row-meta">
+          <span>${escapeHtml(run.name ?? "Workflow")} #${escapeHtml(String(run.number ?? run.id))}${Number(run.attempt) > 1 ? ` (attempt ${Number(run.attempt)})` : ""}:</span>
+          <span class="run-trigger">${trigger}</span>
           ${run.actor ? `<span>by ${escapeHtml(run.actor)}</span>` : ""}
-          <span>${escapeHtml(relativeTime(run.createdAt))}</span>
         </div>
       </div>
-      <div class="Box-row-actions color-fg-muted">
+      ${run.branch ? `<span class="run-branch" title="${escapeHtml(run.branch)}">${escapeHtml(run.branch)}</span>` : ""}
+      <div class="run-row-side color-fg-muted">
+        <span class="run-time">${icon("clock")} ${escapeHtml(relativeTime(run.createdAt))}</span>
+        ${duration ? `<span class="run-duration">${escapeHtml(duration)}</span>` : ""}
         <span class="run-artifact-count" data-run-artifacts="${run.id}" aria-live="polite">${runArtifactBadgeHtml(count)}</span>
       </div>
     </div>`;
 }
-
 function runListSkeletonHtml() {
   return `<div class="loading-list" role="status" aria-label="Loading workflow runs">
     ${Array.from({ length: 5 }, () => `
@@ -3859,7 +3868,7 @@ function runsPageHtml(repository, filters) {
           ${icon("workflow")}
           <strong>${escapeHtml(repository)}</strong>
         </h1>
-        <p class="page-subtitle">Browse workflow runs from any trigger, including scheduled, manual, push and release runs that have no pull request.</p>
+        <p class="page-subtitle">Workflow runs from every trigger, including scheduled and manual runs.</p>
       </div>
       <div class="page-actions">
         <a class="app-button" href="https://github.com/${escapeHtml(repository)}/actions" target="_blank" rel="noreferrer">
