@@ -233,7 +233,7 @@ export class Azure {
 
     async monitoring(project) {
         const connections = await this.pages(`${arm}${project.id}/connections?api-version=${version}`);
-        const insights = connections.filter(row => /app(?:lication)?insights/i.test(row.properties?.category ?? ""));
+        const insights = connections.filter(row => /(?:app|application)insights/i.test(row.properties?.category ?? ""));
         return { connected: insights.length > 0, names: insights.map(row => row.name) };
     }
 

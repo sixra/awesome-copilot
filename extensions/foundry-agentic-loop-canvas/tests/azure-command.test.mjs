@@ -122,7 +122,7 @@ test("azd versions parse from azd version output and compare numerically", () =>
     for (const old of [[1, 31, 9], [1, 27, 1], [0, 99, 99]]) assert(!versionAtLeast(old, AZD_MINIMUM), old.join("."));
 });
 
-test("setup flags an azd older than the minimum and treats unparseable output as unknown", async () => {
+test("setup flags an azd older than the minimum and treats unparsable output as unknown", async () => {
     const azdCheck = async output => {
         const azure = new Azure(async (file, args) => {
             if (file === "azd" && args.join(" ") === "version") return output;
