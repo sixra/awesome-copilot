@@ -12,7 +12,9 @@ export const ARTIFACTS = Object.freeze({
 export const LESSONS = "docs/loop-sri.md";
 export const ARTIFACT_PATHS = Object.freeze([...Object.values(ARTIFACTS).flat(), LESSONS]);
 export const AGENTS = "AGENTS.md";
-export const OPENABLE = Object.freeze([...ARTIFACT_PATHS, AGENTS]);
+// The rapid contract and hosted checkpoint evidence.
+export const README = "README.md";
+export const OPENABLE = Object.freeze([...ARTIFACT_PATHS, AGENTS, README]);
 // The workflow's lib/agents-md.mjs writes the same marker; its pin test keeps the two in sync.
 const LOCK = /<!--\s*foundry-agentic-loop:begin\s+mode=(rapid|sdd)\s*-->/;
 // Only the Agentic Loop section locks the build mode; any other AGENTS.md content does not.

@@ -202,7 +202,7 @@ test("only the Agentic Loop section of AGENTS.md locks the mode", () => {
     assert.equal(parseLock("# Repo\n\nUse the microsoft-foundry skill. mode=sdd\n"), null, "unrelated AGENTS.md content does not lock");
     assert.equal(parseLock("<!-- foundry-agentic-loop:begin mode=fast -->"), null);
     assert.equal(parseLock(null), null);
-    assert.deepEqual(OPENABLE, [...ARTIFACT_PATHS, AGENTS]);
+    assert.deepEqual(OPENABLE, [...ARTIFACT_PATHS, AGENTS, "README.md"]);
     assert.match(lockMessage("rapid"), /^AGENTS\.md locks this workspace to rapid prototyping\. .*Chat/);
     assert.match(lockMessage("sdd"), /the SDD workflow/);
 });

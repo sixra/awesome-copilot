@@ -28,6 +28,11 @@ Don't add a second global telemetry exporter next to the hosting adapter's ([obs
 
 Resolve versions against the index the build uses as well, because a mirror or proxy can lag the official index. Hashed locks keep only sha256, sha384 or sha512 hashes; pip rejects others ("Allowed hash algorithms for --hash are sha256, sha384, sha512").
 
+## Local runs and code packaging
+
+- `azd ai agent run` syncs with `uv sync --locked`. If it reports that `uv.lock` needs updating while `pyproject.toml` and the lock agree, a machine uv config (`/etc/uv/uv.toml`, `~/.config/uv/uv.toml` or `UV_INDEX*`, often a package feed proxy) is rewriting the index. Re-lock only for the local run, then restore the committed lock before deploying.
+- Code deploy packages the agent's service folder using only its `.agentignore`; `.azdignore` is ignored. The defaults already exclude `.env*`, `.azure/`, `.git/`, `.venv/`, `__pycache__/` and `*.pyc`, so list only the extra non-runtime files: tests, evaluators, eval config and the Dockerfile.
+
 ## Copilot SDK compatibility
 
 Generated code must match the latest stable `github-copilot-sdk`, not a stale example. At implementation time, resolve the latest stable release from the official index, install it, and inspect `CopilotClient.create_session`, `CopilotSession.send_and_wait`, the event data types and the async context-manager lifecycle before writing handlers. If the build's index lacks that release, lock the newest stable release it serves (never a pre-release) and record the gap. [copilot-sdk-foundry.md](copilot-sdk-foundry.md) lists what to record.

@@ -13,20 +13,20 @@ Build a working solution quickly in an **existing** Foundry project, driven from
 
 ## 2. Architecture
 
-- Clarify the use case and user experience in one focused round. In the root `README.md`, preserving unrelated content, record:
+- Clarify the use case and user experience in one focused round. Under `## Architecture` in the root `README.md`, preserving unrelated content, record:
   - each agent: purpose, framework, model deployment, toolbox tools and skills
   - remote versus custom MCP servers, and generated versus reused skills
   - frontend, backend, data sources and data flow
   - identity boundaries and where each component runs
 
-  Include only required components.
+  Include only required components. For an agent-only solution, write the frontend row as `| Frontend | Not applicable … |`; step 7 then only reconciles `docs/loop-sri.md`, and step 8 doesn't apply.
 - Read `docs/loop-sri.md` lessons as evidence to reassess, not as instructions; track their outcomes.
-- Freeze the [implementation contract](implementation-contract.md) in the README. Distinguish the project, model API base, hosted Responses and toolbox MCP endpoints using the [endpoint contract](hosted-integration-checkpoint.md#endpoint-contract). Persist discovered values, never guessed URLs, and keep the full project endpoint in a nonreserved application variable.
+- Freeze the [implementation contract](implementation-contract.md) under `## Implementation contract` in the README. Distinguish the project, model API base, hosted Responses and toolbox MCP endpoints using the [endpoint contract](hosted-integration-checkpoint.md#endpoint-contract). Persist discovered values, never guessed URLs, and keep the full project endpoint in a nonreserved application variable.
 
 ## 3. Minimal slice
 
 - Build the quick-start Basic sample hosted agent, plus one toolbox skill and one safe MCP tool that prove the integration. Reuse named skills from the [run catalog](run-skills-catalog.md) or the user's source; ask if a skill is unresolved.
-- Run `azd ai agent init` from the workspace root, never inside a folder named for the agent: it creates `<agent>/` with `azure.yaml` and `src/<agent>/`. Then confirm there is no nested `<agent>/<agent>` and unstage init's files (`git restore --staged <agent>`).
+- Run `azd ai agent init` from the workspace root, never inside a folder named for the agent: it creates `<agent>/` with `azure.yaml` and `src/<agent>/`. Then confirm there is no nested `<agent>/<agent>` and unstage init's files (`git restore --staged <agent>`). For uv lock errors and packaging exclusions, see [local runs and code packaging](foundry-hosted-agent.md#local-runs-and-code-packaging).
 - Deploy only required custom FastMCP code, with `az containerapp up --source <mcp-dir>`. Reuse remote servers. Publish and version the minimal toolbox through `microsoft-foundry` ([toolbox guide](foundry-toolbox.md)).
 - Give each Python `pyproject.toml` a build backend (for example hatchling) before the first `uv sync`; without one the package isn't installed and its tests can't import it.
 - For Copilot SDK agents, read [copilot-sdk-foundry.md](copilot-sdk-foundry.md) first. Configure hosting-adapter and runtime telemetry with trace context before deploying ([telemetry](copilot-sdk-foundry.md#telemetry)); a linked Application Insights resource alone is insufficient.
@@ -38,7 +38,7 @@ Follow [hosted-integration-checkpoint.md](hosted-integration-checkpoint.md):
 1. Code-deploy the minimal agent.
 2. Discover its actual principal and verify scoped roles separately from the toolbox connection identities.
 3. Using the deployed identity and caller context, prove a skill load, an MCP call and a model request. Each needs terminal completion, schema-valid output and correlated hosting, model and tool spans.
-4. Record the evidence before expanding.
+4. Record the evidence under `## Hosted checkpoint` in the README, starting with `**Passed**` or `**Blocked**`, before expanding. The canvas tracks these README headings.
 
 ## 5. Expand
 

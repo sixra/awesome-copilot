@@ -68,7 +68,6 @@ const START = {
 };
 // Short commands from the Agentic Loop section of AGENTS.md; typing one in Chat runs that step.
 const COMMANDS = { rapid: ["run", "test", "add agent", "deploy", "improve"], sdd: ["status", "approve", "deploy", "improve"] };
-const TRACK = { go: "build", label: "Track progress" };
 const TARGET_HELP = "The workflow creates a resource group and a Foundry project here. Nothing deploys until you approve it.";
 // The pinned first prompt template: Copilot shapes the solution with the user instead of starting from a scenario.
 const GUIDED = "guided";
@@ -110,8 +109,9 @@ const haystacks = new Map();
 const drafts = new Map();
 let frontendsLoading = false;
 let frontendsSignature;
-let frontendRevision;
 let frontendState = null;
+// Undefined until the first .env read, so only a transition during this session switches to Explore.
+let rapidFinished;
 let resourcesSignature;
 let projectSyncError = false;
 let inventory = null;
@@ -128,6 +128,9 @@ let live = null;
 let liveVersion = -1;
 let liveReceivedAt = Date.now();
 let knownRuns = null;
+// The current run's last status, so only a run completing in this session switches to Explore.
+let lastRunStatus = null;
+let completedRun = null;
 let lastCheckpoint = null;
 let setupLoading = null;
 let setupDone = false;
@@ -433,11 +436,13 @@ function renderBuildMark() {
     } else setMark("build-mark", "");
 }
 
-// Rapid milestones come from workspace evidence: the AGENTS.md lock, FOUNDRY_PROJECT and the frontend URLs in .env.
+// Rapid milestones come from workspace evidence: the AGENTS.md lock, FOUNDRY_PROJECT and the frontend URLs in .env, and
+// the README.md contract, hosted checkpoint verdict and agent-only marker the skill records.
 function renderRapidProgress() {
     const locked = lock === "rapid";
     const linked = envProjectId && !frontendState?.foundryProject?.error ? envProjectId : null;
     const projectName = linked && (selected?.id.toLowerCase() === linked.toLowerCase() ? selected.name : linked.split("/").at(-1));
+    const { contract = false, checkpoint = null, appless = false } = frontendState?.milestones ?? {};
     const url = key => frontendState?.frontends.find(row => row.key === key && row.configured && !row.error)?.url ?? null;
     const local = url("local");
     const deployed = url("deployed");
@@ -445,24 +450,30 @@ function renderRapidProgress() {
     $("rapid-start").hidden = locked;
     $("rapid-commands").hidden = !locked;
     const open = (key, value, label) => `<button data-frontend="${key}" data-key="frontend:${key}" aria-label="Open ${label} in the integrated browser">${escape(value.replace(/^https?:\/\//, ""))}</button>`;
+    const readme = '<button data-artifact="README.md" data-key="artifact:readme">README.md</button>';
+    const agentOnly = appless && !local;
     const steps = [
         { title: "Loop started", done: locked, todo: "Send a prompt template from Start. Copilot locks rapid prototyping in AGENTS.md and adds short commands.", detail: "AGENTS.md locks rapid prototyping and lists the short commands.", extra: '<button data-artifact="AGENTS.md" data-key="artifact:agents">AGENTS.md</button>' },
-        { title: "Project linked", done: Boolean(projectName), todo: "Copilot validates your Foundry project and its access, then records it in .env and .azure/deployment-plan.md.", detail: `${projectName}, recorded in .env and the deployment plan.`, extra: '<button data-artifact=".azure/deployment-plan.md" data-key="artifact:plan">deployment-plan.md</button>' },
-        { title: "Running locally", done: Boolean(local), todo: "Copilot proves a minimal slice in a hosted checkpoint, expands it, then runs the end-to-end tests locally.", detail: "The app runs on this machine.", extra: local ? open("local", local, "the local app") : "" },
-        { title: "Deployed to Azure", done: Boolean(deployed), optional: true, todo: "Optional. After local acceptance, Copilot asks before deploying the app to Azure Container Apps.", detail: "The app runs in Azure Container Apps.", extra: deployed ? open("deployed", deployed, "the deployed app") : "" },
+        { title: "Project linked", done: Boolean(projectName), todo: "Copilot validates your Foundry project and your access, then records it in .env and .azure/deployment-plan.md.", detail: `${projectName}, recorded in .env and the deployment plan.`, extra: '<button data-artifact=".azure/deployment-plan.md" data-key="artifact:plan">deployment-plan.md</button>' },
+        { title: "Solution designed", done: contract, todo: "Copilot clarifies the use case, writes the architecture and implementation contract to README.md, then asks before creating resources.", detail: "README.md holds the architecture and the implementation contract.", extra: readme },
+        { title: "Hosted checkpoint", done: checkpoint === "passed", blocked: checkpoint === "blocked", todo: "Copilot scaffolds a minimal agent from the Foundry Basic sample, runs it locally, deploys it and proves its model, skill and tool calls with traces.", detail: "A deployed agent answered, with traces as evidence in README.md.", blockedDetail: "Copilot recorded the blocker in README.md. Resolve it in Chat to continue.", extra: readme },
+        { title: "Running locally", done: Boolean(local), skipped: agentOnly, todo: "Copilot builds the remaining agents, tools and app, deploys the agents and runs the end-to-end tests on this machine.", detail: "The app runs on this machine.", skippedDetail: "Agent-only solution: try the agent from Explore.", extra: local ? open("local", local, "the local app") : "" },
+        { title: "Deployed to Azure", done: Boolean(deployed), optional: true, skipped: agentOnly && !deployed, todo: "Optional. After local acceptance, Copilot asks before deploying the app to Azure Container Apps.", detail: "The app runs in Azure Container Apps.", skippedDetail: "No app to deploy; the agents already run in Foundry.", extra: deployed ? open("deployed", deployed, "the deployed app") : "" },
     ];
-    const next = steps.findIndex(step => !step.done && !step.optional);
-    const current = steps.findIndex(step => !step.done);
-    region("rapid", $("rapid-steps"), [locked, working, projectName, local, deployed], () => steps.map((step, index) => {
-        const [view, label] = step.done ? ["completed", "Done"]
-            : index === next ? (working ? ["active", "In progress"] : ["pending", "Next"])
-                : ["pending", step.optional ? "Optional" : "Not started"];
+    const next = steps.findIndex(step => !step.done && !step.skipped && !step.optional);
+    const current = steps.findIndex(step => !step.done && !step.skipped);
+    region("rapid", $("rapid-steps"), [locked, working, projectName, contract, checkpoint, appless, local, deployed], () => steps.map((step, index) => {
+        const [view, label, badge, text] = step.done ? ["completed", "Done", "done", step.detail]
+            : step.skipped ? ["skipped", "Not applicable", "skipped", step.skippedDetail]
+                : step.blocked ? ["failed", "Blocked", "failed", step.blockedDetail]
+                    : index === next ? [working ? "active" : "pending", working ? "In progress" : "Next", "", step.todo]
+                        : ["pending", step.optional ? "Optional" : "Not started", "", step.todo];
         return `<li class="phase" data-view="${view}"${index === current ? ' aria-current="step"' : ""}>
-        <span class="phase-icon" aria-hidden="true">${index + 1}${stepBadge(step.done ? "done" : "")}</span>
+        <span class="phase-icon" aria-hidden="true">${index + 1}${stepBadge(badge)}</span>
         <div class="phase-body">
             <div class="phase-head"><h3>${escape(step.title)}</h3><span class="phase-state">${label}</span></div>
-            <p class="muted">${escape(step.done ? step.detail : step.todo)}</p>
-            ${step.done && step.extra ? `<div class="artifacts">${step.extra}</div>` : ""}
+            <p class="muted">${escape(text)}</p>
+            ${(step.done || step.blocked) && step.extra ? `<div class="artifacts">${step.extra}</div>` : ""}
         </div></li>`;
     }).join(""));
 }
@@ -552,8 +563,6 @@ async function frontends(retry = false) {
                 if (activeTab === "optimize") await costs();
             }
         }
-        const changed = frontendRevision !== undefined && frontendRevision !== result.revision;
-        frontendRevision = result.revision;
         const signature = JSON.stringify(result);
         if (signature === frontendsSignature) return;
         frontendsSignature = signature;
@@ -565,8 +574,14 @@ async function frontends(retry = false) {
             : `<span class="frontend-url">${escape(row.url)}</span><div class="actions"><button data-frontend="${escape(row.key)}" aria-label="Open ${escape(row.label)} in integrated browser">Open in integrated browser</button>${isLoopback(row.url) ? "" : `<a href="${escape(row.url)}" target="_blank" rel="noopener noreferrer" aria-label="Open ${escape(row.label)} in external browser">Open in external browser ↗</a>`}</div>`}</div>`).join("") ||
             `<p class="muted">${mode === "sdd" ? "No frontend yet. The workflow records it during Implement and Deploy." : "No frontend configured. Finish the build first."}</p>`;
         if (live) renderWorkflow(live);
-        if (changed && mode === "rapid" && result.frontends.some(row => row.key === "local" && row.configured) && !["explore", "build"].includes(activeTab)) {
+        // A rapid build finishes when the app runs locally, or when an agent-only solution passes its hosted checkpoint.
+        const milestones = result.milestones ?? {};
+        const finished = result.frontends.some(row => row.key === "local" && row.configured && !row.error) || (milestones.checkpoint === "passed" && milestones.appless);
+        const justFinished = rapidFinished === false && finished;
+        rapidFinished = finished;
+        if (justFinished && mode === "rapid" && activeTab !== "explore") {
             await selectTab("explore").catch(error => notice(`Could not finish switching to Explore: ${error.message}`, true));
+            notice("The prototype is ready. Try it from Explore.");
         }
     } catch (error) {
         projectSyncError = true;
@@ -1403,10 +1418,18 @@ function applyLive(snap, initial = false) {
     live = snap;
     const fresh = knownRuns ? snap.runs.find(row => !knownRuns.has(row.runId)) : null;
     knownRuns = new Set(snap.runs.map(row => row.runId));
-    const openBuild = !initial && Boolean(fresh) && (snap.mode ?? mode) === "sdd" && activeTab !== "build";
+    const started = !initial && !lock && Boolean(snap.lock) && activeTab === "start";
+    const openBuild = !initial && activeTab !== "build" && ((Boolean(fresh) && (snap.mode ?? mode) === "sdd") || started);
+    const finished = snap.run?.status === "completed" ? snap.run.runId : null;
+    const openExplore = !initial && !openBuild && finished && finished !== completedRun && lastRunStatus === `${finished}:live` && activeTab !== "explore";
+    completedRun = finished ?? completedRun;
+    lastRunStatus = snap.run ? `${snap.run.runId}:${snap.run.status === "completed" ? "completed" : "live"}` : null;
     lock = snap.lock ?? null;
     if (!modePending && snap.mode && snap.mode !== mode) applyMode(snap.mode, openBuild ? "build" : undefined);
     else if (openBuild) selectTab("build").catch(error => notice(error.message, true));
+    if (openExplore) {
+        selectTab("explore").then(() => notice("The workflow completed. Try the solution from Explore.")).catch(error => notice(error.message, true));
+    }
     renderModeHint();
     const checkpoint = snap.run?.checkpoint ? `${snap.run.runId}:${snap.run.checkpoint}` : null;
     if (!initial && !openBuild && checkpoint && checkpoint !== lastCheckpoint && activeTab !== "build") {
@@ -1915,8 +1938,9 @@ $("send-prompt").onclick = () => busy($("send-prompt"), async () => {
     renderTemplateView();
     renderTemplateCta();
     const project = activeProject();
+    await selectTab("build").catch(() => {});
     notice(!row ? SENT.guided[mode] : mode === "sdd" ? "Sent to Chat. Copilot runs preflight, then starts the workflow."
-        : project ? `Sent to Chat with ${project.name}. Continue there.` : "Sent to Chat. Copilot asks which Foundry project to use.", false, TRACK);
+        : project ? `Sent to Chat with ${project.name}. Continue there.` : "Sent to Chat. Copilot asks which Foundry project to use.");
 });
 
 async function start() {

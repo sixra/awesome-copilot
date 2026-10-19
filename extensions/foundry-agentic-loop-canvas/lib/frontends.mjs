@@ -9,6 +9,38 @@ const fields = [
     { key: "deployed", variable: "DEPLOYED_FRONTEND", label: "Deployed app" },
 ];
 
+const README_LIMIT = 1024 * 1024;
+const NONE = Object.freeze({ contract: false, checkpoint: null, appless: false });
+
+// Rapid milestones the skill records in the root README.md: the contract, the hosted checkpoint verdict and an agent-only app.
+export function parseMilestones(text) {
+    const sections = new Map();
+    for (const part of String(text ?? "").split(/^## +/m).slice(1)) {
+        const [heading, ...body] = part.split("\n");
+        const key = heading.trim().toLowerCase();
+        if (!sections.has(key)) sections.set(key, body.join("\n").trim());
+    }
+    const checkpoint = sections.get("hosted checkpoint");
+    return {
+        contract: sections.has("implementation contract"),
+        checkpoint: checkpoint == null ? null : /^\*\*passed\*\*/i.test(checkpoint) ? "passed" : /^\*\*blocked\*\*/i.test(checkpoint) ? "blocked" : "pending",
+        appless: /^\|\s*frontend\b[^|\n]*\|\s*not applicable/im.test(sections.get("architecture") ?? ""),
+    };
+}
+
+// Milestones are progress hints, so an unreadable README shows none instead of failing the .env read.
+async function readMilestones(directory) {
+    try {
+        const file = await open(path.join(directory, "README.md"), "r");
+        try {
+            const { size } = await file.stat();
+            const buffer = Buffer.alloc(Math.min(size, README_LIMIT));
+            await file.read(buffer, 0, buffer.length, 0);
+            return parseMilestones(buffer.toString("utf8"));
+        } finally { await file.close(); }
+    } catch { return { ...NONE }; }
+}
+
 export async function readFrontends(directory) {
     if (typeof directory !== "string" || !path.isAbsolute(directory)) throw new Error("The session workspace directory is unavailable.");
     let source = "";
@@ -53,7 +85,7 @@ export async function readFrontends(directory) {
             foundryProject.error = "FOUNDRY_PROJECT must be a full Microsoft Foundry project ARM resource ID.";
         }
     }
-    return { configured: frontends.some(row => row.configured), frontends, revision, foundryProject };
+    return { configured: frontends.some(row => row.configured), frontends, revision, foundryProject, milestones: await readMilestones(directory) };
 }
 
 export async function frontendStatus(session) {

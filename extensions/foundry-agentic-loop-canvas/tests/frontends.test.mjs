@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm, rename, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { readFrontends, frontendStatus, openFrontend } from "../lib/frontends.mjs";
+import { readFrontends, frontendStatus, openFrontend, parseMilestones } from "../lib/frontends.mjs";
 
 async function fixture(t) {
     const directory = await mkdtemp(path.join(tmpdir(), "foundry-agentic-loop-frontends-"));
@@ -121,4 +121,22 @@ test("integrated browser rejects invalid URLs and propagates host failures", asy
     await assert.rejects(openFrontend(session, "local"), /absolute HTTP\(S\) URL/);
     await writeFile(path.join(directory, ".env"), "LOCAL_FRONTEND=http://localhost:5173\n");
     await assert.rejects(openFrontend(session, "local"), /Browser canvas is unavailable/);
+});
+
+test("README milestones track the rapid contract, hosted checkpoint verdict and an agent-only app", async t => {
+    assert.deepEqual(parseMilestones(""), { contract: false, checkpoint: null, appless: false });
+    const readme = "# Claims\n\n## Architecture\n\n| Layer | Choice |\n| --- | --- |\n| Frontend / backend | Not applicable (agent-only) |\n\n## Implementation contract\n\n- one agent\n\n## Hosted checkpoint\n\n**Passed** (claims-agent v1, active):\n";
+    assert.deepEqual(parseMilestones(readme), { contract: true, checkpoint: "passed", appless: true });
+    assert.equal(parseMilestones("## Hosted checkpoint\n\n**Blocked**: quota").checkpoint, "blocked");
+    assert.equal(parseMilestones("## Hosted checkpoint\n\nPending deploy.").checkpoint, "pending");
+    assert.equal(parseMilestones("## Architecture\n| Frontend | React + FastAPI |\n## Notes\n| Frontend | Not applicable |").appless, false, "only the Architecture section counts");
+    assert.equal(parseMilestones("Mentions ## Implementation contract inline").contract, false);
+
+    const directory = await fixture(t);
+    assert.deepEqual((await readFrontends(directory)).milestones, { contract: false, checkpoint: null, appless: false }, "a missing README shows no milestones");
+    await writeFile(path.join(directory, "README.md"), readme);
+    assert.deepEqual((await readFrontends(directory)).milestones, { contract: true, checkpoint: "passed", appless: true });
+    await rm(path.join(directory, "README.md"));
+    await mkdir(path.join(directory, "README.md"));
+    assert.deepEqual((await readFrontends(directory)).milestones.contract, false, "an unreadable README never fails the .env read");
 });

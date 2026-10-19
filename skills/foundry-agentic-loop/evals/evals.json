@@ -51,7 +51,7 @@
         "Uses Microsoft Agent Framework for the basic agent, Python 3.13, Responses API and the Basic sample's model without substituting a hard-coded model or region.",
         "Checks management-plane and data-plane access separately; Owner is not accepted as proof of data-plane access.",
         "Checks ability to assign planned runtime roles without requiring a not-yet-created identity to already have effective permissions.",
-        "Records shared service, environment, protocol/schema, authentication, streaming/error and dependency contracts in the root README.",
+        "Records shared service, environment, protocol/schema, authentication, streaming/error and dependency contracts under ## Implementation contract in the root README, and plans to record the hosted checkpoint verdict under ## Hosted checkpoint.",
         "Acceptance verifies a correlated backend/agent/tool trace in Application Insights, with sensitive content capture off unless explicitly approved and controlled.",
         "Preserves local E2E testing and a separate approval gate before frontend/backend deployment using az containerapp up --source.",
         "Does not require Search, Foundry IQ, the foundry-agentic-loop-workflow, a new Foundry project or an audit of every installed skill.",

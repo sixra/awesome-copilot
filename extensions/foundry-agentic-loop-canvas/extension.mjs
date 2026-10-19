@@ -113,7 +113,7 @@ async function perform(action, input) {
         case "usage": return sessionUsage(model.session, model.session.sessionId);
         case "frontends": return model.frontends(input.retry);
         case "open_frontend": return openFrontend(model.session, input.frontend);
-        case "inspect_agent": return model.inspectAgent(input);
+        case "inspect_agent": await ensureLive(); return model.inspectAgent(input, live.lock);
         case "refresh_foundry": {
             const open = await model.session.rpc.canvas.listOpen();
             const panel = open.openCanvases.find(row => row.canvasId === "agent-builder");
@@ -161,7 +161,7 @@ async function perform(action, input) {
             await ensureLive();
             await live.refresh();
             const run = input.runId ? knownRun(input.runId) : null;
-            return model.send(input, model.mode(live.runs.length > 0, live.lock), run?.checkpoint ?? (["error", "halted"].includes(run?.status) ? "failed" : null));
+            return model.send(input, model.mode(live.runs.length > 0, live.lock), run?.checkpoint ?? (["error", "halted"].includes(run?.status) ? "failed" : null), live.lock);
         }
         default:
             if (!project) throw new Error("Select a Foundry project on Start first.");
@@ -202,7 +202,7 @@ const descriptions = {
     workflow_resume: "Resume a paused foundry-agentic-loop-workflow run, for example to approve a spec or deployment checkpoint.",
     workflow_pause: "Pause a running foundry-agentic-loop-workflow run.",
     workflow_cancel: "Cancel a foundry-agentic-loop-workflow run.",
-    open_artifact: "Open an existing workflow artifact such as docs/spec.md, or the workspace AGENTS.md, in the Editor canvas.",
+    open_artifact: "Open an existing workflow artifact such as docs/spec.md, or the workspace AGENTS.md or README.md, in the Editor canvas.",
     refresh_foundry: "Reuse the existing Foundry canvas public refreshWorkspaceState action.",
     prompt: "Send a canvas prompt to Chat; this starts a Copilot turn. On Start the user picks a prompt template and reviews or edits its text before sending: kind guided is Shape it with Copilot, with an optional idea as text; kind scenario sends scenarioId with the edited prompt as text. Sending from a template locks it for this session. changes adds the user's feedback to a fixed change request; the other kinds send a fixed prompt for their step directly. With Work IQ context on, brief prompts ask Copilot to use the Work IQ MCP server first.",
 };

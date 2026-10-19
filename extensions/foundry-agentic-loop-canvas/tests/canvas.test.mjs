@@ -458,15 +458,15 @@ test("change requests target the paused checkpoint and never resume the run", ()
     assert(!ship.includes(id), "deploy uses the workflow's own Azure target");
     assert.throws(() => promptFor("deploy", { mode: "sdd" }), /valid prompt/, "SDD deploys only a verified run");
     const quick = promptFor("deploy", { project });
-    assert(quick.includes("for the `deploy` short command in the Agentic Loop section of the root AGENTS.md") && quick.includes("ask for my approval before deploying the app"));
+    assert(quick.includes("Run the `deploy` short command from the Agentic Loop section of the root AGENTS.md") && quick.includes("ask for my approval before deploying the app"));
     assert(!quick.includes(id), "short commands read the project from the workspace");
 });
 
 test("rapid short commands route through AGENTS.md and are rapid-only", () => {
     for (const kind of ["run", "test", "convert"]) {
         const prompt = promptFor(kind, { project });
-        assert(prompt.startsWith("[Agentic Loop canvas action]\nUse the foundry-agentic-loop skill in rapid prototyping mode for the `"), kind);
-        assert(prompt.includes("short command in the Agentic Loop section of the root AGENTS.md"), kind);
+        assert(prompt.startsWith("[Agentic Loop canvas action]\nRun the `"), kind);
+        assert(prompt.includes("short command from the Agentic Loop section of the root AGENTS.md"), kind);
         assert(!prompt.includes(id), `${kind} reads the project from the workspace`);
         assert.throws(() => promptFor(kind, { mode: "sdd" }), /valid prompt/, kind);
     }
@@ -515,13 +515,14 @@ test("local inspection requests verify the selected agent and include its projec
     assert.deepEqual(await model.inspectAgent({ projectId: id, agentName: "support-agent" }),
         { messageId: "inspection-message", agentName: "support-agent" });
     const prompt = sent[0].prompt;
-    assert(prompt.includes("Launch Agent Inspector locally"));
+    assert(prompt.includes("Launch Agent Inspector") && prompt.includes("runs the agent from local source (azd ai agent run)"));
     assert(prompt.includes('Agent name: "support-agent"'));
     assert(prompt.includes('Agent version: "7"'));
     assert(prompt.includes(project.id));
     assert(prompt.includes(project.endpoint));
-    assert(prompt.includes("Do not substitute another workspace agent, scaffold or redeploy."));
-    assert(prompt.includes("Ask before installing missing tools or sending test prompts"));
+    assert(prompt.includes("locate the source that matches this agent and version"));
+    assert(prompt.includes("do not substitute another agent, scaffold or redeploy."));
+    assert(prompt.includes("Ask before installing tools or sending test prompts"));
     await assert.rejects(model.inspectAgent({ projectId: `${id}-stale`, agentName: "support-agent" }), /project changed/);
     await assert.rejects(model.inspectAgent({ projectId: id, agentName: "deleted-agent" }), /no longer available/);
     await assert.rejects(model.inspectAgent({ projectId: id, agentName: "" }), /Choose an agent/);
@@ -529,6 +530,31 @@ test("local inspection requests verify the selected agent and include its projec
     assert.throws(() => promptFor("inspect", { agent: { name: "support-agent" } }), /Select a Foundry project/);
     assert.throws(() => promptFor("inspect", { project }), /valid prompt/);
     assert(promptFor("inspect", { project, agent: { name: "support-agent", version: null } }).includes("Resolve the latest version"));
+});
+
+test("a locked workspace that records the selected project gets short project-scoped prompts", async () => {
+    const recorded = promptFor("inspect", { project, agent: { name: "support-agent", version: "1" }, recorded: true });
+    assert(recorded.endsWith(`Foundry project: ${project.name} (FOUNDRY_PROJECT in .env).`));
+    assert(recorded.includes("use its source in this workspace") && !recorded.includes(id) && !recorded.includes(project.endpoint));
+    for (const kind of ["optimizer", "custom"]) {
+        const prompt = promptFor(kind, { project, text: "Build a claims agent.", recorded: true });
+        assert(!prompt.includes(id) && !prompt.includes("Use resource group"), kind);
+    }
+    const directory = await mkdtemp(path.join(tmpdir(), "al-recorded-"));
+    const session = { rpc: { metadata: { snapshot: async () => ({ workingDirectory: directory }) } }, send: async input => { sent.push(input.prompt); return "m"; } };
+    const sent = [];
+    const model = new Model({ session, azure: { agents: async () => [{ name: "support-agent", version: "1" }] } });
+    model.projects = [project];
+    model.state.projectId = id;
+    await writeFile(path.join(directory, ".env"), `FOUNDRY_PROJECT=${id.toUpperCase()}\n`);
+    assert.equal(await model.recorded("rapid"), true, "ARM IDs compare case-insensitively");
+    assert.equal(await model.recorded(null), false, "an unlocked workspace keeps the full project context");
+    await model.send({ kind: "custom", text: "Build a claims agent." }, "rapid", null, "rapid");
+    await model.inspectAgent({ projectId: id, agentName: "support-agent" }, "rapid");
+    assert(sent.every(prompt => !prompt.includes(id)), "both prompts name the recorded project only");
+    await writeFile(path.join(directory, ".env"), `FOUNDRY_PROJECT=${id}-other\n`);
+    assert.equal(await model.recorded("rapid"), false, "a different FOUNDRY_PROJECT keeps the full context");
+    await rm(directory, { recursive: true, force: true });
 });
 
 test("local inspection does not send requests after discovery failure or a project switch", async () => {
