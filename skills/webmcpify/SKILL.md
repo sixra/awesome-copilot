@@ -1,15 +1,7 @@
 ---
 name: webmcpify
 description: 'WebMCP agent skill for curated core coverage or route-by-route parity — inventory an existing web app, integrate approved tools, then inspect, verify and heal them in a real browser. Use for "webmcpify", "add WebMCP", or "expose app actions to AI agents".'
-argument-hint: "[inventory|integrate|workbench|verify|status|full] [scope notes]"
 license: MIT
-tags:
-  - webmcp
-  - agent-skill
-  - document.modelContext
-  - browser-agents
-  - web-development
-  - chrome
 ---
 
 # webmcpify — make any web app agent-ready, verifiably
