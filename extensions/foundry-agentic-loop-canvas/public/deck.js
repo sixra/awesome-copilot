@@ -39,8 +39,15 @@ function go(index, { speak = true } = {}) {
     if (hadFocus) scroller.focus({ preventScroll: true });
     counter.textContent = `${index + 1} / ${slides.length}`;
     bar.style.scale = `${(index + 1) / slides.length} 1`;
-    prev.setAttribute("aria-disabled", String(index === 0));
-    next.setAttribute("aria-disabled", String(index === slides.length - 1));
+    // A nav button that becomes disabled under focus hands focus to the other one, so keyboard users keep their place.
+    const first = index === 0, last = index === slides.length - 1;
+    const focused = document.activeElement;
+    prev.disabled = first;
+    next.disabled = last;
+    prev.setAttribute("aria-disabled", String(first));
+    next.setAttribute("aria-disabled", String(last));
+    if (focused === prev && first) next.focus({ preventScroll: true });
+    if (focused === next && last) prev.focus({ preventScroll: true });
     if (speak) announce.textContent = slides[index].getAttribute("aria-label");
     history.replaceState(null, "", `${location.pathname}${location.search}#${index + 1}`);
 }

@@ -34,6 +34,7 @@
     <button role="tab" id="tab-optimize" aria-controls="optimize" aria-selected="false" tabindex="-1" data-tab="optimize">Optimize</button>
 </nav>
 <p id="notice" hidden></p>
+<p id="live-status" class="banner" role="status" hidden>Live updates disconnected — retrying…</p>
 <p id="project-env-error" class="error banner" hidden></p>
 </div>
 <main>
@@ -105,7 +106,7 @@ copilot plugin install azure@awesome-copilot</code></pre>
             </div>
         </details>
         <div id="brief-step" class="step-head"><span class="step-glyph" aria-hidden="true">3</span><span id="brief-title" class="step-title">Choose a prompt template</span></div>
-        <p id="brief-project-hint" class="warning" hidden>No Foundry project selected. Choose one above, or Copilot asks which project to use.</p>
+        <p id="brief-project-hint" class="warning" hidden>No Foundry project selected. Rapid prototyping prompts are sent with the project you choose above. <button class="quiet" data-pick-project>Select a Foundry project</button></p>
         <div id="gallery">
             <div class="gallery-bar">
                 <div class="search">
@@ -144,7 +145,8 @@ copilot plugin install azure@awesome-copilot</code></pre>
             <textarea id="prompt-text" rows="10" maxlength="16000"></textarea>
             <p id="review-target" class="muted" hidden></p>
             <div class="send-row">
-                <button id="send-prompt" class="primary">Send to Chat</button>
+                <button id="send-prompt" class="primary" aria-describedby="send-hint">Send to Chat</button>
+                <button id="send-pick-project" class="quiet" data-pick-project hidden>Select a Foundry project</button>
                 <button id="template-unlock" hidden>Unlock</button>
                 <button id="track-build" data-go="build" hidden>Track progress</button>
                 <label id="workiq-switch" class="switch"><input id="workiq-toggle" type="checkbox" role="switch" aria-describedby="workiq-status"><span class="switch-track" aria-hidden="true"></span>Boost with Work IQ</label>

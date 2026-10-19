@@ -27,6 +27,7 @@ export async function startServer({ assets, images, scenarios, dispatch, snapsho
     const staticFiles = new Map([
         ["/", ["index.html", "text/html; charset=utf-8"]],
         ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
+        ...["coalesce", "escape", "live-conn", "tab-policy", "target-save"].map(name => [`/${name}.mjs`, [`${name}.mjs`, "text/javascript; charset=utf-8"]]),
         ["/app.css", ["app.css", "text/css; charset=utf-8"]],
         ["/deck.html", ["deck.html", "text/html; charset=utf-8"]],
         ["/deck.js", ["deck.js", "text/javascript; charset=utf-8"]],

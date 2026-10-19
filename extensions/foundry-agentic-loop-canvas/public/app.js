@@ -1,8 +1,13 @@
+import { coalesce } from "./coalesce.mjs";
+import { escape, isLoopback } from "./escape.mjs";
+import { LiveConnection } from "./live-conn.mjs";
+import { autoSwitch } from "./tab-policy.mjs";
+import { TargetSaver } from "./target-save.mjs";
+
 const $ = id => document.getElementById(id);
 const token = document.querySelector('meta[name="canvas-token"]').content;
 const number = value => new Intl.NumberFormat().format(value ?? 0);
 const money = (value, currency = "USD") => new Intl.NumberFormat(undefined, { style: "currency", currency }).format(value);
-const escape = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 // Live updates re-render often; unchanged text is left alone so live regions are not announced again.
 const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -10,13 +15,6 @@ const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const toTime = value => typeof value === "number" ? value : Date.parse(value ?? "");
 const clock = (value, seconds = false) => Number.isFinite(toTime(value)) ? new Date(toTime(value)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}) }) : "";
 const iso = value => Number.isFinite(toTime(value)) ? new Date(toTime(value)).toISOString() : "";
-// The GitHub Copilot App opens canvas links in the system browser but ignores these loopback hosts.
-const isLoopback = href => {
-    try {
-        const host = new URL(href).hostname;
-        return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(host) || host.endsWith(".localhost");
-    } catch { return false; }
-};
 function setMark(id, text, label = "", tone = "") {
     const mark = $(id);
     mark.textContent = text;
@@ -107,7 +105,6 @@ const universals = {};
 const haystacks = new Map();
 // Edits to templates the user left, kept for this page so reopening one restores them.
 const drafts = new Map();
-let frontendsLoading = false;
 let frontendsSignature;
 let frontendState = null;
 // Undefined until the first .env read, so only a transition during this session switches to Explore.
@@ -204,12 +201,20 @@ function notice(message, error = false, action = null) {
     node.append(close);
 }
 
+// Buttons with work in flight; renderSendState leaves them disabled until busy() hands them back.
+const working = new Set();
+
 async function busy(button, work) {
     if (button.disabled) return;
     button.disabled = true;
+    working.add(button);
     try { await work(); }
     catch (error) { notice(error.message, true); }
-    finally { if (button.isConnected) button.disabled = button.hasAttribute("data-requires-project") && !activeProject(); }
+    finally {
+        working.delete(button);
+        if (button.isConnected) button.disabled = button.hasAttribute("data-requires-project") && !activeProject();
+        if (button.id === "send-prompt") renderSendState();
+    }
 }
 
 function failure(container, error) {
@@ -236,6 +241,7 @@ function renderProjectBar() {
     fitProjectBar();
     for (const button of document.querySelectorAll("[data-requires-project]")) button.disabled = !project;
     $("brief-project-hint").hidden = mode !== "rapid" || Boolean(selected);
+    renderSendState();
     $("optimize-project-hint").hidden = Boolean(project);
     $("optimize-project-hint").textContent = mode === "sdd"
         ? "The SDD workflow creates your Foundry project during Implement. Project actions unlock once it exists."
@@ -328,7 +334,7 @@ function onModeChanged(preferredTab) {
     if (preferredTab) selectTab(preferredTab).catch(error => notice(error.message, true));
     else if (["explore", "optimize"].includes(activeTab)) loadTab(activeTab).catch(error => notice(error.message, true));
     if (mode === "sdd") loadTargets();
-    if (mode === "rapid" && !projects.length && !discovering && !projectSyncError) discover();
+    if (mode === "rapid" && !projects.length && !discovering) discover();
 }
 
 async function chooseMode(next, preferredTab) {
@@ -500,12 +506,13 @@ function renderTargetSummary() {
     $("review-target").textContent = mode === "sdd" ? `Deploys to ${targetSummary()}` : "";
 }
 
-function applyTarget(value, picked = false) {
+// `force` also overwrites the environment name being typed, to restore the server's target after a failed save.
+function applyTarget(value, picked = false, force = false) {
     target = { ...target, ...value };
     const location = target.location || "auto";
     if (![...$("target-location").options].some(option => option.value === location)) $("target-location").add(new Option(location, location));
     $("target-location").value = location;
-    if (document.activeElement !== $("target-env")) $("target-env").value = target.environmentName ?? "";
+    if (force || document.activeElement !== $("target-env")) $("target-env").value = target.environmentName ?? "";
     $("target-subscription").value = subscriptions.some(row => row.id === target.subscriptionId) ? target.subscriptionId : "";
     renderTargetSummary();
     renderWhere(picked);
@@ -530,12 +537,47 @@ function loadTargets(force = false) {
     return targetsLoading;
 }
 
-async function saveTarget(input) {
-    try {
+function resetTargetHelp() {
+    $("target-env").setAttribute("aria-invalid", "false");
+    $("target-help").textContent = TARGET_HELP;
+    $("target-help").classList.remove("error");
+}
+
+// One save at a time; an SDD send waits for it, and a failed save puts the server's target back into the controls.
+const targetSaver = new TargetSaver({
+    save: async input => {
         applyTarget(await api("target", input), true);
-        $("target-help").textContent = TARGET_HELP;
-        $("target-help").classList.remove("error");
-    } catch (error) { notice(error.message, true); }
+        if ($("target-env").getAttribute("aria-invalid") !== "true") resetTargetHelp();
+    },
+    restore: async error => {
+        notice(`Could not save the deployment target: ${error.message} The saved target is shown again.`, true);
+        const response = await fetch("/api/state", { headers: { "X-Canvas-Token": token } });
+        const value = await response.json();
+        if (!response.ok) throw new Error(value.error);
+        applyTarget(value.state.target, true, true);
+        resetTargetHelp();
+    },
+    onChange: () => renderSendState(),
+});
+
+const NEEDS_PROJECT = "Select a Foundry project on Start to send a rapid prototyping prompt.";
+
+// Rapid briefs need a selected project; an SDD brief waits until the target has saved.
+function renderSendState() {
+    const send = $("send-prompt");
+    const needsProject = mode === "rapid" && !selected;
+    const visible = Boolean(template) && !send.hidden;
+    $("send-pick-project").hidden = !(visible && needsProject);
+    if (visible && templateState() === "open") setText($("send-hint"), needsProject ? NEEDS_PROJECT : START[mode].hint);
+    if (!working.has(send)) send.disabled = needsProject || (mode === "sdd" && targetSaver.saving);
+}
+
+function pickProject() {
+    $("step-where").open = true;
+    const switching = selectTab("start");
+    $("step-where").scrollIntoView({ block: "start", behavior: "instant" });
+    ($("project").disabled ? $("step-where").querySelector("summary") : $("project")).focus({ preventScroll: true });
+    switching.catch(error => notice(error.message, true));
 }
 
 // frontends() polls every 5 seconds, so the banner is announced only when its message changes.
@@ -546,18 +588,19 @@ function envError(message) {
     node.textContent = message;
 }
 
-async function frontends(retry = false) {
-    if (frontendsLoading) return;
-    frontendsLoading = true;
+// Polls share one request; a forced refresh during a poll runs again right after it, so its result is never stale.
+const frontends = coalesce(async retry => {
     try {
         const selection = selectionRevision;
         const result = await api("frontends", retry ? { retry: true } : {});
         const nextEnvProject = result.foundryProject?.id ?? null;
         if (nextEnvProject !== envProjectId) { envProjectId = nextEnvProject; renderProjectBar(); }
+        // A .env that cannot be read only warns; project discovery and the current selection are unaffected.
+        if (result.envError) envError(`Could not read the workspace .env: ${result.envError} Current selection kept.`);
         if (result.projectSync && selection === selectionRevision && !discovering) {
             const sync = result.projectSync;
             projectSyncError = Boolean(sync.error);
-            envError(sync.error ? `Could not synchronize FOUNDRY_PROJECT from .env: ${sync.error} Current selection kept. Refresh to retry.` : "");
+            if (!result.envError) envError(sync.error ? `Could not synchronize FOUNDRY_PROJECT from .env: ${sync.error} Current selection kept. Refresh to retry.` : "");
             const signature = JSON.stringify({ ...sync, error: null });
             if (signature !== resourcesSignature) {
                 resourcesSignature = signature;
@@ -583,17 +626,15 @@ async function frontends(retry = false) {
         const finished = result.frontends.some(row => row.key === "local" && row.configured && !row.error) || (milestones.checkpoint === "passed" && milestones.appless);
         const justFinished = rapidFinished === false && finished;
         rapidFinished = finished;
-        if (justFinished && mode === "rapid" && activeTab !== "explore") {
-            await selectTab("explore").catch(error => notice(`Could not finish switching to Explore: ${error.message}`, true));
-            notice("The prototype is ready. Try it from Explore.");
-        }
+        if (justFinished && mode === "rapid") autoTab("explore", "The prototype is ready. Try it from Explore.", "Open Explore");
     } catch (error) {
+        // Check again retries the request; discovery stays available meanwhile.
         projectSyncError = true;
         envError(`Could not read project configuration: ${error.message} Current selection kept. Refresh to retry.`);
         frontendsSignature = undefined;
         failure($("frontend-links"), error);
-    } finally { frontendsLoading = false; }
-}
+    }
+});
 
 const SKELETON = '<div class="skeleton"><span></span><span></span><span></span><p class="visually-hidden">Checking skills, extensions, tools and Azure sign-in…</p></div>';
 
@@ -608,7 +649,7 @@ async function retryAzure() {
     if (!azureSignedIn) return;
     if (projectSyncError) await frontends(true);
     if (mode === "sdd" && targetsFailed) await loadTargets();
-    if (mode === "rapid" && discoveryFailed && !projects.length && !projectSyncError) await discover();
+    if (mode === "rapid" && discoveryFailed && !projects.length) await discover();
 }
 
 async function checkReadiness() {
@@ -988,6 +1029,7 @@ function renderTemplateView() {
             : state === "rerun" ? `Edit the prompt if needed and ${runs ? "start a new run" : "send it again"}. The template stays locked for this session.`
                 : TEMPLATE_HINT[state]);
         renderReset();
+        renderSendState();
     }
     // A control hidden under keyboard focus hands focus to the next useful one.
     if (active?.closest("#gallery, #template-view") && active.closest("[hidden]")) {
@@ -1429,11 +1471,9 @@ function applyLive(snap, initial = false) {
     completedRun = finished ?? completedRun;
     lastRunStatus = snap.run ? `${snap.run.runId}:${snap.run.status === "completed" ? "completed" : "live"}` : null;
     lock = snap.lock ?? null;
-    if (!modePending && snap.mode && snap.mode !== mode) applyMode(snap.mode, openBuild ? "build" : undefined);
-    else if (openBuild) selectTab("build").catch(error => notice(error.message, true));
-    if (openExplore) {
-        selectTab("explore").then(() => notice("The workflow completed. Try the solution from Explore.")).catch(error => notice(error.message, true));
-    }
+    if (!modePending && snap.mode && snap.mode !== mode) applyMode(snap.mode);
+    if (openBuild) autoTab("build", "A build started. Follow it on Build.", "Open Build", false);
+    if (openExplore) autoTab("explore", "The workflow completed. Try the solution from Explore.", "Open Explore");
     renderModeHint();
     const checkpoint = snap.run?.checkpoint ? `${snap.run.runId}:${snap.run.checkpoint}` : null;
     if (!initial && !openBuild && checkpoint && checkpoint !== lastCheckpoint && activeTab !== "build") {
@@ -1451,21 +1491,24 @@ function applyLive(snap, initial = false) {
     updateDock();
 }
 
-async function liveLoop() {
-    let delay = 1000;
-    for (;;) {
-        try {
-            const response = await fetch(`/api/live?v=${liveVersion}`, { headers: { "X-Canvas-Token": token }, cache: "no-store" });
+const liveConnection = new LiveConnection();
+
+// After about 15 s of failed polls a banner says so until a poll succeeds; leaving the page aborts the poll in flight.
+function liveLoop() {
+    return liveConnection.run({
+        request: async signal => {
+            const response = await fetch(`/api/live?v=${liveVersion}`, { headers: { "X-Canvas-Token": token }, cache: "no-store", signal });
             const value = await response.json();
             if (!response.ok) throw new Error(value.error || `Live updates failed (${response.status}).`);
-            applyLive(value);
-            delay = 1000;
-        } catch {
-            await sleep(delay);
-            delay = Math.min(delay * 2, 30_000);
-        }
-    }
+            return value;
+        },
+        apply: applyLive,
+        sleep,
+        onState: disconnected => { $("live-status").hidden = !disconnected; },
+    });
 }
+addEventListener("pagehide", () => liveConnection.stop());
+addEventListener("pageshow", event => { if (event.persisted) liveLoop(); });
 
 function toggleChanges(open, focus = true) {
     const toggle = $("wf-callout").querySelector('[data-wf="changes-toggle"]');
@@ -1697,8 +1740,22 @@ async function selectTab(tab) {
         $(button.dataset.tab).hidden = !current;
     }
     window.scrollTo({ top: 0, behavior: "instant" });
-    await api("preferences", { tab });
+    // Remembering the tab is best effort; the tab loads either way.
+    api("preferences", { tab }).catch(error => notice(`Couldn't remember this tab: ${error.message}`, true));
     await loadTab(tab);
+}
+
+// Build opens when a build starts and Explore when it finishes, unless the user is typing or in a dialog: then a notice
+// offers the tab instead. A switch moves focus to the new tab and announces why; `show` also leaves the message visible.
+function autoTab(tab, message, label, show = true) {
+    const decision = autoSwitch({ current: activeTab, target: tab, active: document.activeElement, dialogOpen: Boolean(document.querySelector("dialog[open]")) });
+    if (decision === "none") return;
+    if (decision === "notice") { notice(message, false, { go: tab, label }); return; }
+    const loading = selectTab(tab);
+    $(`tab-${tab}`).focus({ preventScroll: true });
+    // Announced once the tab has loaded, so status messages from loading it do not cut the reason short.
+    loading.then(() => show ? notice(message) : announce(message),
+        error => notice(`Could not finish switching to ${tab[0].toUpperCase()}${tab.slice(1)}: ${error.message}`, true));
 }
 
 const SENT = {
@@ -1791,12 +1848,9 @@ document.querySelector(".mode").addEventListener("keydown", event => {
 });
 $("project-bar").onclick = () => {
     if (mode === "sdd") { selectTab(activeProject() ? "explore" : "build").catch(error => notice(error.message, true)); return; }
-    $("step-where").open = true;
-    const switching = selectTab("start");
-    $("step-where").scrollIntoView({ block: "start", behavior: "instant" });
-    ($("project").disabled ? $("step-where").querySelector("summary") : $("project")).focus({ preventScroll: true });
-    switching.catch(error => notice(error.message, true));
+    pickProject();
 };
+for (const button of document.querySelectorAll("[data-pick-project]")) button.onclick = pickProject;
 // The field's width comes from the header grid, not its content, so refitting never resizes what is observed.
 new ResizeObserver(fitProjectBar).observe(document.querySelector(".project"));
 // Passing readiness collapses step 1 under the button, so its summary takes focus and scrolls back into view to show the result.
@@ -1852,17 +1906,16 @@ $("wf-callout").addEventListener("input", event => {
     const send = $("wf-callout").querySelector('[data-wf="changes-send"]');
     if (send) send.disabled = !event.target.value.trim();
 });
-$("target-subscription").onchange = () => saveTarget({ subscriptionId: $("target-subscription").value });
-$("target-location").onchange = () => saveTarget({ location: $("target-location").value });
-let envSave;
+$("target-subscription").onchange = () => { targetSaver.schedule({ subscriptionId: $("target-subscription").value }); targetSaver.flush(); };
+$("target-location").onchange = () => { targetSaver.schedule({ location: $("target-location").value }); targetSaver.flush(); };
 $("target-env").oninput = () => {
-    clearTimeout(envSave);
     const value = $("target-env").value.trim();
     const valid = !value || /^[a-zA-Z][a-zA-Z0-9-]{1,19}$/.test(value);
     $("target-env").setAttribute("aria-invalid", String(!valid));
     $("target-help").textContent = valid ? TARGET_HELP : "Use 2 to 20 letters, digits or hyphens, starting with a letter.";
     $("target-help").classList.toggle("error", !valid);
-    if (valid) envSave = setTimeout(() => saveTarget({ environmentName: value }), 400);
+    if (valid) targetSaver.schedule({ environmentName: value });
+    else targetSaver.discard("environmentName");
 };
 $("template-search").oninput = renderGallery;
 $("template-sort").onchange = renderGallery;
@@ -1943,6 +1996,14 @@ $("send-prompt").onclick = () => busy($("send-prompt"), async () => {
         $("prompt-text").focus();
         throw new Error("The prompt is empty. Reset it to the template or write your own.");
     }
+    if (mode === "sdd") {
+        if ($("target-env").getAttribute("aria-invalid") === "true") {
+            $("target-env").focus();
+            throw new Error("Fix the azd environment name before sending.");
+        }
+        const saved = await targetSaver.flush();
+        if (!saved.ok) throw saved.error;
+    }
     clearTimeout(draftSave);
     const text = draftValue().trim();
     const input = row ? { kind: "scenario", scenarioId: row.id } : { kind: "guided" };
@@ -1962,7 +2023,7 @@ $("send-prompt").onclick = () => busy($("send-prompt"), async () => {
     const project = activeProject();
     await selectTab("build").catch(() => {});
     notice(!row ? SENT.guided[mode] : mode === "sdd" ? "Sent to Chat. Copilot runs preflight, then starts the workflow."
-        : project ? `Sent to Chat with ${project.name}. Continue there.` : "Sent to Chat. Copilot asks which Foundry project to use.");
+        : project ? `Sent to Chat with ${project.name}. Continue there.` : "Sent to Chat. Continue there.");
 });
 
 async function start() {
@@ -1988,16 +2049,18 @@ async function start() {
     loaded.add("start");
     const initial = Promise.all([setup(), (async () => {
         await frontends();
-        if (mode === "rapid" && !projects.length && !projectSyncError) await discover();
+        if (mode === "rapid" && !projects.length) await discover();
     })()]);
     const deferred = ["explore", "optimize"].includes(initialTab);
-    await selectTab(deferred ? "start" : initialTab);
+    // Live updates and polling start even when a tab fails to load; the tab shows its own error.
     liveLoop();
+    const tabFailed = error => notice(error.message, true);
+    await selectTab(deferred ? "start" : initialTab).catch(tabFailed);
     loadEnablement();
     if (mode === "sdd") loadTargets();
-    await initial;
+    await initial.catch(tabFailed);
     started = true;
-    if (deferred) await selectTab(initialTab);
+    if (deferred) await selectTab(initialTab).catch(tabFailed);
     setInterval(() => { if (activeTab === "optimize" && !document.hidden) usage(); }, 15_000);
     setInterval(() => { if (!document.hidden) frontends(); }, 5_000);
     setInterval(() => { tick(); updateDockStatus(); }, 1000);

@@ -96,9 +96,12 @@ nav button[aria-selected="true"] { border-bottom-color: var(--accent); color: va
 #notice, .banner { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 0; max-width: none; padding: 6px 12px 6px 20px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 13px; overflow-wrap: anywhere; }
 #notice.error, .banner.error { color: var(--error); background: color-mix(in srgb, var(--error) 7%, var(--bg)); }
 #notice { flex-wrap: nowrap; }
+#live-status { color: var(--warning); background: color-mix(in srgb, var(--warning) 8%, var(--bg)); }
 .notice-text { flex: 1 1 auto; min-width: 0; }
 #notice button { flex: none; min-height: 30px; padding: 3px 10px; white-space: nowrap; }
 #notice [data-go] { color: var(--accent); font-weight: 600; }
+[data-pick-project] { color: var(--accent); font-weight: 600; }
+.warning [data-pick-project] { margin-left: 4px; padding: 2px 6px; }
 .notice-close { margin-left: auto; width: 30px; height: 30px; }
 .notice-close svg { width: 16px; height: 16px; }
 

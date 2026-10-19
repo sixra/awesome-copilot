@@ -41,24 +41,45 @@ async function readMilestones(directory) {
     } catch { return { ...NONE }; }
 }
 
+const ENV_LIMIT = 64 * 1024;
+const ENV_KEYS = /^\s*(?:export\s+)?(FOUNDRY_PROJECT|LOCAL_FRONTEND|DEPLOYED_FRONTEND)\s*=/;
+
+// Only the three keys the canvas uses are parsed, so other lines (and their secrets or syntax) are never interpreted.
+export function parseCanvasEnv(source) {
+    const env = {};
+    for (const line of String(source).split(/\r?\n/)) {
+        const key = ENV_KEYS.exec(line)?.[1];
+        if (!key) continue;
+        try {
+            const value = parseEnv(line)[key];
+            if (value !== undefined) env[key] = value;
+        } catch { /* An unparsable line for a canvas key reads as unset. */ }
+    }
+    return env;
+}
+
+// A .env problem is reported as envError with nothing configured; it never blocks project discovery.
 export async function readFrontends(directory) {
     if (typeof directory !== "string" || !path.isAbsolute(directory)) throw new Error("The session workspace directory is unavailable.");
     let source = "";
     let revision = null;
+    let envError = null;
     try {
         const file = await open(path.join(directory, ".env"), "r");
         try {
             const stat = await file.stat({ bigint: true });
-            source = await file.readFile("utf8");
-            revision = createHash("sha256").update([directory, stat.dev, stat.ino, stat.mtimeNs, stat.ctimeNs, stat.size].join(":")).digest("hex");
+            if (!stat.isFile()) throw Object.assign(new Error("not a file"), { code: "EISDIR" });
+            if (stat.size > BigInt(ENV_LIMIT)) envError = `Workspace .env is larger than ${ENV_LIMIT / 1024} KB, so the canvas does not read it.`;
+            else {
+                source = await file.readFile("utf8");
+                revision = createHash("sha256").update([directory, stat.dev, stat.ino, stat.mtimeNs, stat.ctimeNs, stat.size].join(":")).digest("hex");
+            }
         } finally { await file.close(); }
     }
     catch (error) {
-        if (error.code !== "ENOENT") throw new Error(`Cannot read workspace .env (${error.code ?? "read failed"}).`);
+        if (error.code !== "ENOENT") envError = `Cannot read workspace .env (${error.code ?? "read failed"}).`;
     }
-    let env;
-    try { env = parseEnv(source); }
-    catch { throw new Error("Cannot parse workspace .env. Check its dotenv syntax."); }
+    const env = envError ? {} : parseCanvasEnv(source);
     const frontends = fields.map(field => {
         const value = env[field.variable]?.trim() ?? "";
         const result = { ...field, configured: Boolean(value), url: null, error: null };
@@ -85,7 +106,7 @@ export async function readFrontends(directory) {
             foundryProject.error = "FOUNDRY_PROJECT must be a full Microsoft Foundry project ARM resource ID.";
         }
     }
-    return { configured: frontends.some(row => row.configured), frontends, revision, foundryProject, milestones: await readMilestones(directory) };
+    return { configured: frontends.some(row => row.configured), frontends, revision, foundryProject, envError, milestones: await readMilestones(directory) };
 }
 
 export async function frontendStatus(session) {
@@ -95,9 +116,9 @@ export async function frontendStatus(session) {
 
 export async function openFrontend(session, key) {
     if (!fields.some(field => field.key === key)) throw new Error("Choose the local or deployed frontend.");
-    const { frontends } = await frontendStatus(session);
+    const { frontends, envError } = await frontendStatus(session);
     const frontend = frontends.find(row => row.key === key);
-    if (!frontend.url) throw new Error(frontend.error ?? `${frontend.variable} is not configured in workspace .env.`);
+    if (!frontend.url) throw new Error(frontend.error ?? envError ?? `${frontend.variable} is not configured in workspace .env.`);
     // Reopening an existing canvas focuses it without replacing its URL.
     const suffix = createHash("sha256").update(frontend.url).digest("hex").slice(0, 16);
     return session.rpc.canvas.open({

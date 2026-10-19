@@ -170,8 +170,8 @@ h3 { font-size: clamp(16px, 1.6vw, 21px); font-weight: 650; line-height: 1.25; }
 .controls { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 10px var(--gutter); border-top: 1px solid var(--border); background: var(--bg); }
 .nav { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--text); cursor: pointer; transition: background-color 150ms var(--ease), border-color 150ms var(--ease), opacity 150ms var(--ease); }
 .nav:hover { background: var(--surface); border-color: var(--rule); }
-.nav[aria-disabled="true"] { opacity: .4; cursor: default; }
-.nav[aria-disabled="true"]:hover { background: var(--bg); border-color: var(--border); }
+.nav:disabled, .nav[aria-disabled="true"] { opacity: .4; cursor: default; }
+.nav:disabled:hover, .nav[aria-disabled="true"]:hover { background: var(--bg); border-color: var(--border); }
 .nav svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .progress { height: 3px; border-radius: 3px; background: var(--border); overflow: hidden; }
 #bar { display: block; height: 100%; background: var(--accent); transform-origin: left; scale: 0 1; transition: scale 250ms var(--ease); }

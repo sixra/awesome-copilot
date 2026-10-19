@@ -117,7 +117,9 @@ export function promptFor(kind, { project, scenario, text, agent, mode = "rapid"
     const runSkills = scenario?.runSkills?.some(name => !body.includes(name)) ? `\nRun skills to reuse: ${scenario.runSkills.join(", ")}.` : "";
     const brief = scenario ? `${body}${runSkills}` : body;
     const idea = kind === "guided" && text?.trim() ? `\n\nMy idea:\n${text.trim()}` : "";
-    const where = project ? "in the selected Foundry project" : "in an existing Foundry project; ask me which one to use";
+    // Rapid prototyping builds in the selected project; SDD provisions its own.
+    if (mode === "rapid" && ["guided", "scenario", "custom"].includes(kind) && !project) throw new Error("Select a Foundry project on Start before sending a rapid prototyping prompt.");
+    const where = "in the selected Foundry project";
     const rapid = brief ? `Use the foundry-agentic-loop skill in rapid prototyping mode to build this complete solution ${where}.\n\n${brief}` : null;
     const sdd = brief ? `Use the foundry-agentic-loop skill in SDD mode. Start the foundry-agentic-loop-workflow to specify, implement, verify and deploy this solution end to end; Implement provisions a new Foundry project and the solution resources with azd. Run preflight and ask only the clarifying questions that change the spec before starting the workflow.\n\n${brief}\n\n${scenario?.id ? `Workflow scenarioId: ${scenario.id}\n` : ""}${azureTarget(target, subscriptions)}` : null;
     const prompts = {
@@ -168,6 +170,9 @@ export class Model {
         this.envProjectError = null;
         this.envProjectRetryAt = 0;
         this.envProjectBackoff = ENV_RETRY;
+        this.envSyncToken = 0;
+        // Explicit project and subscription choices; a .env synchronization started before one does not apply.
+        this.revision = 0;
     }
 
     async load() {
@@ -269,30 +274,49 @@ export class Model {
         return { projects: this.projects, subscriptions: this.subscriptions, selected: this.project, subscriptionId: this.state.subscriptionId, warnings: this.projectWarnings };
     }
 
-    async frontends(retry = false) {
+    // Reads .env and runs Azure discovery outside `serial` (the extension's mutation queue), so a poll never delays a
+    // user action; only applying the discovered selection waits for it, and an explicit choice made meanwhile wins.
+    async frontends(retry = false, serial = work => work()) {
         const result = await frontendStatus(this.session);
-        const target = result.foundryProject;
-        const key = target.id?.toLowerCase() ?? target.error;
-        if (key !== this.envProjectKey || retry) this.envProjectBackoff = ENV_RETRY;
-        if (key !== this.envProjectKey || (this.envProjectError && (retry || Date.now() >= this.envProjectRetryAt))) {
-            this.envProjectKey = key;
-            this.envProjectError = target.error;
-            if (target.id) {
-                const sync = await outcome(() => this.discover(projectIdentity(target.id).subscriptionId, target.id));
-                this.envProjectError = sync.status === "error" ? sync.error : null;
-            }
-            // Failed discovery backs off exponentially; Refresh (retry) or a changed .env starts again at 30 s.
-            this.envProjectRetryAt = Date.now() + this.envProjectBackoff;
-            this.envProjectBackoff = target.id && this.envProjectError ? Math.min(this.envProjectBackoff * 2, ENV_RETRY_MAX) : ENV_RETRY;
-        }
+        // A .env that cannot be read or parsed only warns; the selection and discovery are left as they are.
+        if (!result.envError) await this.syncEnvProject(result.foundryProject, retry, serial);
         return { ...result, projectSync: {
             ...this.resourceState(),
-            error: this.envProjectError,
+            error: result.envError ? null : this.envProjectError,
         } };
+    }
+
+    async syncEnvProject(target, retry, serial) {
+        const key = target.id?.toLowerCase() ?? target.error;
+        if (key !== this.envProjectKey || retry) this.envProjectBackoff = ENV_RETRY;
+        if (key === this.envProjectKey && !(this.envProjectError && (retry || Date.now() >= this.envProjectRetryAt))) return;
+        this.envProjectKey = key;
+        this.envProjectError = target.error;
+        const token = ++this.envSyncToken;
+        if (target.id) {
+            const revision = this.revision;
+            const sync = await outcome(async () => {
+                const data = await this.fetchProjects(projectIdentity(target.id).subscriptionId, target.id);
+                await serial(async () => { if (token === this.envSyncToken && revision === this.revision) await this.applyDiscovery(data); });
+            });
+            if (token !== this.envSyncToken) return;
+            this.envProjectError = sync.status === "error" ? sync.error : null;
+        }
+        // Failed discovery backs off exponentially; Refresh (retry) or a changed .env starts again at 30 s.
+        this.envProjectRetryAt = Date.now() + this.envProjectBackoff;
+        this.envProjectBackoff = target.id && this.envProjectError ? Math.min(this.envProjectBackoff * 2, ENV_RETRY_MAX) : ENV_RETRY;
     }
 
     // Keeps the current list and selection until a refresh succeeds, so a failed refresh does not empty them.
     async discover(subscriptionId, requiredProjectId) {
+        const data = await this.fetchProjects(subscriptionId, requiredProjectId);
+        // A subscription the user chose outranks a .env synchronization still in flight.
+        if (subscriptionId) this.revision++;
+        return this.applyDiscovery(data);
+    }
+
+    // Azure reads only; nothing changes until applyDiscovery.
+    async fetchProjects(subscriptionId, requiredProjectId) {
         const subscriptions = await this.azure.subscriptions();
         const requested = subscriptionId ?? this.state.subscriptionId ?? subscriptions[0]?.id;
         const subscription = subscriptions.find(row => row.id.toLowerCase() === requested?.toLowerCase());
@@ -301,9 +325,15 @@ export class Model {
         if (!id) throw new Error("The selected subscription is no longer accessible. Select another subscription.");
         const result = await this.azure.projects(id);
         const projects = result.projects.map(project => ({ ...project, portalUrl: projectPortalUrl(project.id, subscription.tenantId) }));
+        if (requiredProjectId && !projects.some(project => project.id.toLowerCase() === requiredProjectId.toLowerCase())) {
+            throw new Error(`The FOUNDRY_PROJECT in .env could not be found or accessed.${result.warnings.length ? ` ${result.warnings.join("; ")}` : ""}`);
+        }
+        return { result, subscriptions, id, projects, requiredProjectId };
+    }
+
+    async applyDiscovery({ result, subscriptions, id, projects, requiredProjectId }) {
         const preferredId = requiredProjectId ?? this.state.projectId;
         const selected = projects.find(project => project.id.toLowerCase() === preferredId?.toLowerCase());
-        if (requiredProjectId && !selected) throw new Error(`The FOUNDRY_PROJECT in .env could not be found or accessed.${result.warnings.length ? ` ${result.warnings.join("; ")}` : ""}`);
         const previous = { subscriptions: this.subscriptions, projects: this.projects, warnings: this.projectWarnings, state: { ...this.state } };
         this.subscriptions = subscriptions;
         this.projects = projects;
@@ -323,6 +353,7 @@ export class Model {
 
     async select(projectId) {
         if (!this.projects.some(project => project.id === projectId)) throw new Error("Refresh resources and select an available project.");
+        this.revision++;
         this.state.projectId = projectId;
         await this.save();
         return this.project;

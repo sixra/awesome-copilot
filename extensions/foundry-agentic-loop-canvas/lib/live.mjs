@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -46,8 +47,14 @@ export function briefOf(records = []) {
     return null;
 }
 
-// Mirrors the workflow's recordFile(): .agentic-loop/runs/<sanitized runId>.json.
-export const flightRecordPath = runId => path.posix.join(".agentic-loop", "runs", `${String(runId).replace(/[^A-Za-z0-9._-]/g, "_")}.json`);
+const SAFE_RUN_ID = /^[A-Za-z0-9._-]{1,120}$/;
+// Mirrors the workflow's recordFile(): a safe run ID is the file name; any other is sanitized and hash-suffixed so distinct IDs never share a file.
+export function runFile(runId) {
+    const id = String(runId);
+    if (SAFE_RUN_ID.test(id)) return `${id}.json`;
+    return `${id.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 100)}-${createHash("sha256").update(id).digest("hex").slice(0, 8)}.json`;
+}
+export const flightRecordPath = runId => path.posix.join(".agentic-loop", "runs", runFile(runId));
 
 export function outcomeOf(record) {
     if (!record || !["deployed", "verified"].includes(record.status)) return null;
@@ -81,7 +88,7 @@ export function blockerOf(record, pause) {
     return {
         status: entry.status,
         summary: line(entry.summary, 300),
-        issues: (Array.isArray(entry.issues) ? entry.issues : []).map(issue => line(issue, 500)).filter(Boolean).slice(0, 10),
+        issues: (Array.isArray(entry.issues) ? entry.issues : []).map(issue => line(issue, 500)).filter(Boolean).slice(0, 20),
         fixes: (Array.isArray(entry.attempts) ? entry.attempts : []).filter(row => row?.role === "fix").length,
     };
 }
@@ -264,13 +271,19 @@ export class Live {
         return this.refresh().then(() => this.snapshot());
     }
 
+    // Loads into locals and commits only a complete read; a failure keeps the last good lock and runs and sets error.
     refresh() {
         if (this.refreshing) { this.again = true; return this.refreshing; }
         this.refreshing = (async () => {
             do {
                 this.again = false;
-                try { await this.load(); this.error = null; }
+                let fresh = null;
+                try { fresh = this.commit(await this.load()); this.error = null; }
                 catch (error) { this.error = error.message; }
+                if (fresh) {
+                    try { await this.onNewRun?.(fresh); }
+                    catch { /* The mode override stays until the next new run; the run itself is shown. */ }
+                }
             } while (this.again);
             const next = JSON.stringify([this.runs, this.run, this.error, this.lock]);
             if (next !== this.last) { this.last = next; this.bump(); }
@@ -278,28 +291,43 @@ export class Live {
         return this.refreshing;
     }
 
-    async load() {
-        this.lock = await this.readLock();
-        const all = await this.session.workflow.listRuns();
-        const runs = all.filter(run => run.workflowName === WORKFLOW).sort((a, b) => b.createdAt - a.createdAt);
-        if (this.known) {
-            const fresh = runs.find(run => !this.known.has(run.runId));
-            if (fresh) {
-                this.selectedRunId = fresh.runId;
-                await this.onNewRun?.(fresh);
-            }
-        }
-        this.known = new Set(runs.map(run => run.runId));
-        this.runs = runs.map(shapeSummary);
-        const selected = runs.find(run => run.runId === this.selectedRunId) ?? runs[0];
-        if (!selected) { this.run = null; return; }
-        const detail = await this.session.workflow.getRunDetail(selected.runId);
-        this.run = shapeRun(detail, await this.existing(), await this.records(selected.runId, detail.progress), await this.flightRecord(selected.runId));
+    // For actions that decide on the lock or runs: rejects instead of acting on stale or missing state.
+    async refreshStrict() {
+        await this.refresh();
+        if (this.error) throw Object.assign(new Error(`Couldn't load the workspace state (AGENTS.md or workflow runs): ${this.error} Try again.`), { code: "live_unavailable" });
     }
 
+    async load() {
+        const lock = await this.readLock();
+        const all = await this.session.workflow.listRuns();
+        const runs = all.filter(run => run.workflowName === WORKFLOW).sort((a, b) => b.createdAt - a.createdAt);
+        const fresh = this.known ? runs.find(run => !this.known.has(run.runId)) ?? null : null;
+        const selectedRunId = fresh?.runId ?? this.selectedRunId;
+        const selected = runs.find(run => run.runId === selectedRunId) ?? runs[0];
+        let run = null;
+        if (selected) {
+            const detail = await this.session.workflow.getRunDetail(selected.runId);
+            run = shapeRun(detail, await this.existing(), await this.records(selected.runId, detail.progress), await this.flightRecord(selected.runId));
+        }
+        return { lock, runs, fresh, selectedRunId, run };
+    }
+
+    commit({ lock, runs, fresh, selectedRunId, run }) {
+        this.lock = lock;
+        this.known = new Set(runs.map(row => row.runId));
+        this.runs = runs.map(shapeSummary);
+        this.selectedRunId = selectedRunId;
+        this.run = run;
+        return fresh;
+    }
+
+    // A missing AGENTS.md means no lock; any other failure must not read as "unlocked".
     async readLock() {
         try { return parseLock(await readFile(path.join(await this.workspace(), AGENTS), "utf8")); }
-        catch { return null; }
+        catch (error) {
+            if (error.code === "ENOENT") return null;
+            throw new Error(`Cannot read AGENTS.md (${error.code ?? error.message}).`);
+        }
     }
 
     async flightRecord(runId) {

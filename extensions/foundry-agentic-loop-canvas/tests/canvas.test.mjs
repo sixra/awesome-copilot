@@ -322,6 +322,10 @@ test("prompt templates: choosing one resets its draft, sending locks it, and unl
     await model.preferences({ template: "claims-triage" });
     assert.equal(model.state.draft, "", "switching templates resets the draft");
     await model.preferences({ draft: "Claims idea", view: "list" });
+    await assert.rejects(model.send({ kind: "scenario", scenarioId: "claims-triage", text: "Claims idea" }, "rapid"), /Select a Foundry project on Start/);
+    assert.deepEqual([sent.length, model.state.started], [0, false], "a rapid brief without a project sends nothing and does not lock");
+    model.projects = [project];
+    model.state.projectId = project.id;
 
     const { prompt: _prompt, ...result } = await model.send({ kind: "scenario", scenarioId: "claims-triage", text: "  Claims idea  " }, "rapid");
     assert.deepEqual(result, { messageId: "message-1", template: "claims-triage", started: true });
@@ -379,8 +383,9 @@ test("rapid prompts carry scenario and project context; SDD prompts carry the Az
     assert(rapid.includes(scenario.prompt));
     assert(rapid.includes(id));
     assert(rapid.endsWith("Use resource group rg-demo for additional solution resources."));
-    assert.equal(promptFor("scenario", { scenario }),
-        `[Agentic Loop canvas action]\nUse the foundry-agentic-loop skill in rapid prototyping mode to build this complete solution in an existing Foundry project; ask me which one to use.\n\n${scenario.prompt}\n\nIndustry: Manufacturing`);
+    for (const kind of ["scenario", "custom", "guided"]) {
+        assert.throws(() => promptFor(kind, { scenario, text: "x" }), /Select a Foundry project on Start before sending a rapid prototyping prompt/, `rapid ${kind} needs a project`);
+    }
     const subscriptionId = "11111111-1111-1111-1111-111111111111";
     const sdd = promptFor("scenario", { scenario, project, mode: "sdd", target: { subscriptionId, location: "eastus2", environmentName: "mfg-demo" }, subscriptions: [{ id: subscriptionId, name: "Demo" }] });
     assert(sdd.includes("Start the foundry-agentic-loop-workflow"));
@@ -397,22 +402,23 @@ test("rapid prompts carry scenario and project context; SDD prompts carry the Az
     assert.throws(() => promptFor("custom", { text: "x", mode: "sdd", target: { subscriptionId: "nope" } }), /valid Azure subscription/);
     assert.throws(() => promptFor("custom", { text: "x", mode: "sdd", target: { environmentName: "-bad" } }), /azd environment/);
     assert.throws(() => promptFor("scenario", { scenario, mode: "fast" }), /rapid prototyping or SDD/);
-    assert.throws(() => promptFor("custom", { text: "   " }), /valid prompt/);
-    assert.throws(() => promptFor("scenario"));
+    assert.throws(() => promptFor("custom", { text: "   ", project }), /valid prompt/);
+    assert.throws(() => promptFor("scenario", { project }));
     assert.throws(() => promptFor("foundry"));
     const named = { id: "transform-factory-operations-with-ai", prompt: "Use the factory-operations-triage skill.", industry: "Manufacturing", runSkills: ["factory-operations-triage"] };
     const listed = { ...named, prompt: "Build a sales assistant.", runSkills: ["roundup", "tldr-prompt"] };
-    assert(promptFor("scenario", { scenario: listed }).endsWith("Industry: Manufacturing\nRun skills to reuse: roundup, tldr-prompt."));
-    assert(!promptFor("scenario", { scenario: named }).includes("Run skills to reuse"), "skills already named in the prompt are not repeated");
+    assert(promptFor("scenario", { scenario: listed, project }).includes("Industry: Manufacturing\nRun skills to reuse: roundup, tldr-prompt.\nSelected Foundry project:"));
+    assert(!promptFor("scenario", { scenario: named, project }).includes("Run skills to reuse"), "skills already named in the prompt are not repeated");
     const tagged = promptFor("scenario", { scenario: listed, mode: "sdd", target: { environmentName: "mfg-demo" } });
     assert(tagged.includes(`Workflow scenarioId: ${listed.id}\nAzure subscription:`));
     assert(tagged.endsWith("azd environment: mfg-demo"));
 });
 
 test("guided prompts name the mode; only rapid prompts carry the selected project", () => {
-    assert.equal(promptFor("guided"),
-        "[Agentic Loop canvas action]\nUse the foundry-agentic-loop skill in rapid prototyping mode to guide me through creating a complete agentic solution in an existing Foundry project; ask me which one to use: clarify the use case, one or more agents, and the user experience. Ask focused questions and obtain approval before provisioning.");
+    assert.throws(() => promptFor("guided"), /Select a Foundry project on Start/);
+    assert(promptFor("guided", { project }).startsWith("[Agentic Loop canvas action]\nUse the foundry-agentic-loop skill in rapid prototyping mode to guide me through creating a complete agentic solution in the selected Foundry project: clarify the use case, one or more agents, and the user experience. Ask focused questions and obtain approval before provisioning.\nSelected Foundry project: "));
     assert(promptFor("guided", { project }).includes(id));
+    assert(promptFor("guided", { mode: "sdd" }).includes("SDD mode"), "SDD provisions its own project, so none is required");
     const sdd = promptFor("guided", { project, mode: "sdd" });
     assert(sdd.includes("SDD mode") && sdd.includes("foundry-agentic-loop-workflow"));
     assert(!sdd.includes(id));
@@ -420,17 +426,17 @@ test("guided prompts name the mode; only rapid prompts carry the selected projec
 
 test("edited prompt templates keep their industry, run skills and workflow tag; guided ideas follow the mode", () => {
     const scenario = { id: "retail-sales", prompt: "Build a sales assistant.", industry: "Retail", runSkills: ["roundup"] };
-    const edited = promptFor("scenario", { scenario, text: "  Build a returns assistant instead.  " });
-    assert(edited.endsWith("\n\nBuild a returns assistant instead.\n\nIndustry: Retail\nRun skills to reuse: roundup."));
+    const edited = promptFor("scenario", { scenario, project, text: "  Build a returns assistant instead.  " });
+    assert(edited.includes("\n\nBuild a returns assistant instead.\n\nIndustry: Retail\nRun skills to reuse: roundup.\nSelected Foundry project:"));
     assert(!edited.includes(scenario.prompt), "edited text replaces the template prompt");
-    assert.equal(promptFor("scenario", { scenario, text: "   " }), promptFor("scenario", { scenario }), "blank text falls back to the template");
+    assert.equal(promptFor("scenario", { scenario, project, text: "   " }), promptFor("scenario", { scenario, project }), "blank text falls back to the template");
     const sdd = promptFor("scenario", { scenario, text: "Edited brief", mode: "sdd" });
     assert(sdd.includes("\n\nEdited brief\n\nIndustry: Retail\nRun skills to reuse: roundup.\n\nWorkflow scenarioId: retail-sales\n"));
-    const idea = promptFor("guided", { text: "  A claims triage agent.  " });
-    assert(idea.endsWith("Ask focused questions and obtain approval before provisioning.\n\nMy idea:\nA claims triage agent."));
+    const idea = promptFor("guided", { text: "  A claims triage agent.  ", project });
+    assert(idea.includes("Ask focused questions and obtain approval before provisioning.\n\nMy idea:\nA claims triage agent.\nSelected Foundry project:"));
     assert(promptFor("guided", { text: "A claims triage agent.", project }).includes("My idea:\nA claims triage agent.\nSelected Foundry project:"));
     assert(promptFor("guided", { text: "A claims triage agent.", mode: "sdd" }).includes("then start the foundry-agentic-loop-workflow.\n\nMy idea:\nA claims triage agent.\n\n"));
-    assert.equal(promptFor("guided", { text: "   " }), promptFor("guided"));
+    assert.equal(promptFor("guided", { text: "   ", project }), promptFor("guided", { project }));
 });
 
 test("change requests target the paused checkpoint and never resume the run", () => {
@@ -682,11 +688,16 @@ test("server protects actions and state while serving only allowlisted scenario 
     assert.equal(image.status, 200);
     assert.equal(image.headers.get("content-type"), "image/webp");
     assert.equal((await fetch(`${url.origin}/images/not-allowed.jpg`)).status, 403);
-    for (const file of ["deck.html", "deck.js", "deck.css", "app.js", "app.css", "enablement.json"]) {
+    const modules = ["coalesce.mjs", "escape.mjs", "live-conn.mjs", "tab-policy.mjs", "target-save.mjs"];
+    for (const file of ["deck.html", "deck.js", "deck.css", "app.js", "app.css", "enablement.json", ...modules]) {
         const response = await fetch(`${url.origin}/${file}?theme=dark`);
         assert.equal(response.status, 200, file);
         assert.match(response.headers.get("content-security-policy"), /frame-src 'self'/);
+        if (file.endsWith(".mjs")) assert.equal(response.headers.get("content-type"), "text/javascript; charset=utf-8", file);
     }
+    const imports = [...(await readFile(path.join(root, "public", "app.js"), "utf8")).matchAll(/^import .* from "\.\/([^"]+)";$/gm)].map(match => match[1]);
+    assert.deepEqual(imports.sort(), modules, "app.js imports exactly the allowlisted modules");
+    for (const file of ["lib/server.mjs", "public/other.mjs", "other.mjs", "package.json"]) assert.equal((await fetch(`${url.origin}/${file}`)).status, 403, file);
     assert.equal((await fetch(`${url.origin}/api/live?v=0`)).status, 403);
     const rebound = await new Promise((resolve, reject) => {
         request(`${url.origin}/deck.html`, { headers: { Host: "evil.com" } }, response => { response.resume(); resolve(response.statusCode); })

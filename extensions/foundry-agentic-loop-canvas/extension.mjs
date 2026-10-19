@@ -111,7 +111,8 @@ async function perform(action, input) {
         case "discover": return model.discover(input.subscriptionId);
         case "select": return model.select(input.projectId);
         case "usage": return sessionUsage(model.session, model.session.sessionId);
-        case "frontends": return model.frontends(input.retry);
+        // Reads and Azure discovery run outside the queue; only applying their result waits for it.
+        case "frontends": return model.frontends(input.retry, serial);
         case "open_frontend": return openFrontend(model.session, input.frontend);
         case "inspect_agent": await ensureLive(); return model.inspectAgent(input, live.lock);
         case "refresh_foundry": {
@@ -124,14 +125,14 @@ async function perform(action, input) {
             // Unlocking is for a template sent by mistake: once the build leaves a trace, the template stays.
             if (input.started === false && model.state.started) {
                 await ensureLive();
-                await live.refresh();
+                await live.refreshStrict();
                 if (live.lock || live.runs.length || live.busy) throw templateLocked();
             }
             return model.preferences(input);
         }
         case "mode": {
             await ensureLive();
-            await live.refresh();
+            await live.refreshStrict();
             if (live.lock && input.mode !== "auto" && input.mode !== live.lock) throw Object.assign(new Error(lockMessage(live.lock)), { code: "mode_locked" });
             await model.setMode(input.mode === "auto" ? null : input.mode);
             live.bump();
@@ -159,7 +160,7 @@ async function perform(action, input) {
         case "open_artifact": return openArtifact(model.session, input.path);
         case "prompt": {
             await ensureLive();
-            await live.refresh();
+            await live.refreshStrict();
             const run = input.runId ? knownRun(input.runId) : null;
             return model.send(input, model.mode(live.runs.length > 0, live.lock), run?.checkpoint ?? (["error", "halted"].includes(run?.status) ? "failed" : null), live.lock);
         }
@@ -172,13 +173,15 @@ async function perform(action, input) {
     }
 }
 
+function serial(work) {
+    const result = mutation.then(work);
+    mutation = result.catch(() => {});
+    return result;
+}
+
 function dispatch(action, input = {}) {
     // Serialize state changes; a slow subscription discovery cannot overwrite a later selection.
-    if (["discover", "select", "frontends", "preferences", "prompt", "inspect_agent", "mode", "targets", "target"].includes(action)) {
-        const result = mutation.then(() => perform(action, input));
-        mutation = result.catch(() => {});
-        return result;
-    }
+    if (["discover", "select", "preferences", "prompt", "inspect_agent", "mode", "targets", "target"].includes(action)) return serial(() => perform(action, input));
     return perform(action, input);
 }
 
@@ -235,13 +238,20 @@ const session = await joinSession({
             const openInput = JSON.stringify([ctx.input?.mode ?? null, ctx.input?.tab ?? null]);
             if (openInput !== model.state.openInput) {
                 // An AGENTS.md lock wins over the requested mode; the canvas still opens, in the locked mode.
+                // Unreadable workspace state also opens it, without recording the input so the next open retries it.
+                let applied = true;
                 if (ctx.input?.mode) {
                     try { await dispatch("mode", { mode: ctx.input.mode }); }
-                    catch (error) { if (error.code !== "mode_locked") throw error; }
+                    catch (error) {
+                        if (error.code === "live_unavailable") applied = false;
+                        else if (error.code !== "mode_locked") throw error;
+                    }
                 }
                 if (ctx.input?.tab) await dispatch("preferences", { tab: ctx.input.tab });
-                model.state.openInput = openInput;
-                await model.save();
+                if (applied) {
+                    model.state.openInput = openInput;
+                    await model.save();
+                }
             }
             let entry = servers.get(ctx.instanceId);
             if (!entry) {

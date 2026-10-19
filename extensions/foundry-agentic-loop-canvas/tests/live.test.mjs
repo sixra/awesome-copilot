@@ -1,9 +1,10 @@
 import { test } from "node:test";
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { AGENTS, ARTIFACT_PATHS, Live, OPENABLE, PHASES, WORKFLOW, blockerOf, briefOf, checkpointInfo, checkpointOf, flightRecordPath, lockMessage, outcomeOf, parseGates, parseLock, planOf, shapeRun, shapeSummary } from "../lib/live.mjs";
+import { AGENTS, ARTIFACT_PATHS, Live, OPENABLE, PHASES, WORKFLOW, blockerOf, briefOf, checkpointInfo, checkpointOf, flightRecordPath, lockMessage, outcomeOf, parseGates, parseLock, planOf, runFile, shapeRun, shapeSummary } from "../lib/live.mjs";
 
 const log = (seq, text) => ({ seq, kind: "log", text, recordedAt: seq * 1000 });
 const summary = (runId, overrides = {}) => ({
@@ -131,7 +132,7 @@ test("completed runs read their outcome and safe endpoints from the flight recor
     const live = new Live({ session, workspace: root });
     t.after(() => live.stop());
     await live.start();
-    assert.equal(flightRecordPath("run:1"), ".agentic-loop/runs/run_1.json");
+    assert.equal(flightRecordPath("run:1"), `.agentic-loop/runs/run-1-${createHash("sha256").update("run:1").digest("hex").slice(0, 8)}.json`);
     assert.deepEqual(live.snapshot().run.outcome, { status: "verified", endpoints: [{ name: "web", url: "https://app.example.com/" }, { name: "localhost", url: "http://localhost:3000/" }] });
     assert.equal(outcomeOf({ status: "running" }), null);
     assert.equal(outcomeOf(null), null);
@@ -230,11 +231,48 @@ test("the AGENTS.md lock is read on refresh and after each turn, and a change bu
     session.emit("session.idle");
     await woken;
     assert.equal(live.snapshot().lock, "sdd", "a finished turn refreshes the lock");
+    const listRuns = session.workflow.listRuns;
     session.workflow.listRuns = async () => { throw new Error("Workflow store unavailable"); };
     await rm(file);
     await live.refresh();
-    assert.equal(live.snapshot().lock, null, "the lock is read even when listing runs fails");
+    assert.equal(live.snapshot().lock, "sdd", "a failed load keeps the last good lock");
     assert.equal(live.snapshot().error, "Workflow store unavailable");
+    await assert.rejects(live.refreshStrict(), error => error.code === "live_unavailable" && /Couldn't load the workspace state.*Workflow store unavailable/.test(error.message));
+    session.workflow.listRuns = listRuns;
+    await live.refreshStrict();
+    assert.equal(live.snapshot().lock, null, "a missing AGENTS.md unlocks once the state loads");
+    assert.equal(live.snapshot().error, null);
+});
+
+test("an unreadable AGENTS.md fails closed instead of reading as unlocked", async t => {
+    const getRoot = await workspace(t);
+    const file = path.join(getRoot(), AGENTS);
+    await writeFile(file, "<!-- foundry-agentic-loop:begin mode=rapid -->\n");
+    const session = fakeSession({ runs: [summary("r1", { status: "completed" })] });
+    const live = new Live({ session, workspace: getRoot });
+    t.after(() => live.stop());
+    await live.start();
+    assert.equal(live.snapshot().lock, "rapid");
+    await rm(file);
+    await mkdir(file);
+    session.runs.splice(0);
+    await live.refresh();
+    assert.equal(live.snapshot().lock, "rapid", "EISDIR is not a missing file");
+    assert.match(live.snapshot().error, /Cannot read AGENTS\.md \(EISDIR\)/);
+    assert.equal(live.snapshot().runs.length, 1, "runs are not half-updated");
+    await assert.rejects(live.refreshStrict(), { code: "live_unavailable" });
+});
+
+test("run IDs map to flight record files with the workflow's rule", () => {
+    const hash = id => createHash("sha256").update(id).digest("hex").slice(0, 8);
+    assert.equal(runFile("run-1.a_B"), "run-1.a_B.json");
+    assert.equal(runFile("a".repeat(120)), `${"a".repeat(120)}.json`);
+    assert.equal(runFile("a".repeat(121)), `${"a".repeat(100)}-${hash("a".repeat(121))}.json`);
+    assert.equal(runFile("../etc/passwd"), `..-etc-passwd-${hash("../etc/passwd")}.json`);
+    assert.notEqual(runFile("run:1"), runFile("run/1"), "sanitized IDs that collide get distinct hashes");
+    assert.equal(runFile(""), `-${hash("")}.json`);
+    for (const id of ["../x", "a/b", "c\\d", "é", "x".repeat(500)]) assert.match(runFile(id), /^[A-Za-z0-9._-]{1,110}\.json$/);
+    assert.equal(flightRecordPath("../x"), `.agentic-loop/runs/${runFile("../x")}`);
 });
 
 test("new runs are selected automatically and reported once", async t => {

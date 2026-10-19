@@ -188,3 +188,39 @@ test("a refresh keeps the current projects and selection while pending and after
     assert.equal(model.project.id, second.id);
     assert.deepEqual(model.projects.map(row => row.id), [first.id, second.id]);
 });
+
+test("env discovery runs outside the mutation queue and a selection made meanwhile wins", async t => {
+    const { file, model, options } = await fixture(t);
+    await model.discover();
+    await writeFile(file, `FOUNDRY_PROJECT=${third.id}\n`);
+    let release;
+    const projects = options.azure.projects;
+    options.azure.projects = async id => { if (id === otherSubscription) await new Promise(resolve => { release = resolve; }); return projects(id); };
+    let queue = Promise.resolve();
+    const queued = [];
+    const serial = work => { queued.push("apply"); const result = queue.then(work); queue = result.catch(() => {}); return result; };
+    const poll = model.frontends(false, serial);
+    while (!release) await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(queued, [], "discovery holds no queue slot");
+    await serial(() => model.select(second.id));
+    release();
+    const result = await poll;
+    assert.equal(model.state.projectId, second.id, "the user's selection during discovery is kept");
+    assert.equal(result.projectSync.error, null);
+    assert.equal((await model.frontends(false, serial)).projectSync.selected.id, second.id, "the consumed .env value does not re-apply");
+    await writeFile(file, `FOUNDRY_PROJECT=${first.id}\n`);
+    assert.equal((await model.frontends(false, serial)).projectSync.selected.id, first.id, "a changed .env applies again");
+});
+
+test("a .env problem only warns: the selection stays and discovery is not blocked", async t => {
+    const { file, model } = await fixture(t);
+    await model.discover();
+    await model.select(second.id);
+    await writeFile(file, `FOUNDRY_PROJECT=${third.id}\n#${"x".repeat(70_000)}\n`);
+    const result = await model.frontends();
+    assert.match(result.envError, /larger than 64 KB/);
+    assert.deepEqual([result.projectSync.error, result.projectSync.selected.id], [null, second.id]);
+    assert.equal((await model.discover()).selected.id, second.id, "discovery still runs");
+    await writeFile(file, `FOUNDRY_PROJECT=${third.id}\n`);
+    assert.equal((await model.frontends()).projectSync.selected.id, third.id, "a fixed .env synchronizes");
+});

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm, rename, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { readFrontends, frontendStatus, openFrontend, parseMilestones } from "../lib/frontends.mjs";
+import { readFrontends, frontendStatus, openFrontend, parseCanvasEnv, parseMilestones } from "../lib/frontends.mjs";
 
 async function fixture(t) {
     const directory = await mkdtemp(path.join(tmpdir(), "foundry-agentic-loop-frontends-"));
@@ -50,11 +50,30 @@ test("unsafe URLs remain configured but cannot be opened or leak credential text
     }
 });
 
-test("file read failures are explicit rather than treated as absent configuration", async t => {
+test("file read failures are explicit warnings rather than absent configuration or a failed read", async t => {
     const directory = await fixture(t);
     await mkdir(path.join(directory, ".env"));
-    await assert.rejects(readFrontends(directory), /Cannot read workspace .env/);
+    const result = await readFrontends(directory);
+    assert.match(result.envError, /Cannot read workspace .env \(EISDIR\)/);
+    assert.deepEqual([result.configured, result.foundryProject], [false, { id: null, error: null }]);
     await assert.rejects(readFrontends(undefined), /workspace directory is unavailable/);
+});
+
+test(".env reads are capped at 64 KB and parse only the canvas keys", async t => {
+    const directory = await fixture(t);
+    const file = path.join(directory, ".env");
+    const id = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/proj";
+    await writeFile(file, `BROKEN="unterminated\nexport LOCAL_FRONTEND="http://localhost:5173"\n  ${"=".repeat(5)} nonsense\nFOUNDRY_PROJECT=${id}\nSECRET=private\nDEPLOYED_FRONTEND = https://app.example.com # comment\n`);
+    const result = await readFrontends(directory);
+    assert.equal(result.envError, null);
+    assert.deepEqual(result.frontends.map(row => row.url), ["http://localhost:5173/", "https://app.example.com/"]);
+    assert.equal(result.foundryProject.id, id);
+    assert(!JSON.stringify(result).includes("private"));
+    assert.deepEqual(parseCanvasEnv("SECRET=a\nLOCAL_FRONTEND=http://a\nLOCAL_FRONTEND=http://b\nNOT_LOCAL_FRONTEND=http://c\n"), { LOCAL_FRONTEND: "http://b" }, "the last assignment wins; other keys are never parsed");
+    await writeFile(file, `LOCAL_FRONTEND=http://localhost:5173\n#${"x".repeat(64 * 1024)}\n`);
+    const large = await readFrontends(directory);
+    assert.match(large.envError, /larger than 64 KB/);
+    assert.deepEqual([large.configured, large.revision, large.foundryProject.id], [false, null, null]);
 });
 
 test("env revisions detect creation, edits, atomic replacement and deletion without exposing other values", async t => {
