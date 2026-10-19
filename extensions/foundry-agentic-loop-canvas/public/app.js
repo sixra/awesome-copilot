@@ -295,6 +295,7 @@ function applyMode(next, preferredTab) {
     if (changed) {
         whereSelected = whereReady();
         $("step-where").open = !whereSelected;
+        if (started) updateDock();
     }
     $("rapid-progress").hidden = mode !== "rapid";
     $("sdd-progress").hidden = mode !== "sdd";
@@ -1527,8 +1528,10 @@ function workflowAction(button) {
     });
 }
 
-// Enablement dock: rotating Foundry tips, matched to the active phase, shown only while Copilot works.
-const dock = { cards: [], pool: [], index: -1, phase: undefined, swap: null };
+// Enablement dock: rotating tips matched to the build mode and active phase, shown after 30 seconds of Copilot work.
+const DOCK_DELAY = 30_000;
+const DOCK_SOURCES = { foundry: "Microsoft Foundry", azure: "Azure", github: "GitHub", loop: "Agentic Loop" };
+const dock = { cards: [], pool: [], index: -1, key: undefined, swap: null, busySeen: null };
 
 function shuffle(list) {
     for (let i = list.length - 1; i > 0; i--) {
@@ -1554,8 +1557,14 @@ async function loadEnablement() {
 }
 
 function renderCard(card) {
+    const source = DOCK_SOURCES[card.source] ? card.source : "foundry";
+    $("dock-source").dataset.source = source;
+    $("dock-source").textContent = DOCK_SOURCES[source];
+    $("dock-count").textContent = `${dock.index + 1} / ${dock.pool.length}`;
     $("dock-title").textContent = card.title;
     $("dock-body").textContent = card.body;
+    $("dock-loop-note").hidden = !card.loop;
+    $("dock-loop-note").lastChild.textContent = card.loop ?? "";
     $("dock-snippet").hidden = !card.snippet;
     $("dock-snippet").firstElementChild.textContent = card.snippet ?? "";
     $("dock-topic").textContent = card.topic ?? "";
@@ -1588,9 +1597,11 @@ function nextCard(immediate = false) {
 
 function updateDock() {
     const phase = currentPhase()?.title.toLowerCase() ?? "any";
-    if (dock.cards.length && phase !== dock.phase) {
-        dock.phase = phase;
-        const pool = dock.cards.filter(card => card.phase === phase || card.phase === "any");
+    const key = `${mode}:${phase}`;
+    if (dock.cards.length && key !== dock.key) {
+        dock.key = key;
+        // An active SDD phase narrows the tips to that phase; otherwise every tip for the build mode rotates.
+        const pool = dock.cards.filter(card => (!card.mode || card.mode === mode) && (phase === "any" || card.phase === phase || card.phase === "any"));
         dock.pool = shuffle(pool.length ? pool : [...dock.cards]);
         dock.index = -1;
         nextCard(true);
@@ -1598,8 +1609,16 @@ function updateDock() {
     updateDockStatus();
 }
 
+function busyStart() {
+    const times = [toTime(live.busySince), toTime(currentPhase()?.startedAt), dock.busySeen].filter(Number.isFinite);
+    return times.length ? Math.min(...times) : Date.now();
+}
+
 function updateDockStatus() {
-    if (!live?.busy) return;
+    const busy = Boolean(live?.busy);
+    dock.busySeen = busy ? dock.busySeen ?? Date.now() : null;
+    document.body.classList.toggle("show-dock", busy && Date.now() - busyStart() >= DOCK_DELAY);
+    if (!busy) return;
     const phase = currentPhase();
     const since = value => Number.isFinite(toTime(value)) ? ` · ${duration(Date.now() - toTime(value))}` : "";
     const agents = live.run?.metrics.liveAgents ?? 0;

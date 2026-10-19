@@ -776,6 +776,9 @@ test("packaged prompt templates and enablement cards are complete and self-conta
     for (const card of cards) {
         assert(card.title && card.body && card.topic, card.id);
         assert(["specify", "implement", "verify", "deploy", "any"].includes(card.phase), card.id);
+        assert(["foundry", "azure", "github", "loop"].includes(card.source), card.id);
+        assert(card.mode === undefined || ["rapid", "sdd"].includes(card.mode), card.id);
+        assert(card.loop === undefined || (typeof card.loop === "string" && card.loop.length <= 120), card.id);
         assert(card.link.label, card.id);
         assert.match(card.link.url, /^https:\/\/(learn\.microsoft\.com|github\.com|docs\.github\.com)\//, card.id);
     }

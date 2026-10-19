@@ -435,14 +435,15 @@ th { color: var(--muted); font-weight: 600; }
 .optimization-action .actions { margin-bottom: 0; }
 footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 18px 20px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
 
-/* Enablement dock: visible only while Copilot works */
-.dock { display: none; position: sticky; bottom: 0; z-index: 3; border-top: 1px solid var(--border); background: var(--bg); box-shadow: 0 -6px 20px color-mix(in srgb, #000 10%, transparent); transition: opacity 250ms var(--ease), translate 250ms var(--ease); }
-body.is-busy .dock { display: block; }
-@starting-style { body.is-busy .dock { opacity: 0; translate: 0 16px; } }
+/* Enablement dock: shown after 30 seconds of Copilot work, tinted to stand apart from the canvas */
+.dock { --dock-tint: light-dark(#6b3fc0, #b69cff); --dock-mix: 11%; display: none; position: sticky; bottom: 0; z-index: 3; border-top: 1px solid color-mix(in srgb, var(--dock-tint) 45%, var(--border)); background: linear-gradient(120deg, color-mix(in srgb, var(--dock-tint) var(--dock-mix), var(--bg)), color-mix(in srgb, var(--accent) 8%, var(--bg))); box-shadow: 0 -8px 24px color-mix(in srgb, var(--dock-tint) 16%, transparent); transition: opacity 250ms var(--ease), translate 250ms var(--ease); }
+body.show-dock .dock { display: block; }
+@media (prefers-color-scheme: dark) { .dock { --dock-mix: 15%; } }
+@starting-style { body.show-dock .dock { opacity: 0; translate: 0 16px; } }
 .dock-bar, .dock-card { max-width: 1120px; margin: 0 auto; }
 .dock-bar { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 20px; }
 .dock-loop { width: 22px; height: 22px; stroke-width: 2.8; }
-.dock-status { flex: 1; min-width: 0; margin: 0; font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-status { flex: 1; min-width: 0; max-width: none; margin: 0; font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dock-controls { display: flex; align-items: center; gap: 2px; }
 .dock-controls .icon-button { width: 32px; height: 32px; min-height: 32px; }
 .dock-controls .icon-button svg { width: 16px; height: 16px; }
@@ -452,13 +453,23 @@ body.is-busy .dock { display: block; }
 .dock[data-collapsed="true"] :is(#dock-pause, #dock-next, .dock-progress) { display: none; }
 .dock-card { padding: 2px 20px 14px; transition: opacity 180ms var(--ease), translate 180ms var(--ease); }
 .dock-card.is-swapping { opacity: 0; translate: 0 4px; }
-.dock-card h3 { font-size: 15px; text-wrap: balance; }
-#dock-body { margin: 4px 0 0; font-size: 13px; }
-#dock-snippet { margin: 8px 0 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); overflow-x: auto; font-size: 12px; line-height: 1.45; }
-.dock-meta { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; max-width: none; margin: 8px 0 0; font-size: 12px; }
-#dock-topic { color: var(--muted); font-weight: 600; }
-.dock-progress { height: 2px; background: color-mix(in srgb, var(--accent) 14%, transparent); }
-.dock-progress span { display: block; height: 100%; background: var(--accent); transform-origin: left; animation: dock-progress 9s linear forwards; }
+.dock-eyebrow { display: flex; align-items: center; gap: 8px; max-width: none; margin: 0 0 6px; font-size: 12px; }
+.dock-source { --src: var(--dock-tint); display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; background: color-mix(in srgb, var(--src) 16%, var(--bg)); color: color-mix(in srgb, var(--src) 70%, var(--text)); font-weight: 600; white-space: nowrap; }
+.dock-source::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--src); }
+.dock-source[data-source="azure"] { --src: light-dark(#0067b8, #6cb8f6); }
+.dock-source[data-source="github"] { --src: var(--text); }
+.dock-source[data-source="loop"] { --src: var(--success); }
+#dock-topic { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-weight: 600; }
+.dock-count { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dock-card h3 { margin: 0; font-size: 16px; line-height: 1.3; text-wrap: balance; }
+#dock-body { margin: 4px 0 0; font-size: 13px; text-wrap: pretty; }
+.dock-loop-note { max-width: none; margin: 8px 0 0; padding: 2px 0 2px 10px; border-left: 3px solid var(--dock-tint); font-size: 12.5px; }
+.dock-loop-note strong { margin-right: 6px; color: color-mix(in srgb, var(--dock-tint) 75%, var(--text)); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.dock-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 10px; font-size: 12px; }
+#dock-snippet { flex: 0 1 auto; min-width: 0; margin: 0; padding: 5px 10px; border: 1px solid color-mix(in srgb, var(--dock-tint) 30%, var(--border)); border-radius: 6px; background: color-mix(in srgb, var(--bg) 80%, transparent); overflow-x: auto; font-size: 12px; line-height: 1.45; }
+#dock-link { margin-left: auto; font-weight: 600; }
+.dock-progress { height: 2px; background: color-mix(in srgb, var(--dock-tint) 16%, transparent); }
+.dock-progress span { display: block; height: 100%; background: linear-gradient(90deg, var(--dock-tint), var(--accent)); transform-origin: left; animation: dock-progress 12s linear forwards; }
 .dock[data-paused="true"] .dock-progress span, .dock:hover .dock-progress span, .dock:focus-within .dock-progress span { animation-play-state: paused; }
 @keyframes dock-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
