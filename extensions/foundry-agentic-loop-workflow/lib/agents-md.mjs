@@ -1,5 +1,6 @@
-import { readFile, realpath } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { contained, readContained } from "./fsguard.mjs";
 import { atomicWrite } from "./record.mjs";
 
 // The canvas (foundry-agentic-loop-canvas/lib/live.mjs) parses the same marker; the pin test keeps them in sync.
@@ -51,13 +52,13 @@ async function template(routerDir) {
 }
 
 // Locks the workspace to SDD: refuses a rapid lock, keeps an existing SDD section (the skill owns its content) and otherwise appends one.
+// A symbolic-link AGENTS.md is refused rather than followed, so the lock never reads or writes outside the workspace.
 export async function lockWorkspace(cwd, routerDir) {
-    const file = path.join(cwd, AGENTS);
-    const text = await readOptional(file);
+    const current = await readContained(cwd, AGENTS);
+    const text = current?.text ?? null;
     const mode = lockedMode(text);
     if (mode === "rapid") throw new Error(RAPID_LOCKED);
     if (mode === "sdd") return "kept";
-    const target = text === null ? file : await realpath(file);
-    await atomicWrite(target, appendSection(text ?? "", await template(routerDir)));
+    await atomicWrite(current?.file ?? await contained(cwd, AGENTS), appendSection(text ?? "", await template(routerDir)));
     return "written";
 }

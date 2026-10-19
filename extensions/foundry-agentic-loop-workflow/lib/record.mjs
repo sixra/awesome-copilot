@@ -1,9 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { WORKFLOW } from "./args.mjs";
+import { contained } from "./fsguard.mjs";
 
 export const MAX_ITEMS = 20;
+export const MAX_EVIDENCE = 12;
 
 const STATUSES = ["passed", "failed", "blocked"];
 const LOCKFILES = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "uv.lock", "poetry.lock"];
@@ -11,6 +13,8 @@ const LOCKFILES = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "uv.lock"
 export const SHARED = Object.freeze(["azure.yaml", "infra/", "docs/", ".env", ".azure/", ".agentic-loop/", "AGENTS.md", ...LOCKFILES]);
 export const SHARED_PHRASE = `${SHARED.filter(item => !LOCKFILES.includes(item)).join(", ")} and the root lockfiles`;
 const RESERVED = /^(?:lead|foundation|build|integration|review(?: \d+)?|fix(?: \d+)?)$/i;
+
+export const sha256 = value => createHash("sha256").update(value).digest("hex");
 
 export function clean(value, max = 500) {
     const line = String(value ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
@@ -34,22 +38,43 @@ export function endpoints(value) {
     }).slice(0, MAX_ITEMS);
 }
 
-// Subagent output is untrusted: coerce it to a bounded, single-line report and fail closed.
-export function normalize(result, who) {
+// Structured gate evidence: {claim, source, result} items, bounded like every other report field.
+export function evidence(value) {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap(row => {
+        const claim = clean(row?.claim, 200);
+        return claim ? [{ claim, source: clean(row?.source, 300), result: clean(row?.result, 200) }] : [];
+    }).slice(0, MAX_EVIDENCE);
+}
+
+// Subagent output is untrusted: coerce it to a bounded, single-line report and fail closed. A pass that still lists issues,
+// or a Verify or Deploy pass (requireEvidence) without evidence items, counts as failed.
+export function normalize(result, who, { requireEvidence = false } = {}) {
     if (!result || typeof result !== "object" || Array.isArray(result)) {
-        return { status: "failed", summary: `${who} returned no report.`, issues: [`${who} returned no usable report; rerun the step and inspect its subagent log.`], lessons: [], artifacts: [], assumptions: [], endpoints: [], workstreams: [] };
+        return { status: "failed", summary: `${who} returned no report.`, issues: [`${who} returned no usable report; rerun the step and inspect its subagent log.`], lessons: [], artifacts: [], assumptions: [], endpoints: [], evidence: [], workstreams: [] };
     }
-    const status = STATUSES.includes(result.status) ? result.status : "failed";
+    let status = STATUSES.includes(result.status) ? result.status : "failed";
     const issues = strings(result.issues);
+    const proof = evidence(result.evidence);
+    let summary = clean(result.summary, 300) || `${who} ${status}.`;
+    if (status === "passed" && issues.length) {
+        status = "failed";
+        summary = clean(`Reported passed with ${issues.length} open ${issues.length === 1 ? "issue" : "issues"}, so it counts as failed: ${summary}`, 300);
+    } else if (status === "passed" && requireEvidence && !proof.length) {
+        status = "failed";
+        issues.push(`${who} reported passed without evidence items: rerun the gate checks and report each as {claim, source, result}.`);
+        summary = clean(`Reported passed without evidence, so it counts as failed: ${summary}`, 300);
+    }
     if (status !== "passed" && !issues.length) issues.push(`${who} reported ${status} without listing issues; re-check the gate and record the evidence.`);
     return {
         status,
-        summary: clean(result.summary, 300) || `${who} ${status}.`,
+        summary,
         issues,
         lessons: strings(result.lessons),
         artifacts: strings(result.artifacts, 300),
         assumptions: strings(result.assumptions),
         endpoints: endpoints(result.endpoints),
+        evidence: proof,
         workstreams: Array.isArray(result.workstreams) ? result.workstreams : [],
     };
 }
@@ -110,8 +135,16 @@ export function planWorkstreams(list) {
     return { mode: "parallel", items: items.map(({ scopes, ...item }) => item), reason: null };
 }
 
+// Safe IDs map to themselves; any other ID keeps a readable prefix plus a hash, so distinct IDs never share a file.
+// The canvas (foundry-agentic-loop-canvas/lib/live.mjs) applies the same rule; the contract pin test keeps them in sync.
+const SAFE_ID = /^[A-Za-z0-9._-]{1,120}$/;
+export function runFile(runId) {
+    const id = String(runId);
+    return `${SAFE_ID.test(id) ? id : `${id.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 100)}-${sha256(id).slice(0, 8)}`}.json`;
+}
+
 export function recordFile(runId) {
-    return path.posix.join(".agentic-loop", "runs", `${String(runId).replace(/[^A-Za-z0-9._-]/g, "_")}.json`);
+    return path.posix.join(".agentic-loop", "runs", runFile(runId));
 }
 
 export function union(lists, max = 500) {
@@ -135,8 +168,14 @@ export function createRecord({ runId, args, setup }) {
         maxFixLoops: args.maxFixLoops,
         skipDeploy: args.skipDeploy,
         skills: Object.fromEntries(Object.values(setup.skills).map(skill => [skill.name, skill.source])),
+        skillProvenance: setup.provenance ?? null,
+        skillDrift: [],
+        rerun: null,
         phases: [],
         checkpoints: [],
+        waivers: [],
+        deployApproval: null,
+        ownership: [],
         endpoints: [],
         outcome: null,
         error: null,
@@ -161,7 +200,19 @@ export function reduce(record, event) {
         case "resumed":
             next.status = "running";
             next.pending = null;
-            next.checkpoints = [...record.checkpoints, { key: event.key, kind: event.kind, pausedAt: event.pausedAt, resumedAt: event.at }];
+            next.checkpoints = [...record.checkpoints, { key: event.key, kind: event.kind, pausedAt: event.pausedAt, resumedAt: event.at, ...(event.fingerprint && { fingerprint: event.fingerprint }) }];
+            if (event.waivers?.length) next.waivers = [...(record.waivers ?? []), ...event.waivers].slice(-MAX_ITEMS);
+            if (event.fingerprint) next.deployApproval = { key: event.key, approvedAt: event.at, ...event.fingerprint };
+            break;
+        case "inherited":
+            next.rerun = { from: event.rerun.from, runId: event.rerun.runId };
+            next.phases = [...record.phases, ...event.rerun.phases.map(row => ({ ...row, round: 0, status: "passed", inheritedFrom: event.rerun.runId, attempts: [], issues: [], lessons: [], assumptions: [], artifacts: [], endpoints: [], evidence: [] }))];
+            break;
+        case "drift":
+            next.skillDrift = [...(record.skillDrift ?? []), ...event.drift.map(row => ({ ...row, at: event.at }))].slice(-MAX_ITEMS);
+            break;
+        case "ownership":
+            next.ownership = [...(record.ownership ?? []), { phase: event.phase, round: event.round, checked: event.checked, unowned: event.unowned, at: event.at }];
             break;
         case "done":
             next.status = event.status;
@@ -190,9 +241,14 @@ export async function atomicWrite(file, text) {
     }
 }
 
-export async function writeRecord(cwd, record) {
-    const file = path.join(cwd, ...recordFile(record.runId).split("/"));
-    await mkdir(path.dirname(file), { recursive: true });
-    await atomicWrite(file, `${JSON.stringify(record, null, 2)}\n`);
+// Checked before and after creating the folders, so neither .agentic-loop, runs nor the record can be a link out of the workspace.
+export async function writeContained(cwd, rel, text) {
+    await mkdir(path.dirname(await contained(cwd, rel)), { recursive: true });
+    const file = await contained(cwd, rel);
+    await atomicWrite(file, text);
     return file;
+}
+
+export async function writeRecord(cwd, record) {
+    return writeContained(cwd, recordFile(record.runId), `${JSON.stringify(record, null, 2)}\n`);
 }

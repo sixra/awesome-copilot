@@ -1,4 +1,5 @@
-import { readdir, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { PHASES } from "./args.mjs";
 
@@ -64,4 +65,60 @@ export async function resolveSkills(options) {
 
 export function missingSkills(skills) {
     return Object.values(skills).filter(skill => !skill.dir).map(skill => skill.name);
+}
+
+const KINDS = Object.freeze({ project: "project-override", plugin: "plugin", installed: "plugin" });
+
+// Version of the nearest plugin manifest above a skill folder (plugin.json or .github/plugin/plugin.json), within four levels.
+async function pluginVersion(dir) {
+    let folder = dir;
+    for (let level = 0; level < 4; level += 1) {
+        folder = path.dirname(folder);
+        for (const manifest of [path.join(folder, "plugin.json"), path.join(folder, ".github", "plugin", "plugin.json")]) {
+            try {
+                const version = JSON.parse(await readFile(manifest, "utf8"))?.version;
+                return typeof version === "string" ? version.slice(0, 40) : null;
+            } catch {
+                // Not a plugin root; keep walking up.
+            }
+        }
+    }
+    return null;
+}
+
+async function hash(file) {
+    try { return createHash("sha256").update(await readFile(file)).digest("hex"); }
+    catch { return null; }
+}
+
+// Where each skill came from and the hashes of the files the phases follow, so the record shows exactly which guidance ran.
+export async function skillProvenance(skills) {
+    const provenance = {};
+    for (const [key, skill] of Object.entries(skills)) {
+        if (!skill.dir) {
+            provenance[skill.name] = { source: skill.source, kind: "other", path: null, version: null, files: {} };
+            continue;
+        }
+        const files = {};
+        for (const file of REQUIRED[key] ?? ["SKILL.md"]) files[file.split(path.sep).join("/")] = await hash(path.join(skill.dir, file));
+        provenance[skill.name] = { source: skill.source, kind: KINDS[skill.source] ?? "other", path: skill.dir, version: await pluginVersion(skill.dir), files };
+    }
+    return provenance;
+}
+
+// Hash changes between the recorded provenance and the files on disk now, one row per changed file.
+export function skillDrift(recorded, current) {
+    const drift = [];
+    for (const [name, now] of Object.entries(current ?? {})) {
+        const before = recorded?.[name];
+        if (!before) continue;
+        if (before.path !== now.path) {
+            drift.push({ skill: name, file: null, change: `source moved from ${before.path ?? "skill tool"} to ${now.path ?? "skill tool"}` });
+            continue;
+        }
+        for (const file of new Set([...Object.keys(before.files ?? {}), ...Object.keys(now.files ?? {})])) {
+            if (before.files?.[file] !== now.files?.[file]) drift.push({ skill: name, file, change: `sha256 ${String(before.files?.[file] ?? "none").slice(0, 12)} → ${String(now.files?.[file] ?? "none").slice(0, 12)}` });
+        }
+    }
+    return drift;
 }

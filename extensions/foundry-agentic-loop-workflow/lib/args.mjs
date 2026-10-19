@@ -3,7 +3,7 @@ export const PHASES = Object.freeze(["Specify", "Implement", "Verify", "Deploy"]
 export const MAX_FIX_LOOPS = 5;
 export const LESSONS = "docs/LOOP.md";
 
-const KEYS = Object.freeze(["brief", "subscriptionId", "location", "environmentName", "scenarioId", "autonomy", "maxFixLoops", "skipDeploy"]);
+const KEYS = Object.freeze(["brief", "subscriptionId", "location", "environmentName", "scenarioId", "autonomy", "maxFixLoops", "skipDeploy", "from"]);
 const optionalString = { type: ["string", "null"] };
 
 // argsSchema stays inside the runtime's structural subset; validateArgs enforces the finer rules.
@@ -17,7 +17,8 @@ export const META = {
         + "Adds the Agentic Loop SDD section to AGENTS.md when absent and refuses a workspace that AGENTS.md locks to rapid prototyping. "
         + "args: { brief: string (required, self-contained), subscriptionId?: GUID, location?: Azure region or 'auto', "
         + "environmentName?: azd environment (2-20 chars), scenarioId?: canvas scenario, autonomy?: 'gated' | 'auto', "
-        + "maxFixLoops?: 0-5 (default 2), skipDeploy?: boolean }.",
+        + "maxFixLoops?: 0-5 (default 2), skipDeploy?: boolean, from?: 'Specify' | 'Implement' | 'Verify' | 'Deploy' (default Specify; a later phase "
+        + "only when the latest flight record in the workspace passed every earlier phase) }.",
     phases: [
         { title: "Specify", detail: "EARS spec, frozen contract and deployment plan; independent review; spec approval" },
         { title: "Implement", detail: "azd scaffold and provision, hosted checkpoint, parallel workstreams, integration" },
@@ -36,7 +37,14 @@ export const META = {
             autonomy: { type: ["string", "null"], enum: ["gated", "auto", null] },
             maxFixLoops: { type: ["integer", "null"] },
             skipDeploy: { type: ["boolean", "null"] },
+            from: { type: ["string", "null"], enum: [...PHASES, null] },
         },
+    },
+    // Default ceilings, overridable per invocation; README.md (Limits) shows the subagent-call math behind them.
+    limits: {
+        maxTotalSubagents: 250,
+        maxConcurrentSubagents: 4,
+        timeoutSeconds: 43_200,
     },
 };
 
@@ -61,6 +69,9 @@ export function validateArgs(raw) {
     if (!Number.isInteger(maxFixLoops) || maxFixLoops < 0 || maxFixLoops > MAX_FIX_LOOPS) throw new TypeError(`args.maxFixLoops must be an integer from 0 to ${MAX_FIX_LOOPS}.`);
     const skipDeploy = raw.skipDeploy ?? false;
     if (typeof skipDeploy !== "boolean") throw new TypeError("args.skipDeploy must be a boolean.");
+    const from = raw.from ?? "Specify";
+    if (!PHASES.includes(from)) throw new TypeError(`args.from must be one of ${PHASES.join(", ")}.`);
+    if (from === "Deploy" && skipDeploy) throw new TypeError("args.from cannot be Deploy when skipDeploy is set.");
     return Object.freeze({
         brief,
         subscriptionId: optional(raw, "subscriptionId", /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i, "args.subscriptionId must be an Azure subscription GUID."),
@@ -70,5 +81,6 @@ export function validateArgs(raw) {
         autonomy,
         maxFixLoops,
         skipDeploy,
+        from,
     });
 }

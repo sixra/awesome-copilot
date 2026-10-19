@@ -1,6 +1,6 @@
 import path from "node:path";
 import { LESSONS } from "./args.mjs";
-import { MAX_ITEMS, SHARED_PHRASE } from "./record.mjs";
+import { MAX_EVIDENCE, MAX_ITEMS, SHARED_PHRASE } from "./record.mjs";
 import { phaseGuide } from "./skills.mjs";
 
 const text = { type: "string" };
@@ -13,6 +13,7 @@ const report = {
     artifacts: list,
     assumptions: list,
     endpoints: { type: "array", items: { type: "object", required: ["name", "url"], properties: { name: text, url: text } } },
+    evidence: { type: "array", items: { type: "object", required: ["claim", "source", "result"], properties: { claim: text, source: text, result: text } } },
 };
 
 export const REPORT_SCHEMA = { type: "object", required: ["status", "summary", "issues", "lessons"], properties: report };
@@ -30,7 +31,8 @@ const COMMON = [
     "Return blocked only when progress needs a human decision on permissions, quota, cost or security, and say exactly what is needed.",
     "Delete only Azure resources this run created whose provisioning failed; any other deletion is a human decision.",
     "Never weaken a gate, test or threshold, and never report an unverified check as passed.",
-    "Wait on long Azure operations by completion or a deadline-bounded status poll, never fixed sleeps.",
+    "Wait on long Azure operations by completion, or poll their status every 30-60 seconds with an explicit deadline (20 minutes unless the guide sets another); at the deadline stop and report blocked with the last status, never fixed sleeps.",
+    "An issue is waived only when it is listed under Human-approved waivers in these instructions; never waive, defer or downgrade an issue yourself.",
     "Never print secrets or .env values; name keys only.",
     "Stay inside the workspace: read the skills these instructions name, but never search other projects on this machine for code or examples.",
     "You run inside foundry-agentic-loop-workflow: never start, resume or pause workflows, and never open canvases.",
@@ -55,6 +57,9 @@ const ROLES = {
 
 // Every role in the phase follows these, because an unneeded deployment costs minutes and can hide what changed.
 const PHASE_RULES = {
+    Verify: [
+        "Evaluate each agent with exactly builtin.task_adherence and builtin.intent_resolution, plus builtin.groundedness when the agent is grounded in knowledge or files; content safety is enforced by guardrails, not by an evaluator here. Generate the config with azd ai agent eval generate --agent <service> --dataset tests/eval/dataset.jsonl --out-file tests/eval/<service>.eval.yaml and one --evaluator per evaluator, then run azd ai agent eval run --agent <service> --config tests/eval/<service>.eval.yaml and record its scores in docs/verify.md.",
+    ],
     Implement: ["Deploy only the checkpoint services (MCP servers, skills, connections, toolbox and agents); the frontend, backend and workers run locally until Deploy. Redeploy a service only when its source or configuration changed since its last verified deployment, and reproduce agent defects locally before redeploying the agent."],
 };
 
@@ -85,7 +90,7 @@ export const TASKS = Object.freeze({
     },
 });
 
-const REPORT = "Finish with the report: status passed only when every gate condition holds with evidence, failed when any does not, blocked only for a human decision; a one-line summary that leads with the outcome and, unless passed, the main problem; actionable issues with evidence (empty when passed); lessons verified in this step; artifacts written; assumptions made; endpoints as {name, url} when known.";
+const REPORT = `Finish with the report: status passed only when every gate condition holds with evidence and no issue remains open, failed when any does not, blocked only for a human decision; a one-line summary that leads with the outcome and, unless passed, the main problem; actionable issues with evidence (empty when passed); lessons verified in this step; artifacts written; assumptions made; endpoints as {name, url} when known; evidence as up to ${MAX_EVIDENCE} {claim, source, result} items for the gate checks you ran (the check, the command or file it came from, and the observed result). A Verify or Deploy pass without evidence counts as failed.`;
 
 export function label(phase, role, round) {
     return `${phase} · ${role}${round > 1 ? ` · r${round}` : ""}`;
@@ -104,6 +109,13 @@ function target({ subscriptionId, location, environmentName }) {
     ].join("\n");
 }
 
+// The fingerprint was recorded when the human approved deployment; Deploy must act on exactly that target.
+function approved({ approvedAt, target: azure }) {
+    const rows = [["AZURE_ENV_NAME", azure.environmentName], ["AZURE_SUBSCRIPTION_ID", azure.subscriptionId], ["AZURE_LOCATION", azure.location], ["AZURE_RESOURCE_GROUP", azure.resourceGroup]].filter(([, value]) => value);
+    return `Approved deployment (approved ${approvedAt}): ${rows.length ? rows.map(([key, value]) => `${key}=${value}`).join(", ") : "no target values were recorded"}. `
+        + "Before changing anything, confirm that azd env get-values and az account show report these values; if any differs, change nothing and return blocked naming the mismatch.";
+}
+
 function bullets(items) {
     return items.slice(0, MAX_ITEMS).map(item => `- ${item}`).join("\n");
 }
@@ -113,7 +125,7 @@ const sublist = (title, items) => (items.length ? `\n  ${title}:\n${bullets(item
 // Every input comes from validated args, the journaled setup step or journaled agent reports,
 // so a resumed run rebuilds identical prompts and replays completed subagents.
 // The attempt label keeps each prompt unique within a run.
-export function buildPrompt({ base, phase, round, role, who, task, previous, fix, recheck, workstream, results }) {
+export function buildPrompt({ base, phase, round, role, who, task, previous, fix, recheck, workstream, results, unowned, waivers, approval }) {
     const { runId, cwd, record, skills, args } = base;
     const sections = [
         `You are the ${ROLES[role].title} (${who ?? label(phase, role, round)}) for the ${phase} phase of Agentic Loop run ${runId}, round ${round}. Workspace: ${cwd}. Run every command from it. Flight record (read-only): ${record}.`,
@@ -128,6 +140,13 @@ export function buildPrompt({ base, phase, round, role, who, task, previous, fix
     }
     if (results?.length) {
         sections.push(`Workstream results (resolve every issue and upsert the worker lessons you verify in ${LESSONS}):\n${results.map(row => `- ${row.name}: ${row.status}. ${row.summary}${sublist("Issues", row.issues)}${sublist("Lessons", row.lessons)}`).join("\n")}`);
+    }
+    if (unowned?.length) {
+        sections.push(`Paths changed during the workstreams that no workstream owns (integration issues; nothing was reverted): check each change and keep, move or undo it deliberately:\n${bullets(unowned)}`);
+    }
+    if (approval) sections.push(approved(approval));
+    if (waivers?.length) {
+        sections.push(`Human-approved waivers (recorded by the workflow at a checkpoint; only these issues are accepted: leave them out of issues and list each as an evidence item whose result is waived):\n${bullets(waivers.map(row => `${row.issue} (reason: ${row.reason}; approved ${row.approvedAt} at ${row.checkpoint})`))}`);
     }
     if (previous) {
         sections.push(`Round ${round - 1} stopped at the ${phase} gate (${previous.status}): ${previous.summary}\nVerify each issue against the workspace first; a human may have resolved it:\n${bullets(previous.issues)}`);

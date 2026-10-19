@@ -1,18 +1,15 @@
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { AGENTS, FALLBACK_SDD, appendSection, lockedMode } from "../lib/agents-md.mjs";
 import { LESSONS, MAX_FIX_LOOPS, META, PHASES, WORKFLOW, validateArgs } from "../lib/args.mjs";
 import { FOUNDATION_SCHEMA, REPORT_SCHEMA, TASKS, buildPrompt, label, retryPrompt } from "../lib/prompts.mjs";
 import { SHARED_PHRASE, clean, normalize, planWorkstreams, recordFile, reduce, scope, writeRecord } from "../lib/record.mjs";
 import { SKILLS, resolveSkills } from "../lib/skills.mjs";
-import { MAX_ROUNDS, checkpointLines, gateLine, noteLine, runLoop } from "../lib/loop.mjs";
-
-const extensionDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const BRIEF = "Claims triage assistant for insurance adjusters.\nUsers: adjusters. Agents: triage and fraud. Data: policy PDFs. UX: web chat.";
+import { MAX_ROUNDS, checkpointLines, gateLine, noteLine } from "../lib/loop.mjs";
+import { BRIEF, WORKSTREAMS, defaultResponder, extensionDir, failed, harness, labels, logMatches, passed, workspace } from "./helpers.mjs";
 
 // What the canvas (foundry-agentic-loop-canvas/lib/live.mjs) parses from the workflow's Chat lines and checkpoint keys;
 // the canvas contract pin test checks these against the canvas parsers.
@@ -23,102 +20,6 @@ const CANVAS = {
     approvals: ["approve-spec-v1", "approve-deploy-v1"],
 };
 
-const FATAL = ["AbortError", "ResponseError", "ConnectionError"];
-const passed = (who, extra = {}) => ({ status: "passed", summary: `${who} done`, issues: [], lessons: [`${who} lesson`], artifacts: [], assumptions: [], ...extra });
-const failed = (who, issue = `${who} found a defect`) => ({ status: "failed", summary: `${who} failed`, issues: [issue], lessons: [] });
-const WORKSTREAMS = [
-    { name: "api", goal: "Build the API", files: ["src/api"], checks: ["pytest src/api"] },
-    { name: "web", goal: "Build the web app", files: ["src/web/**"] },
-];
-
-function defaultResponder(who) {
-    if (who === "Implement · foundation") return passed(who, { workstreams: WORKSTREAMS });
-    if (who.startsWith("Deploy · review")) return passed(who, { endpoints: [{ name: "web", url: "https://web.example.azurecontainerapps.io/" }, { name: "bad", url: "ftp://x" }] });
-    return passed(who);
-}
-
-async function workspace(t) {
-    const root = await mkdtemp(path.join(os.tmpdir(), "al-workflow-"));
-    t.after(() => rm(root, { recursive: true, force: true }));
-    const cwd = path.join(root, "app");
-    const home = path.join(root, "home");
-    await mkdir(cwd, { recursive: true });
-    await mkdir(home, { recursive: true });
-    return { root, cwd, home };
-}
-
-// In-memory model of the workflow runtime: journaled steps and agents, one-shot pauses, replay on resume.
-function harness({ cwd, home, args, responder = defaultResponder, runId = "run-1", dir = extensionDir }) {
-    const journal = { steps: new Map(), agents: new Map(), pauses: new Set() };
-    const state = { calls: [], logs: [], phases: [], attempts: 0, responder };
-    let clock = 0;
-    const now = () => new Date(Date.UTC(2026, 0, 1) + 1000 * clock++).toISOString();
-    const json = value => JSON.parse(JSON.stringify(value));
-
-    async function attempt() {
-        state.attempts += 1;
-        state.phases = [];
-        const seenSteps = new Set();
-        const seenAgents = new Set();
-        let pausedAt = null;
-        const ctx = {
-            runId,
-            args,
-            session: { rpc: { metadata: { snapshot: async () => ({ workingDirectory: cwd }) } } },
-            async step(key, producer) {
-                assert.ok(!seenSteps.has(key), `step key reused within an attempt: ${key}`);
-                seenSteps.add(key);
-                if (!journal.steps.has(key)) {
-                    const value = await producer();
-                    assert.notEqual(value, undefined, `step ${key} returned undefined`);
-                    journal.steps.set(key, JSON.stringify(value));
-                }
-                return JSON.parse(journal.steps.get(key));
-            },
-            async agent(prompt, options) {
-                const memo = JSON.stringify([prompt, options]);
-                assert.ok(!seenAgents.has(memo), `agent prompt reused within an attempt: ${options.label}`);
-                seenAgents.add(memo);
-                if (journal.agents.has(memo)) return JSON.parse(journal.agents.get(memo));
-                state.calls.push({ label: options.label, prompt, schema: options.schema, attempt: state.attempts });
-                const value = (await state.responder(options.label, prompt)) ?? null;
-                // Like the runtime, only results are memoized: a subagent that ended without one runs again on resume.
-                if (value === null) return null;
-                journal.agents.set(memo, JSON.stringify(value));
-                return JSON.parse(journal.agents.get(memo));
-            },
-            async pause(key) {
-                if (journal.pauses.has(key)) return;
-                journal.pauses.add(key);
-                pausedAt = key;
-                throw new DOMException("Workflow run was aborted", "AbortError");
-            },
-            async parallel(thunks) {
-                return Promise.all(thunks.map(async thunk => {
-                    try { return await thunk(); }
-                    catch (error) {
-                        if (FATAL.includes(error?.name)) throw error;
-                        return null;
-                    }
-                }));
-            },
-            phase(title) { state.phases.push(title); },
-            log(message) { state.logs.push(message); },
-        };
-        try {
-            return { status: "completed", result: json(await runLoop(ctx, { extensionDir: dir, home, now })) };
-        } catch (error) {
-            if (error?.name === "AbortError") return { status: "paused", key: pausedAt };
-            return { status: "error", error };
-        }
-    }
-
-    const record = async () => JSON.parse(await readFile(path.join(cwd, ...recordFile(runId).split("/")), "utf8"));
-    return { attempt, record, state, journal };
-}
-
-const labels = (state, prefix = "") => state.calls.filter(call => call.label.startsWith(prefix)).map(call => call.label);
-const logMatches = (state, regex) => state.logs.filter(line => regex.test(line));
 
 test("gated run: phases in order, approvals, replay without duplicate work, flight record", async t => {
     const { cwd, home } = await workspace(t);
@@ -228,7 +129,7 @@ test("failed gate: bounded fix loop, blocked checkpoint, next round on resume", 
         "Verify · fix 1 passed: Verify · fix 1 done. Next: review 2.",
         "Verify · review 2 found 1 issue: E2E test test_claim_upload fails with HTTP 500",
     ], "the last review names no automatic fix once fixes are exhausted");
-    assert.equal(run.state.logs.at(-1), 'Needs you: Verify still fails its gate after 1 automatic fix (E2E test test_claim_upload fails with HTTP 500). Ask Copilot to fix it, or use "Fix in Chat" on the Build tab of the Foundry Agentic Loop canvas, then resume to retry Verify.');
+    assert.equal(run.state.logs.at(-1), 'Needs you: Verify still fails its gate after 1 automatic fix (E2E test test_claim_upload fails with HTTP 500). Ask Copilot to fix it, or use "Fix in Chat" on the Build tab of the Foundry Agentic Loop canvas, then resume to retry Verify. To accept an issue instead, write it with your reason to .agentic-loop/waivers/run-1.json as [{"issue", "reason"}] before resuming.');
     let record = await run.record();
     assert.equal(record.status, "blocked");
     assert.equal(record.pending, "blocked-verify-r1");
@@ -600,7 +501,7 @@ test("the AGENTS.md section templates, parser and writer agree", async () => {
 
 test("validateArgs enforces the documented contract", () => {
     assert.deepEqual({ ...validateArgs({ brief: `  ${BRIEF}  ` }) }, {
-        brief: BRIEF, subscriptionId: null, location: null, environmentName: null, scenarioId: null, autonomy: "gated", maxFixLoops: 2, skipDeploy: false,
+        brief: BRIEF, subscriptionId: null, location: null, environmentName: null, scenarioId: null, autonomy: "gated", maxFixLoops: 2, skipDeploy: false, from: "Specify",
     });
     const full = validateArgs({ brief: BRIEF, subscriptionId: "0000AAAA-BBBB-4CCC-8DDD-EEEEFFFF0000", location: "eastus2", environmentName: "claims-dev", scenarioId: "insurance-claims-triage", autonomy: "auto", maxFixLoops: 5, skipDeploy: true });
     assert.equal(full.location, "eastus2");
@@ -654,7 +555,7 @@ test("META and schemas stay inside the runtime's schema subset and match the can
     walk(FOUNDATION_SCHEMA, "foundation");
     assert.equal(META.name, WORKFLOW);
     assert.deepEqual(META.phases.map(phase => phase.title), [...PHASES]);
-    assert.deepEqual(Object.keys(META.argsSchema.properties).sort(), ["autonomy", "brief", "environmentName", "location", "maxFixLoops", "scenarioId", "skipDeploy", "subscriptionId"]);
+    assert.deepEqual(Object.keys(META.argsSchema.properties).sort(), ["autonomy", "brief", "environmentName", "from", "location", "maxFixLoops", "scenarioId", "skipDeploy", "subscriptionId"]);
     for (const phase of PHASES) for (const role of ["review", "fix"]) assert.ok(TASKS[phase][role], `${phase} ${role} task`);
 });
 
@@ -712,7 +613,8 @@ test("normalize bounds untrusted reports", () => {
             { url: "http://localhost:8000/health" },
         ],
     }, "Deploy · review");
-    assert.equal(report.summary, "line one line two");
+    assert.equal(report.status, "failed", "a pass that still lists issues counts as failed");
+    assert.equal(report.summary, "Reported passed with 2 open issues, so it counts as failed: line one line two");
     assert.deepEqual(report.issues, ["a", "7"]);
     assert.equal(report.lessons.length, 20);
     assert.deepEqual(report.endpoints, [{ name: "web", url: "https://app.example.com/" }, { name: "localhost:8000", url: "http://localhost:8000/health" }]);
@@ -820,7 +722,7 @@ test("the flight record reducer folds events and rejects unknown ones", () => {
     assert.equal(paused.status, "awaiting-approval", "reduce is pure");
     assert.deepEqual(paused.checkpoints, []);
     assert.throws(() => reduce(base, { type: "nope", at: "t" }), /Unknown flight record event/);
-    assert.equal(recordFile("run/../x y"), ".agentic-loop/runs/run_.._x_y.json");
+    assert.equal(recordFile("run/../x y"), `.agentic-loop/runs/run-..-x-y-${createHash("sha256").update("run/../x y").digest("hex").slice(0, 8)}.json`);
 });
 
 test("canvas contract pin: foundry-agentic-loop-canvas reads what the workflow writes and accepts the same args", async t => {
