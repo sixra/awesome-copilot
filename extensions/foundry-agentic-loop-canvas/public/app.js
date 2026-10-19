@@ -125,6 +125,10 @@ let lastCheckpoint = null;
 let setupLoading = null;
 let setupDone = false;
 let setupReady = false;
+// Azure listings that failed (projects in rapid, subscriptions in SDD) are retried by Check again once Azure CLI is signed in.
+let azureSignedIn = false;
+let discoveryFailed = false;
+let targetsFailed = false;
 let workIq = null;
 let whereSelected = false;
 const regions = {};
@@ -447,12 +451,16 @@ function loadTargets(force = false) {
     if (targetsLoading && !force) return targetsLoading;
     $("target-subscription").disabled = true;
     targetsLoading = api("targets").then(result => {
+        targetsFailed = false;
         subscriptions = [...result.subscriptions].sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name));
         $("target-subscription").innerHTML = '<option value="">Confirm in Chat</option>' +
             subscriptions.map(row => `<option value="${escape(row.id)}">${escape(row.name)}${row.isDefault ? " · default" : ""}</option>`).join("");
+        // Replaces an earlier listing failure, but keeps an environment-name validation error.
+        if (!$("target-help").classList.contains("error")) $("target-help").textContent = TARGET_HELP;
         applyTarget(result.target);
     }).catch(error => {
         targetsLoading = null;
+        targetsFailed = true;
         $("target-help").textContent = `Could not list subscriptions: ${error.message} Copilot confirms the subscription in Chat.`;
     }).finally(() => { $("target-subscription").disabled = false; });
     return targetsLoading;
@@ -527,6 +535,14 @@ function setup() {
     return setupLoading;
 }
 
+// Signing in fixes Azure listings that failed earlier, so Check again retries them instead of leaving their errors until Refresh.
+async function retryAzure() {
+    if (!azureSignedIn) return;
+    if (projectSyncError) await frontends(true);
+    if (mode === "sdd" && targetsFailed) await loadTargets();
+    if (mode === "rapid" && discoveryFailed && !projects.length && !projectSyncError) await discover();
+}
+
 async function checkReadiness() {
     const toolsOpen = $("setup-tools")?.open ?? false;
     const skillsOpen = $("setup-skills")?.open ?? false;
@@ -538,6 +554,7 @@ async function checkReadiness() {
         const result = await api("setup");
         setupDone = true;
         setupReady = result.ready && !result.discoveryError;
+        azureSignedIn = result.checks.some(check => check.id === "az-auth" && check.status === "ready");
         const toolIds = new Set(["az", "azd", "azd-ai", "az-auth", "azd-auth"]);
         const tools = result.checks.filter(check => toolIds.has(check.id));
         const skills = result.checks.filter(check => !toolIds.has(check.id));
@@ -576,6 +593,7 @@ async function checkReadiness() {
     } catch (error) {
         setupDone = true;
         setupReady = false;
+        azureSignedIn = false;
         stepGlyph("ready-glyph", "attention");
         $("ready-summary").textContent = "Couldn't check readiness";
         setStepOpen("step-ready", true);
@@ -706,11 +724,13 @@ async function discover(subscriptionId) {
     renderProjects("loading");
     try {
         const result = await api("discover", subscriptionId ? { subscriptionId } : {});
+        discoveryFailed = false;
         // A subscription the user chose counts as a pick, so step 2 stays open on the project discovery selects.
         applyResources(result, Boolean(subscriptionId));
         announce(`${projects.length} Foundry ${projects.length === 1 ? "project" : "projects"} found.`);
         await monitoring();
     } catch (error) {
+        discoveryFailed = true;
         // A failed refresh keeps the server's list, subscription and selection, so the panel keeps showing them.
         $("subscription").value = resourceSubscription;
         if (projects.length) {
@@ -1681,9 +1701,15 @@ $("project-bar").onclick = () => {
     ($("project").disabled ? $("step-where").querySelector("summary") : $("project")).focus({ preventScroll: true });
     switching.catch(error => notice(error.message, true));
 };
+// Passing readiness collapses step 1 under the button, so its summary takes focus and scrolls back into view to show the result.
 $("recheck").onclick = () => busy($("recheck"), async () => {
     await setup();
-    if (!$("step-ready").open && (!document.activeElement || document.activeElement === document.body)) $("step-ready").querySelector("summary").focus({ preventScroll: true });
+    const step = $("step-ready"), summary = step.querySelector("summary");
+    if (!step.open) {
+        if (!document.activeElement || document.activeElement === document.body) summary.focus({ preventScroll: true });
+        if (document.activeElement === summary) step.scrollIntoView({ block: "nearest", behavior: "instant" });
+    }
+    await retryAzure();
 });
 $("workiq-toggle").onchange = () => {
     const on = $("workiq-toggle").checked;
