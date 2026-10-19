@@ -1320,8 +1320,10 @@ function nextDecision(run, phase) {
     if (!plan) return `The run pauses here when it needs a decision. ${stuck}`;
     if (phase === "Deploy") return "Nothing more. The endpoints appear here when Deploy finishes.";
     const specPending = run.phases.find(row => row.title === "Specify")?.gate?.status !== "passed";
-    if (plan.autonomy === "gated" && specPending) return `Approve the spec when Specify passes. Nothing is provisioned before then. ${stuck}`;
-    if (plan.skipDeploy) return `Nothing until the run ends after Verify; you deploy later from Chat. ${stuck}`;
+    const end = plan.to ?? (plan.skipDeploy ? "Verify" : "Deploy");
+    if (plan.autonomy === "gated" && specPending && end !== "Specify") return `Approve the spec when Specify passes. Nothing is provisioned before then. ${stuck}`;
+    if (end === "Verify") return `Nothing until the run ends after Verify; you deploy later from Chat. ${stuck}`;
+    if (end !== "Deploy") return `Nothing until the run ends after ${end}, as requested. ${stuck}`;
     return `Approve deployment when Verify passes. ${stuck}`;
 }
 
@@ -1375,6 +1377,11 @@ function calloutHtml(run) {
             ? `<ul class="endpoints" aria-label="Endpoints">${run.outcome.endpoints.map(row => isLoopback(row.url)
                 ? `<li>${escape(row.name)} <code>${escape(row.url)}</code></li>`
                 : `<li><a href="${escape(row.url)}" target="_blank" rel="noopener noreferrer">${escape(row.name)} <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a></li>`).join("")}</ul>` : "";
+        if (["specified", "implemented"].includes(run.outcome?.status)) {
+            const end = run.outcome.status === "specified" ? "Specify" : "Implement";
+            return box("success", `Stopped after ${end}`, `<p>The run ended after ${end}, as requested, and its gate passed. Start a run from the next phase in Chat to continue.</p>${endpoints}
+                <div class="actions">${artifactButton(run, "docs/spec.md", "Open spec")}${improve}</div>`);
+        }
         if (run.outcome?.status === "verified") {
             return box("success", "Verified, ready to deploy", `<p>Specified, implemented and verified. This run skipped Deploy; Copilot asks for your approval before azd up.</p>${endpoints}
                 <div class="actions"><button class="primary" data-prompt="deploy" data-run="${escape(run.runId)}" data-key="deploy">Deploy from Chat</button>${artifactButton(run, "docs/verify.md", "Open verification report")}${artifactButton(run, ".azure/deployment-plan.md", "Open deployment plan")}${improve}</div>`);

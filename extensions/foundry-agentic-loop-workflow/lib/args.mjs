@@ -3,7 +3,7 @@ export const PHASES = Object.freeze(["Specify", "Implement", "Verify", "Deploy"]
 export const MAX_FIX_LOOPS = 5;
 export const LESSONS = "docs/LOOP.md";
 
-const KEYS = Object.freeze(["brief", "subscriptionId", "location", "environmentName", "scenarioId", "autonomy", "maxFixLoops", "skipDeploy", "from"]);
+const KEYS = Object.freeze(["brief", "subscriptionId", "location", "environmentName", "scenarioId", "autonomy", "maxFixLoops", "skipDeploy", "from", "to"]);
 const optionalString = { type: ["string", "null"] };
 
 // argsSchema stays inside the runtime's structural subset; validateArgs enforces the finer rules.
@@ -18,7 +18,8 @@ export const META = {
         + "args: { brief: string (required, self-contained), subscriptionId?: GUID, location?: Azure region or 'auto', "
         + "environmentName?: azd environment (2-20 chars), scenarioId?: canvas scenario, autonomy?: 'gated' | 'auto', "
         + "maxFixLoops?: 0-5 (default 2), skipDeploy?: boolean, from?: 'Specify' | 'Implement' | 'Verify' | 'Deploy' (default Specify; a later phase "
-        + "only when the latest flight record in the workspace passed every earlier phase) }.",
+        + "only when the latest flight record in the workspace passed every earlier phase), to?: the last phase to run (default Deploy, or Verify with skipDeploy; "
+        + "from and to set to the same phase run that phase alone) }.",
     phases: [
         { title: "Specify", detail: "EARS spec, frozen contract and deployment plan; independent review; spec approval" },
         { title: "Implement", detail: "azd scaffold and provision, hosted checkpoint, parallel workstreams, integration" },
@@ -38,6 +39,7 @@ export const META = {
             maxFixLoops: { type: ["integer", "null"] },
             skipDeploy: { type: ["boolean", "null"] },
             from: { type: ["string", "null"], enum: [...PHASES, null] },
+            to: { type: ["string", "null"], enum: [...PHASES, null] },
         },
     },
     // Default ceilings, overridable per invocation; README.md (Limits) shows the subagent-call math behind them.
@@ -72,6 +74,10 @@ export function validateArgs(raw) {
     const from = raw.from ?? "Specify";
     if (!PHASES.includes(from)) throw new TypeError(`args.from must be one of ${PHASES.join(", ")}.`);
     if (from === "Deploy" && skipDeploy) throw new TypeError("args.from cannot be Deploy when skipDeploy is set.");
+    const to = raw.to ?? (skipDeploy ? "Verify" : "Deploy");
+    if (!PHASES.includes(to)) throw new TypeError(`args.to must be one of ${PHASES.join(", ")}.`);
+    if (to === "Deploy" && skipDeploy) throw new TypeError("args.to cannot be Deploy when skipDeploy is set.");
+    if (PHASES.indexOf(to) < PHASES.indexOf(from)) throw new TypeError(`args.to (${to}) cannot come before args.from (${from}).`);
     return Object.freeze({
         brief,
         subscriptionId: optional(raw, "subscriptionId", /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i, "args.subscriptionId must be an Azure subscription GUID."),
@@ -82,5 +88,6 @@ export function validateArgs(raw) {
         maxFixLoops,
         skipDeploy,
         from,
+        to,
     });
 }

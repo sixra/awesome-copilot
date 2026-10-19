@@ -11,7 +11,7 @@ SDD turns a brief into a deployed, reproducible solution: a new Foundry project 
 
 In each phase a lead does the work, a fresh-context reviewer reruns the checks, and fixers get up to `maxFixLoops` rounds. Only the reviewer's verdict passes a gate. Implement runs disjoint workstreams in parallel.
 
-Phases reconcile existing artifacts instead of starting over, so reruns are safe. Lessons go to `docs/LOOP.md`. Each run writes a flight record to `.agentic-loop/runs/<runId>.json`, with status `running`, `awaiting-approval`, `blocked`, `deployed`, `verified` or `error`, saved at the start, at the first step after a resume, at each gate and checkpoint, and at the end. A record that cannot be written pauses the run at `blocked-record-<step>`. One run is active per workspace: `.agentic-loop/active-run.json` holds its lease, and a second run refuses to start while that lease is under 30 minutes old.
+Phases reconcile existing artifacts instead of starting over, so reruns are safe. Lessons go to `docs/LOOP.md`. Each run writes a flight record to `.agentic-loop/runs/<runId>.json`, with status `running`, `awaiting-approval`, `blocked`, `deployed`, `verified` (or `specified`/`implemented` when `to` ends it early) or `error`, saved at the start, at the first step after a resume, at each gate and checkpoint, and at the end. A record that cannot be written pauses the run at `blocked-record-<step>`. One run is active per workspace: `.agentic-loop/active-run.json` holds its lease, and a second run refuses to start while that lease is under 30 minutes old.
 
 ## Start a run
 
@@ -30,6 +30,7 @@ Phases reconcile existing artifacts instead of starting over, so reruns are safe
    | `maxFixLoops` | Fix rounds per phase gate, 0–5 (default 2) |
    | `skipDeploy` | Stop after Verify |
    | `from` | Rerun from this phase; refused unless the latest record passed every earlier phase |
+   | `to` | Last phase to run (default `Deploy`); `from` and `to` set to one phase run it alone |
 
    Pass `limits` only when the user sets them; defaults are 250 subagents, 4 concurrent and 12 hours of active time.
 6. Report the run ID and the checkpoints ahead. The run continues in the background, posting phase and gate lines in Chat; the Foundry Agentic Loop canvas Build tab shows live agents. No input is needed until a checkpoint. Do not poll; the run notifies when it pauses or ends.
@@ -46,7 +47,7 @@ A pause posts a `Needs you:` line. Answer it in one message: what paused and why
 | `approve-deploy-v1` | Verified and ready to deploy (always pauses) | Summarize resources, cost, security and region impact; apply requested edits without deploying |
 | `approve-deploy-r<n>-v1` | The deployment plan, spec, verify report or azd target changed since deploy approval | Summarize what changed; approving records the new fingerprint |
 | `blocked-record-<step>` | The flight record could not be written | Fix the path or permission shown, then resume |
-| `blocked-<phase>-r<n>` | A gate failed after its fix rounds, a subagent ended twice without a report (usually a provider error), or a decision is needed (permissions, quota, cost, security) | List every issue from that phase and round in the flight record's `phases`, not just the first from the log. Fix and verify each root cause in the artifacts, record the evidence and `docs/LOOP.md` lessons. Resuming starts round n+1, which continues from the current state; its review first confirms these issues are resolved. To accept an issue instead, only on the user's explicit decision, write `[{"issue": "<exact issue>", "reason": "..."}]` to `.agentic-loop/waivers/<runId>.json` before resuming. After round 20, start a new run or rerun that phase with `from`. |
+| `blocked-<phase>-r<n>` | A gate failed after its fix rounds, a subagent ended twice without a report (usually a provider error), or a decision is needed (permissions, quota, cost, security) | List every issue from that phase and round in the flight record's `phases`, not just the first from the log. Fix and verify each root cause in the artifacts, record the evidence and `docs/LOOP.md` lessons. Resuming starts round n+1, which continues from the current state; its review first confirms these issues are resolved. To accept an issue instead, only on the user's explicit decision, write `[{"issue": "<exact issue>", "reason": "..."}]` to `.agentic-loop/waivers/<runId>.json` before resuming. After round 20, start a new run or rerun that phase alone with `from` and `to`. |
 
 - Resume with `run_dynamic_workflow` and `resumeFromRunId` only when the user asks. When a canvas prompt says "Do not resume the run", don't: the canvas resumes it.
 - **Liveness.** Workflow subagents don't appear in `list_agents` or `read_agent`, and one Implement step can run for over an hour without a record change. The canvas Build tab shows live subagent activity. Never cancel, pause or restart a run to unstick it; only the user decides that.
@@ -54,7 +55,7 @@ A pause posts a `Needs you:` line. Answer it in one message: what paused and why
 - **Effort.** Subagents inherit the session's model and reasoning effort. Prefer medium or high: maximum effort multiplies step time.
 - A run that ends in `error` with `workflow_limit_reached` resumes with only that limit raised, after approval. For other errors, read the run with `dynamic_workflows_manage` (`inspect-run`), fix the cause and start a new run.
 - Never weaken a gate, skip a phase or report unverified checks as passed.
-- For a single named phase, start the workflow with `from`. Without the workflow, follow the phase guides yourself in order, checking each gate and pausing at the same approvals: ask before `azd provision`, `azd deploy` or `azd up`.
+- For a single named phase, start the workflow with `from` and `to` both set to it; `from` alone also runs every later phase. Without the workflow, follow the phase guides yourself in order, checking each gate and pausing at the same approvals: ask before `azd provision`, `azd deploy` or `azd up`.
 
 ## SDD defaults
 

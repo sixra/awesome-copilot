@@ -167,6 +167,7 @@ export function createRecord({ runId, args, setup }) {
         autonomy: args.autonomy,
         maxFixLoops: args.maxFixLoops,
         skipDeploy: args.skipDeploy,
+        to: args.to,
         skills: Object.fromEntries(Object.values(setup.skills).map(skill => [skill.name, skill.source])),
         skillProvenance: setup.provenance ?? null,
         skillDrift: [],

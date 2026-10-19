@@ -57,7 +57,7 @@ export function runFile(runId) {
 export const flightRecordPath = runId => path.posix.join(".agentic-loop", "runs", runFile(runId));
 
 export function outcomeOf(record) {
-    if (!record || !["deployed", "verified"].includes(record.status)) return null;
+    if (!record || !["deployed", "verified", "implemented", "specified"].includes(record.status)) return null;
     const endpoints = (Array.isArray(record.endpoints) ? record.endpoints : []).flatMap(row => {
         try {
             const url = new URL(String(row?.url ?? ""));
@@ -74,6 +74,7 @@ export function planOf(record) {
     return {
         autonomy: record.autonomy === "auto" ? "auto" : "gated",
         skipDeploy: record.skipDeploy === true,
+        to: ["Specify", "Implement", "Verify", "Deploy"].includes(record.to) ? record.to : record.skipDeploy === true ? "Verify" : "Deploy",
         maxFixLoops: Number.isInteger(record.maxFixLoops) ? record.maxFixLoops : null,
     };
 }

@@ -20,7 +20,7 @@ Declare each agent's dependencies in `requirements.txt` or `pyproject.toml`. Res
 | Always | `azure-ai-agentserver-responses` | Serves the Responses endpoint; its core exports host telemetry from `APPLICATIONINSIGHTS_CONNECTION_STRING` |
 | Invocations only | `azure-ai-agentserver-invocations` | Only when invocations is explicitly selected |
 | Agents that use runtime skills | `github-copilot-sdk[telemetry]` | Copilot runtime, BYOK provider and runtime telemetry; brings `httpx` for the toolbox bridge in [`copilot-sdk-with-toolbox.py`](copilot-sdk-with-toolbox.py) |
-| Basic agents and explicit workflows | `agent-framework` | Microsoft Agent Framework |
+| Basic agents and explicit workflows | `agent-framework-foundry` (add `agent-framework-foundry-hosting` when hosting through MAF) | Microsoft Agent Framework subpackages, each pinned with `==`; never the `agent-framework` meta-package |
 | Multi-file skills or skills outside a toolbox | `azure-ai-projects` | Skills API download (see microsoft-foundry); toolbox skills arrive as MCP resources instead |
 | In-process OpenAI-client model calls | `opentelemetry-instrumentation-openai-v2` | Model spans the runtime doesn't emit |
 

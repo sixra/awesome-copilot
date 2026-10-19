@@ -11,7 +11,7 @@ It ships with the `foundry-agentic-loop` plugin. The **SDD** mode of the `foundr
 
 At setup, it adds the Agentic Loop SDD section to the workspace root `AGENTS.md` unless one exists. The section locks the workspace to SDD and routes short commands such as `deploy`, `status` and `resume` in later prompts. A workspace locked to rapid prototyping stops the run until Copilot converts the prototype to SDD.
 
-One run is active per workspace. The run holds a lease in `.agentic-loop/active-run.json` (`runId`, `startedAt`, `heartbeatAt`), refreshes it with every flight record write and every five minutes, and releases it when it pauses, fails or finishes. A second run refuses to start while the lease is fresh (heartbeat under 30 minutes old) and names the active run; delete the file if that run is gone. A stale lease is taken over with a Chat line, and resuming a run takes its lease back.
+One run is active per workspace. The run holds a lease in `.agentic-loop/active-run.json` (`runId`, `startedAt`, `heartbeatAt`), refreshes it with every flight record write and every five minutes, and releases it when it pauses, fails or finishes. A second run refuses to start while the lease is fresh (heartbeat under 30 minutes old) and names the active run; delete the file if that run is gone. A stale lease is taken over with a Chat line, and resuming a run takes its lease back. Every lease read-check-write runs under an exclusive `.agentic-loop/active-run.lock` folder, so two runs cannot both take over the same stale lease; a lock older than two minutes is left by a crash and must be deleted.
 
 The workflow reads and writes its own files (`AGENTS.md`, `.agentic-loop/`, `.agentic-loop/runs/`, the record, lease and waiver files) only inside the workspace: a symbolic link on any of those paths, or a path that resolves outside the workspace, stops the run with an error instead of being followed. It never writes `docs/LOOP.md` itself; subagents do.
 
@@ -40,7 +40,7 @@ The gate passes only on the reviewer's verdict. Reports are untrusted and fail c
 
 Each pause posts a `Needs you:` line in Chat that names the decision. The flight record lists every gate issue, and the canvas shows them. Resume with `run_dynamic_workflow` and `resumeFromRunId`, or from the canvas. Completed steps, including every subagent report, replay from the journal, so resuming never repeats finished work.
 
-- **Final round:** a phase gets at most 20 rounds. The checkpoint after round 20 says the rounds are exhausted and that resuming ends the run; fix the root cause and start a new run, or rerun that phase alone with `from`.
+- **Final round:** a phase gets at most 20 rounds. The checkpoint after round 20 says the rounds are exhausted and that resuming ends the run; fix the root cause and start a new run, or rerun that phase alone with `from` and `to`.
 - **Deploy approval:** approving deployment records a fingerprint in the flight record (`deployApproval`): the SHA-256 of `.azure/deployment-plan.md`, `docs/spec.md` and `docs/verify.md`, and the azd environment, subscription, location and resource group from `.azure/<env>/.env` (falling back to the args). Before every Deploy round the workflow recomputes it and asks again through `approve-deploy-r<n>-v1` if anything changed. Deploy subagents must confirm that `azd env get-values` and `az account show` match the fingerprint, and stop as blocked if they don't.
 - **Waivers:** only a human waives a gate issue. While the run waits at `blocked-<phase>-r<n>`, write `.agentic-loop/waivers/<runId>.json` (the same file name rule as the record) as `[{"issue": "<exact gate issue>", "reason": "..."}]`, then resume. The workflow accepts a waiver only when the file was written during that pause and the issue matches one of that checkpoint's issues, records it as `waivers: [{issue, reason, approvedAt, checkpoint}]`, deletes the file and lists accepted waivers in that phase's later prompts. Subagents never waive issues themselves.
 
@@ -59,6 +59,7 @@ Workflow subagents don't appear in `list_agents` or `read_agent`. The flight rec
 | `maxFixLoops` | `2` | Fix rounds per phase gate, 0–5 |
 | `skipDeploy` | `false` | End after Verify with status `verified` |
 | `from` | `Specify` | Start at a later phase, for example `"Verify"`. Allowed only when the latest flight record in `.agentic-loop/runs/` passed every earlier phase; those phases are recorded as inherited (`round: 0`, `inheritedFrom`). Otherwise the run refuses to start. `Deploy` cannot be combined with `skipDeploy` |
+| `to` | `Deploy` (`Verify` with `skipDeploy`) | Last phase to run; later phases are recorded as skipped and the run ends with status `specified`, `implemented`, `verified` or `deployed`. Set `from` and `to` to the same phase to run only that phase. A run that ends at `Specify` skips the spec approval pause, and Deploy approval is asked only when Deploy runs |
 
 For an unattended run from Specify through Verify, use `autonomy: "auto"` and `skipDeploy: true` with `copilot workflow run foundry-agentic-loop-workflow --args @args.json --result-file result.json`, where `--result-file` writes only the workflow result. Such a run can still pause at a `blocked-<phase>-r<n>` checkpoint, and with `autonomy: "gated"` or without `skipDeploy` it also pauses for approval. The CLI has no resume command, so continue a paused run from a Copilot session with its run ID.
 
@@ -79,7 +80,7 @@ Subagents poll long Azure operations every 30–60 seconds against an explicit d
 - **Workspace:** the `AGENTS.md` lock, `docs/spec.md`, `docs/implementation.md`, `docs/verify.md`, `docs/deploy.md`, the lessons in `docs/LOOP.md` and `.azure/deployment-plan.md`, which alone holds the Azure settings, plus the solution itself.
 - **Flight record:** `.agentic-loop/runs/<runId>.json`. A run ID that is not 1–120 characters of `A-Z a-z 0-9 . _ -` becomes a sanitized prefix plus the first 8 hex characters of its SHA-256, so distinct IDs never share a file. It holds status, gates (with `evidence`), attempts, issues, lessons, checkpoints and endpoints, plus `waivers`, `deployApproval`, `ownership`, `rerun`, `skillProvenance` (per skill: source kind, path, plugin version and SHA-256 of `SKILL.md` and the phase guides) and `skillDrift` (hash changes seen when a later attempt starts). Improve mode in the `foundry-agentic-loop` skill learns from it.
 - **Workspace lease:** `.agentic-loop/active-run.json` while a run is active.
-- **Result:** `{ status, runId, phases, rounds, endpoints, flightRecord }`, where `status` is `deployed` or `verified`.
+- **Result:** `{ status, runId, phases, rounds, endpoints, flightRecord }`, where `status` is `deployed`, `verified`, or `specified`/`implemented` when `to` ends the run early.
 
 ## Tests
 

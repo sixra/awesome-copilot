@@ -135,6 +135,7 @@ test("completed runs read their outcome and safe endpoints from the flight recor
     assert.equal(flightRecordPath("run:1"), `.agentic-loop/runs/run-1-${createHash("sha256").update("run:1").digest("hex").slice(0, 8)}.json`);
     assert.deepEqual(live.snapshot().run.outcome, { status: "verified", endpoints: [{ name: "web", url: "https://app.example.com/" }, { name: "localhost", url: "http://localhost:3000/" }] });
     assert.equal(outcomeOf({ status: "running" }), null);
+    assert.deepEqual(outcomeOf({ status: "implemented" }), { status: "implemented", endpoints: [] }, "a run that ends early with to still has an outcome");
     assert.equal(outcomeOf(null), null);
     assert.equal(shapeRun(detail("r2"), new Set(), undefined, { status: "deployed", endpoints: [] }).outcome, null, "only completed runs carry an outcome");
 });
@@ -147,9 +148,10 @@ test("running runs read their plan from the flight record so the canvas can name
     const live = new Live({ session, workspace: root });
     t.after(() => live.stop());
     await live.start();
-    assert.deepEqual(live.snapshot().run.plan, { autonomy: "auto", skipDeploy: true, maxFixLoops: 2 });
+    assert.deepEqual(live.snapshot().run.plan, { autonomy: "auto", skipDeploy: true, to: "Verify", maxFixLoops: 2 });
     assert.equal(live.snapshot().run.outcome, null, "a running run has no outcome yet");
-    assert.deepEqual(planOf({ autonomy: "sideways", skipDeploy: "yes", maxFixLoops: 1.5 }), { autonomy: "gated", skipDeploy: false, maxFixLoops: null });
+    assert.deepEqual(planOf({ autonomy: "sideways", skipDeploy: "yes", maxFixLoops: 1.5 }), { autonomy: "gated", skipDeploy: false, to: "Deploy", maxFixLoops: null });
+    assert.equal(planOf({ to: "Implement" }).to, "Implement");
     for (const value of [null, [], "x"]) assert.equal(planOf(value), null);
 });
 

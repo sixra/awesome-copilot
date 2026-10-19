@@ -55,8 +55,11 @@ export function approvalChanges(approved, current) {
     if (!approved?.files || !approved?.target) return ["no approval fingerprint is recorded"];
     const changes = [];
     for (const rel of APPROVED_FILES) if (approved.files[rel] !== current.files[rel]) changes.push(rel);
+    // Unset → set is a change too: a target value first chosen after approval was never reviewed.
     for (const key of Object.keys(TARGET_KEYS)) {
-        if (approved.target[key] && approved.target[key] !== current.target[key]) changes.push(`${TARGET_KEYS[key]} (${approved.target[key]} → ${current.target[key] ?? "unset"})`);
+        const before = approved.target[key] ?? null;
+        const after = current.target[key] ?? null;
+        if (before !== after) changes.push(`${TARGET_KEYS[key]} (${before ?? "unset"} → ${after ?? "unset"})`);
     }
     return changes;
 }

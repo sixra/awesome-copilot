@@ -111,9 +111,12 @@ function target({ subscriptionId, location, environmentName }) {
 
 // The fingerprint was recorded when the human approved deployment; Deploy must act on exactly that target.
 function approved({ approvedAt, target: azure }) {
-    const rows = [["AZURE_ENV_NAME", azure.environmentName], ["AZURE_SUBSCRIPTION_ID", azure.subscriptionId], ["AZURE_LOCATION", azure.location], ["AZURE_RESOURCE_GROUP", azure.resourceGroup]].filter(([, value]) => value);
+    const all = [["AZURE_ENV_NAME", azure.environmentName], ["AZURE_SUBSCRIPTION_ID", azure.subscriptionId], ["AZURE_LOCATION", azure.location], ["AZURE_RESOURCE_GROUP", azure.resourceGroup]];
+    const rows = all.filter(([, value]) => value);
+    const unset = all.filter(([, value]) => !value).map(([key]) => key);
     return `Approved deployment (approved ${approvedAt}): ${rows.length ? rows.map(([key, value]) => `${key}=${value}`).join(", ") : "no target values were recorded"}. `
-        + "Before changing anything, confirm that azd env get-values and az account show report these values; if any differs, change nothing and return blocked naming the mismatch.";
+        + (unset.length ? `Unset at approval: ${unset.join(", ")}; set them only to values .azure/deployment-plan.md names, and the next round asks for approval again. ` : "")
+        + "Before changing anything, confirm that azd env get-values and az account show report the approved values; if any differs, change nothing and return blocked naming the mismatch.";
 }
 
 function bullets(items) {

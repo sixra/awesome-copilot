@@ -501,7 +501,7 @@ test("the AGENTS.md section templates, parser and writer agree", async () => {
 
 test("validateArgs enforces the documented contract", () => {
     assert.deepEqual({ ...validateArgs({ brief: `  ${BRIEF}  ` }) }, {
-        brief: BRIEF, subscriptionId: null, location: null, environmentName: null, scenarioId: null, autonomy: "gated", maxFixLoops: 2, skipDeploy: false, from: "Specify",
+        brief: BRIEF, subscriptionId: null, location: null, environmentName: null, scenarioId: null, autonomy: "gated", maxFixLoops: 2, skipDeploy: false, from: "Specify", to: "Deploy",
     });
     const full = validateArgs({ brief: BRIEF, subscriptionId: "0000AAAA-BBBB-4CCC-8DDD-EEEEFFFF0000", location: "eastus2", environmentName: "claims-dev", scenarioId: "insurance-claims-triage", autonomy: "auto", maxFixLoops: 5, skipDeploy: true });
     assert.equal(full.location, "eastus2");
@@ -555,7 +555,7 @@ test("META and schemas stay inside the runtime's schema subset and match the can
     walk(FOUNDATION_SCHEMA, "foundation");
     assert.equal(META.name, WORKFLOW);
     assert.deepEqual(META.phases.map(phase => phase.title), [...PHASES]);
-    assert.deepEqual(Object.keys(META.argsSchema.properties).sort(), ["autonomy", "brief", "environmentName", "from", "location", "maxFixLoops", "scenarioId", "skipDeploy", "subscriptionId"]);
+    assert.deepEqual(Object.keys(META.argsSchema.properties).sort(), ["autonomy", "brief", "environmentName", "from", "location", "maxFixLoops", "scenarioId", "skipDeploy", "subscriptionId", "to"]);
     for (const phase of PHASES) for (const role of ["review", "fix"]) assert.ok(TASKS[phase][role], `${phase} ${role} task`);
 });
 

@@ -11,6 +11,9 @@ import { MAX_ITEMS, clean, createRecord, endpoints, missing, normalize, planWork
 import { latestRecord, rerunPlan } from "./rerun.mjs";
 import { missingSkills, resolveSkills, skillDrift, skillProvenance } from "./skills.mjs";
 
+// The run status names the last phase it ran: verified is the skipDeploy outcome, deployed the full loop.
+const OUTCOMES = Object.freeze({ Specify: "specified", Implement: "implemented", Verify: "verified", Deploy: "deployed" });
+
 export const MAX_ROUNDS = 20;
 
 export async function workspace(session) {
@@ -70,7 +73,7 @@ export function checkpointLines(key, { phase, round, status, issues = [], fixes 
     const first = issues.length ? clean(issues[0], 140) : "";
     const cause = issues.length > 1 ? ` (${issues.length} issues; first: ${first})` : first ? ` (${first})` : "";
     if (round >= MAX_ROUNDS) {
-        const rerun = phase === "Specify" ? "start a new run" : `start a new run, or rerun only this phase with from: "${phase}"`;
+        const rerun = phase === "Specify" ? "start a new run" : `start a new run, or rerun only this phase with from and to: "${phase}"`;
         return {
             wait: `Needs you: ${why}${cause}. That was round ${round} of ${MAX_ROUNDS}, so this run cannot retry ${phase}: fix the root cause from the gate issues, then ${rerun}.`,
             resume: `${phase} has no rounds left (${MAX_ROUNDS} of ${MAX_ROUNDS} used), so this run stops. Fix the root cause, then ${rerun}.`,
@@ -174,7 +177,8 @@ class Run {
     approve = async () => {
         const print = await fingerprint(this.cwd, this.args);
         const target = Object.entries(print.target).filter(([, value]) => value).map(([key, value]) => `${key} ${value}`);
-        this.ctx.log(clean(`Approval recorded for ${target.join(", ") || "the planned target"}; Deploy re-asks if the plan, spec, verification or target changes.`, 300));
+        const unset = Object.keys(print.target).filter(key => !print.target[key]);
+        this.ctx.log(clean(`Approval recorded for ${target.join(", ") || "the planned target"}${unset.length ? ` (unset: ${unset.join(", ")})` : ""}; Deploy re-asks if the plan, spec, verification or target changes, including a value set after approval.`, 400));
         return { fingerprint: print };
     };
 
@@ -337,13 +341,14 @@ class Run {
 
     async skip(phase) {
         await this.event(`skip-${phase.toLowerCase()}-v1`, at => {
-            this.ctx.log(`${phase} skipped: skipDeploy is set, so the run ends after Verify.`);
-            return { type: "skipped", phase, summary: "skipDeploy was set.", at };
+            const reason = this.args.skipDeploy ? "skipDeploy is set" : `to is ${this.args.to}`;
+            this.ctx.log(`${phase} skipped: ${reason}, so the run ends after ${this.args.to}.`);
+            return { type: "skipped", phase, summary: this.args.skipDeploy ? "skipDeploy was set." : `to was ${this.args.to}.`, at };
         });
     }
 
     async finish() {
-        const status = this.args.skipDeploy ? "verified" : "deployed";
+        const status = OUTCOMES[this.args.to];
         const passed = this.record.phases.filter(entry => entry.status === "passed");
         const outcome = {
             status,
@@ -395,15 +400,17 @@ export async function runLoop(ctx, { extensionDir, home = os.homedir(), now = ()
         try {
             await run.checkDrift();
             if (setup.rerun) await run.inherit(setup.rerun);
+            const last = PHASES.indexOf(args.to);
             for (const phase of PHASES.slice(PHASES.indexOf(args.from))) {
-                if (phase === "Deploy" && args.skipDeploy) {
+                if (PHASES.indexOf(phase) > last) {
                     await run.skip(phase);
-                    break;
+                    continue;
                 }
                 ctx.phase(phase);
                 if (phase === "Deploy") await run.checkpoint("approve-deploy-v1", "approve", {}, run.approve);
                 await run.phase(phase);
-                if (phase === "Specify" && args.autonomy === "gated") await run.checkpoint("approve-spec-v1", "approve");
+                // The spec approval gates provisioning, so a run that ends at Specify does not pause for it.
+                if (phase === "Specify" && args.autonomy === "gated" && args.to !== "Specify") await run.checkpoint("approve-spec-v1", "approve");
             }
             return await run.finish();
         } catch (error) {

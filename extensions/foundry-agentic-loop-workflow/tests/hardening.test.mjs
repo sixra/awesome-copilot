@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { APPROVED_FILES, approvalChanges, fingerprint, takeWaivers, waiverFile } from "../lib/approval.mjs";
 import { META, validateArgs } from "../lib/args.mjs";
 import { ContainmentError, contained } from "../lib/fsguard.mjs";
-import { LEASE } from "../lib/lease.mjs";
+import { LEASE, LOCK, acquireLease } from "../lib/lease.mjs";
 import { MAX_ROUNDS, checkpointLines } from "../lib/loop.mjs";
 import { owner, ownershipCheck } from "../lib/ownership.mjs";
 import { buildPrompt } from "../lib/prompts.mjs";
@@ -86,7 +86,7 @@ test("the final round's blocked checkpoint says rounds are exhausted instead of 
     assert.match(early.resume, /retrying Verify as round 4/);
     const last = checkpointLines(`blocked-verify-r${MAX_ROUNDS}`, { phase: "Verify", round: MAX_ROUNDS, status: "failed", issues: ["E2E red"], waivers: "x" });
     assert.match(last.wait, new RegExp(`round ${MAX_ROUNDS} of ${MAX_ROUNDS}, so this run cannot retry Verify`));
-    assert.match(last.wait, /start a new run, or rerun only this phase with from: "Verify"/);
+    assert.match(last.wait, /start a new run, or rerun only this phase with from and to: "Verify"/);
     assert.doesNotMatch(`${last.wait} ${last.resume}`, /retrying|round \d+ ?\+|resume to retry|waivers/);
     assert.match(last.resume, /no rounds left/);
 
@@ -189,6 +189,33 @@ test("a run that loses its lease to another run stops writing", async t => {
     assert.equal(JSON.parse(await readFile(lease, "utf8")).runId, "intruder", "the other run's lease is left alone");
 });
 
+test("two runs taking over the same stale lease at once: exactly one wins", async t => {
+    const { cwd } = await workspace(t);
+    const lease = path.join(cwd, ...LEASE.split("/"));
+    await mkdir(path.dirname(lease), { recursive: true });
+    for (let trial = 0; trial < 5; trial += 1) {
+        await writeFile(lease, JSON.stringify({ runId: "crashed", startedAt: "2025-12-31T00:00:00.000Z", heartbeatAt: "2025-12-31T00:00:00.000Z" }));
+        const now = () => "2026-01-01T00:00:00.000Z";
+        const results = await Promise.allSettled(["run-a", "run-b"].map(runId => acquireLease(cwd, runId, { now, log: () => {} })));
+        const won = results.filter(row => row.status === "fulfilled");
+        assert.equal(won.length, 1, `trial ${trial}: one takeover succeeds`);
+        assert.match(results.find(row => row.status === "rejected").reason.message, /is active in this workspace/);
+        assert.equal(JSON.parse(await readFile(lease, "utf8")).runId, won[0].value.lease.runId);
+        assert.equal(await exists(path.join(cwd, ...LOCK.split("/"))), false, "the lock is removed");
+        await won[0].value.release();
+    }
+});
+
+test("a lease lock left by a crash is reported instead of ignored", async t => {
+    const { cwd } = await workspace(t);
+    const lock = path.join(cwd, ...LOCK.split("/"));
+    await mkdir(lock, { recursive: true });
+    const old = new Date(Date.now() - 10 * 60 * 1000);
+    await utimes(lock, old, old);
+    await assert.rejects(acquireLease(cwd, "run-a", { now: () => new Date().toISOString(), log: () => {} }), /lock \.agentic-loop\/active-run\.lock is older than two minutes/);
+    assert.equal(await exists(path.join(cwd, ...LEASE.split("/"))), false);
+});
+
 // 5: no symbolic link can move the workflow's reads or writes outside the workspace.
 test("containment rejects symbolic links for AGENTS.md, .agentic-loop and its runs folder", async t => {
     for (const [name, link] of [["AGENTS.md", "file"], [".agentic-loop", "dir"], [".agentic-loop/runs", "dir"]]) {
@@ -233,6 +260,13 @@ test("approval fingerprints hash the reviewed files and the azd target without r
     await azure(cwd, { plan: "# Plan v2\n", location: "westus3" });
     assert.deepEqual(approvalChanges(approved, await fingerprint(cwd, args)), [".azure/deployment-plan.md", "AZURE_LOCATION (eastus2 → westus3)"]);
     assert.deepEqual(approvalChanges(null, approved), ["no approval fingerprint is recorded"]);
+    const partial = { ...approved, target: { ...approved.target, resourceGroup: null } };
+    assert.deepEqual(approvalChanges(partial, approved), ["AZURE_RESOURCE_GROUP (unset → rg-claims-dev)"], "a value set after approval was never reviewed");
+    assert.deepEqual(approvalChanges(approved, partial), ["AZURE_RESOURCE_GROUP (rg-claims-dev → unset)"]);
+    const skills = { router: { name: SKILLS.router, dir: "/skills/router" } };
+    const base = { runId: "run-1", cwd: "/work", record: recordFile("run-1"), skills, args };
+    const prompt = buildPrompt({ base, phase: "Deploy", role: "lead", round: 2, task: "x", approval: { approvedAt: "2026-01-01T00:00:00.000Z", ...partial } });
+    assert.match(prompt, /AZURE_LOCATION=eastus2\. Unset at approval: AZURE_RESOURCE_GROUP; set them only to values \.azure\/deployment-plan\.md names/);
 });
 
 for (const changed of [false, true]) {
@@ -248,7 +282,7 @@ for (const changed of [false, true]) {
         assert.equal(record.checkpoints.find(row => row.key === "approve-deploy-v1").fingerprint.target.environmentName, "claims-dev");
         const prompt = promptOf(run, "Deploy · lead");
         assert.match(prompt, /Approved deployment \(approved [^)]+\): AZURE_ENV_NAME=claims-dev, AZURE_SUBSCRIPTION_ID=0000aaaa-bbbb-4ccc-8ddd-eeeeffff0000, AZURE_LOCATION=eastus2, AZURE_RESOURCE_GROUP=rg-claims-dev/);
-        assert.match(prompt, /confirm that azd env get-values and az account show report these values; if any differs, change nothing and return blocked/);
+        assert.match(prompt, /confirm that azd env get-values and az account show report the approved values; if any differs, change nothing and return blocked/);
 
         if (changed) await writeFile(path.join(cwd, ".azure", "deployment-plan.md"), "# Plan v2: bigger SKU\n");
         if (!changed) {
@@ -398,6 +432,32 @@ test("from reruns a phase only when the latest flight record passed every earlie
     const record = await rerun.record();
     assert.deepEqual(record.rerun, { from: "Verify", runId: "run-1" });
     assert.deepEqual(record.phases.slice(0, 2).map(row => [row.phase, row.round, row.status, row.inheritedFrom]), [["Specify", 0, "passed", "run-1"], ["Implement", 0, "passed", "run-1"]]);
+});
+
+test("from and to run a single phase, and to ends the run early without the spec approval", async t => {
+    assert.throws(() => validateArgs({ brief: BRIEF, to: "verify" }), /args.to must be one of Specify, Implement, Verify, Deploy/);
+    assert.throws(() => validateArgs({ brief: BRIEF, to: "Deploy", skipDeploy: true }), /args.to cannot be Deploy when skipDeploy/);
+    assert.throws(() => validateArgs({ brief: BRIEF, from: "Verify", to: "Implement" }), /args.to \(Implement\) cannot come before args.from \(Verify\)/);
+    assert.equal(validateArgs({ brief: BRIEF, skipDeploy: true }).to, "Verify");
+
+    const { cwd, home } = await workspace(t);
+    const spec = harness({ cwd, home, runId: "run-1", args: { brief: BRIEF, to: "Specify" } });
+    const specified = await spec.attempt();
+    assert.equal(specified.status, "completed", "a gated run that ends at Specify does not pause for the spec approval");
+    assert.deepEqual(spec.state.phases, ["Specify"]);
+    assert.equal(specified.result.status, "specified");
+    assert.deepEqual(specified.result.phases, { Specify: "passed", Implement: "skipped", Verify: "skipped", Deploy: "skipped" });
+    assert.equal(logMatches(spec.state, /^Implement skipped: to is Specify, so the run ends after Specify\.$/).length, 1);
+    assert.equal((await spec.record()).to, "Specify");
+
+    const only = harness({ cwd, home, runId: "run-2", args: { ...AUTO, from: "Implement", to: "Implement" } });
+    const implemented = await only.attempt();
+    assert.equal(implemented.status, "completed");
+    assert.deepEqual(only.state.phases, ["Implement"], "only the named phase runs");
+    assert.ok(!labels(only.state).some(label => /^(Verify|Deploy)/.test(label)));
+    assert.equal(implemented.result.status, "implemented");
+    assert.deepEqual(implemented.result.phases, { Specify: "passed", Implement: "passed", Verify: "skipped", Deploy: "skipped" });
+    assert.ok(!only.journal.pauses.has("approve-deploy-v1"), "Deploy approval is never asked when Deploy does not run");
 });
 
 // 13: ownership is checked against git after the workers, never trusted from their reports.
