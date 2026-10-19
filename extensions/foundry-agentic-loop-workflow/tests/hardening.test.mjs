@@ -434,6 +434,17 @@ test("from reruns a phase only when the latest flight record passed every earlie
     assert.deepEqual(record.phases.slice(0, 2).map(row => [row.phase, row.round, row.status, row.inheritedFrom]), [["Specify", 0, "passed", "run-1"], ["Implement", 0, "passed", "run-1"]]);
 });
 
+test("from refuses to rerun when there are too many flight records to find the latest one", async t => {
+    const { cwd, home } = await workspace(t);
+    const runs = path.join(cwd, ".agentic-loop", "runs");
+    await mkdir(runs, { recursive: true });
+    for (let i = 500; i <= 1000; i++) await writeFile(path.join(runs, `wr_${i}.json`), "{}");
+    const refused = await harness({ cwd, home, runId: "run-1", args: { ...AUTO, from: "Deploy" } }).attempt();
+    assert.equal(refused.status, "error");
+    assert.match(refused.error.message, /holds 501 flight records, more than the 500 a rerun checks/);
+    assert.equal(await exists(path.join(cwd, ...recordFile("run-1").split("/"))), false, "a refused rerun writes no record");
+});
+
 test("from and to run a single phase, and to ends the run early without the spec approval", async t => {
     assert.throws(() => validateArgs({ brief: BRIEF, to: "verify" }), /args.to must be one of Specify, Implement, Verify, Deploy/);
     assert.throws(() => validateArgs({ brief: BRIEF, to: "Deploy", skipDeploy: true }), /args.to cannot be Deploy when skipDeploy/);

@@ -7,7 +7,7 @@ This workspace is built with spec-driven development. For build requests and the
 | --- | --- |
 | `status` | Report the live run from `dynamic_workflows_manage`, then the gate issues in its `.agentic-loop/runs/` record |
 | `approve`, `resume` | Resume the paused run with `resumeFromRunId` |
-| `deploy` | If the run is paused at `approve-deploy-v1`, summarize it and resume it once approved; otherwise run the Deploy phase guide, which asks before `azd up` |
+| `deploy` | If a run is active, deploy only through it: at `approve-deploy-v1` or `approve-deploy-r<n>-v1`, summarize it and resume it once approved; at any other pause, report where it stopped and resolve that first. With no active run, run the Deploy phase guide, which asks before `azd up` |
 | `specify`, `implement`, `verify` | With no run active, run that phase guide on the existing artifacts |
 | `build <brief>` | Offer to resume a running or paused run; otherwise start a new `foundry-agentic-loop-workflow` run |
 | `improve` | Improve mode |

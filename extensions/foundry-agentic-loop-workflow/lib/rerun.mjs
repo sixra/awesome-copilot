@@ -8,14 +8,16 @@ const MAX_FILES = 500;
 const MAX_BYTES = 2 * 1024 * 1024;
 
 // The newest flight record of this workflow in the workspace, other than the current run; links and oversized files are skipped.
+// Run IDs do not sort by time, so a folder over the scan limit fails closed rather than risk missing the newest run.
 export async function latestRecord(cwd, excludeRunId) {
     const folder = await contained(cwd, ".agentic-loop/runs");
     let names;
-    try { names = (await readdir(folder)).filter(name => name.endsWith(".json")).sort().slice(-MAX_FILES); }
+    try { names = (await readdir(folder)).filter(name => name.endsWith(".json")); }
     catch (error) {
         if (error?.code === "ENOENT") return null;
         throw error;
     }
+    if (names.length > MAX_FILES) throw new Error(`.agentic-loop/runs holds ${names.length} flight records, more than the ${MAX_FILES} a rerun checks, so the latest run cannot be identified safely. Move older records out of that folder, or run the full loop.`);
     let latest = null;
     for (const name of names) {
         const file = path.join(folder, name);
