@@ -34,6 +34,7 @@ export async function latestRecord(cwd, excludeRunId) {
 }
 
 // A rerun from a phase inherits the earlier phases only when the latest run passed every one of them.
+// specApproved says whether a human approved that spec, in the latest run or in the run it inherited Specify from; reviewer acceptance does not count.
 export function rerunPlan(latest, from) {
     const index = PHASES.indexOf(from);
     if (index <= 0) return null;
@@ -48,5 +49,8 @@ export function rerunPlan(latest, from) {
         if (!pass) throw refuse(`the latest run, ${runId}, has no passed ${phase} gate.`);
         phases.push({ phase, summary: clean(pass.summary, 300), at: clean(pass.at, 40), ...(pass.inheritedFrom && { originalRun: clean(pass.inheritedFrom, 120) }) });
     }
-    return { from, runId, file: latest.file, phases };
+    const specApproved = Boolean(record.checkpoints?.some?.(row => row?.key === "approve-spec-v1"))
+        || [...record.phases].reverse().find(entry => entry?.phase === "Specify" && entry.status === "passed")?.specApproved === true;
+    phases[0] = { ...phases[0], specApproved };
+    return { from, runId, file: latest.file, phases, specApproved };
 }

@@ -458,6 +458,20 @@ test("from and to run a single phase, and to ends the run early without the spec
     assert.equal(implemented.result.status, "implemented");
     assert.deepEqual(implemented.result.phases, { Specify: "passed", Implement: "passed", Verify: "skipped", Deploy: "skipped" });
     assert.ok(!only.journal.pauses.has("approve-deploy-v1"), "Deploy approval is never asked when Deploy does not run");
+
+    const gated = harness({ cwd, home, runId: "run-3", clockStart: 100, args: { brief: BRIEF, from: "Implement", to: "Implement" } });
+    assert.deepEqual(await gated.attempt(), { status: "paused", key: "approve-spec-v1" }, "a gated rerun never provisions on a spec no human approved");
+    assert.ok(!labels(gated.state).some(label => label.startsWith("Implement")), "Implement waits for the approval");
+    assert.equal((await gated.attempt()).status, "completed");
+    assert.ok((await gated.record()).checkpoints.some(row => row.key === "approve-spec-v1"));
+
+    const verify = harness({ cwd, home, runId: "run-4", clockStart: 200, args: { brief: BRIEF, from: "Verify", to: "Verify" } });
+    const verified = await verify.attempt();
+    assert.equal(verified.status, "completed", verified.error?.message);
+    assert.equal((await verify.record()).phases[0].specApproved, true, "the approval travels with the inherited spec");
+    const again = harness({ cwd, home, runId: "run-5", clockStart: 300, args: { brief: BRIEF, from: "Implement", to: "Implement" } });
+    assert.equal((await again.attempt()).status, "completed", "an approved spec is not asked again");
+    assert.ok(!again.journal.pauses.has("approve-spec-v1"));
 });
 
 // 13: ownership is checked against git after the workers, never trusted from their reports.

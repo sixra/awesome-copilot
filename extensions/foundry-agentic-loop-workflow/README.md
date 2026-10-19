@@ -32,7 +32,7 @@ The gate passes only on the reviewer's verdict. Reports are untrusted and fail c
 
 | Checkpoint | When | Resume means |
 | --- | --- | --- |
-| `approve-spec-v1` | After Specify, when `autonomy` is `gated` | The spec and deployment plan are approved for provisioning |
+| `approve-spec-v1` | After Specify, when `autonomy` is `gated` and the run continues past Specify; or before Implement, when a gated run starts at Implement on a spec no one approved | The spec and deployment plan are approved for provisioning |
 | `approve-deploy-v1` | Before Deploy, always | Deployment to the planned target is approved |
 | `approve-deploy-r<n>-v1` | Before Deploy round n, when the approved files or azd target changed since the last approval | The changed plan is approved again |
 | `blocked-<phase>-r<n>` | A gate failed after its fix loops, a subagent ended twice without a report, or a human decision is needed | The issue is resolved; round n+1 continues from the current state and re-checks it first |

@@ -408,6 +408,8 @@ export async function runLoop(ctx, { extensionDir, home = os.homedir(), now = ()
                 }
                 ctx.phase(phase);
                 if (phase === "Deploy") await run.checkpoint("approve-deploy-v1", "approve", {}, run.approve);
+                // Implement provisions, so a gated rerun that inherits an unapproved spec asks for the approval first.
+                if (phase === "Implement" && args.autonomy === "gated" && setup.rerun?.from === "Implement" && !setup.rerun.specApproved) await run.checkpoint("approve-spec-v1", "approve");
                 await run.phase(phase);
                 // The spec approval gates provisioning, so a run that ends at Specify does not pause for it.
                 if (phase === "Specify" && args.autonomy === "gated" && args.to !== "Specify") await run.checkpoint("approve-spec-v1", "approve");

@@ -34,10 +34,10 @@ export async function workspace(t) {
 }
 
 // In-memory model of the workflow runtime: journaled steps and agents, one-shot pauses, replay on resume.
-export function harness({ cwd, home, args, responder = defaultResponder, runId = "run-1", dir = extensionDir }) {
+export function harness({ cwd, home, args, responder = defaultResponder, runId = "run-1", dir = extensionDir, clockStart = 0 }) {
     const journal = { steps: new Map(), agents: new Map(), pauses: new Set() };
     const state = { calls: [], logs: [], phases: [], attempts: 0, responder };
-    let clock = 0;
+    let clock = clockStart;
     const now = () => new Date(Date.UTC(2026, 0, 1) + 1000 * clock++).toISOString();
     const json = value => JSON.parse(JSON.stringify(value));
 
