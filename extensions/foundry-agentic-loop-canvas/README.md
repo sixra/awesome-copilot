@@ -24,7 +24,7 @@ Once a build starts, the Agentic Loop section of the workspace root `AGENTS.md` 
 | **Explore** | Opens the local and deployed apps, lists agents, model deployments, toolboxes and resource-group resources, and launches Agent Inspector |
 | **Optimize** | Starts the Foundry Agent Optimizer, automatic evaluations, an Agent Insights scan or **Improve the loop**, and shows session usage and month-to-date Azure spend |
 
-After Copilot has worked for 30 seconds, a tinted enablement dock rotates 21 short tips that match the build mode and active SDD phase. Each tip shows its source (Microsoft Foundry, Azure, GitHub or Agentic Loop) and, where it applies, how the loop uses it. 15 link to Microsoft Learn, 3 to GitHub (Copilot SDK, Spec Kit and dynamic workflows) and 3 to this plugin. It respects reduced-motion settings. **How it works** opens a six-slide deck (`public/deck.html`) that takes an idea through Work IQ context to a rapid prototype or the SDD workflow, and covers the Microsoft Global Black Belt best practices the loop embeds.
+After Copilot has worked for 30 seconds, a tinted enablement dock rotates 21 short tips that match the build mode and active SDD phase. Each tip shows its source (Microsoft Foundry, Azure, GitHub or Agentic Loop) and, where it applies, how the loop uses it. 15 link to Microsoft Learn, 3 to GitHub (Copilot SDK, Spec Kit and dynamic workflows) and 3 to this plugin. It respects reduced-motion settings. **How it works** opens a five-slide deck (`public/deck.html`) that takes an idea through Work IQ context to a rapid prototype or the SDD workflow, and covers the Microsoft Global Black Belt best practices the loop embeds.
 
 ## Safety
 
