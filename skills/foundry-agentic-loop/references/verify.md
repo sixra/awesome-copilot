@@ -39,7 +39,7 @@ Run every azd command from the workspace root, with `AZURE_DEV_USER_AGENT=micros
 
 1. Fix the root cause in the smallest scope.
 2. Rerun the failing checks after each fix, and the full suite once after the last fix.
-3. Upsert the lesson in `docs/loop-sri.md` ([template](../assets/loop-sri-template.md)).
+3. Upsert the lesson in `docs/LOOP.md` ([template](../assets/loop-template.md)).
 
 Contract or scope changes go to `docs/spec.md` first. Never weaken a test or a threshold to get a pass.
 

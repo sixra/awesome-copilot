@@ -1,7 +1,7 @@
 export const WORKFLOW = "foundry-agentic-loop-workflow";
 export const PHASES = Object.freeze(["Specify", "Implement", "Verify", "Deploy"]);
 export const MAX_FIX_LOOPS = 5;
-export const LESSONS = "docs/loop-sri.md";
+export const LESSONS = "docs/LOOP.md";
 
 const KEYS = Object.freeze(["brief", "subscriptionId", "location", "environmentName", "scenarioId", "autonomy", "maxFixLoops", "skipDeploy"]);
 const optionalString = { type: ["string", "null"] };

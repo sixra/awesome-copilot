@@ -12,6 +12,6 @@ This workspace is a rapid prototype in an existing Foundry project. For build re
 | `improve` | Improve mode |
 | `convert to SDD` | Confirm, derive the spec with Specify `reverse`, switch this section to SDD and start the workflow |
 
-- The contract lives in the root `README.md`, lessons in `docs/loop-sri.md` and Azure settings only in `.azure/deployment-plan.md`, never here.
+- The contract lives in the root `README.md`, lessons in `docs/LOOP.md` and Azure settings only in `.azure/deployment-plan.md`, never here.
 - This section locks the build mode. Change it only when the user explicitly confirms a switch.
 <!-- foundry-agentic-loop:end -->

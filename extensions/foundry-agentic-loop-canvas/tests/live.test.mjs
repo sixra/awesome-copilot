@@ -100,7 +100,7 @@ test("checkpoint keys normalize to kind, phase and round", () => {
 });
 
 test("run detail maps the four phases, agents, gates, artifacts and metrics", () => {
-    const run = shapeRun(detail("r1"), new Set(["docs/spec.md", "docs/loop-sri.md"]));
+    const run = shapeRun(detail("r1"), new Set(["docs/spec.md", "docs/LOOP.md"]));
     assert.deepEqual(run.phases.map(row => [row.title, row.status]), [["Specify", "completed"], ["Implement", "active"], ["Verify", "pending"], ["Deploy", "pending"]]);
     assert.deepEqual(run.phases[0].gate, { status: "passed", summary: "14 requirements, 3 agents", seq: 2 });
     assert.equal(run.phases[1].activeMs, 750);

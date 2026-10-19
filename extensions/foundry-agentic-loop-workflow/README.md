@@ -15,7 +15,7 @@ At setup, it adds the Agentic Loop SDD section to the workspace root `AGENTS.md`
 
 Each phase follows its guide in the `foundry-agentic-loop` skill (`references/specify.md`, `implement.md`, `verify.md` or `deploy.md`) in fresh-context subagents, using `microsoft-foundry` for platform operations. Subagents stay inside the workspace, read skills from the paths resolved at setup and delete only Azure resources the run created whose provisioning failed:
 
-- **Lead**: does the phase work and records lessons in `docs/loop-sri.md`.
+- **Lead**: does the phase work and records lessons in `docs/LOOP.md`.
 - **Review**: an independent reviewer reruns every check and reports all blocking issues at once, with evidence. Earlier reports count as claims, not evidence.
 - **Fix**: a fixer resolves the issues, then a new review first confirms each one is resolved before finishing its checks. This repeats up to `maxFixLoops` times.
 - **Implement**: the foundation step plans up to four workstreams. If they own disjoint workspace-relative files outside the shared ones the lead keeps, such as `azure.yaml`, `infra/`, `docs/` and the root lockfiles, they run in parallel before integration; otherwise the build runs in sequence. Implement deploys only the hosted checkpoint services, and only when they changed; the app services deploy in Deploy.
@@ -52,7 +52,7 @@ For an unattended run from Specify through Verify, use `autonomy: "auto"` and `s
 
 ## Outputs
 
-- **Workspace:** the `AGENTS.md` lock, `docs/spec.md`, `docs/implementation.md`, `docs/verify.md`, `docs/deploy.md`, the lessons in `docs/loop-sri.md` and `.azure/deployment-plan.md`, which alone holds the Azure settings, plus the solution itself.
+- **Workspace:** the `AGENTS.md` lock, `docs/spec.md`, `docs/implementation.md`, `docs/verify.md`, `docs/deploy.md`, the lessons in `docs/LOOP.md` and `.azure/deployment-plan.md`, which alone holds the Azure settings, plus the solution itself.
 - **Flight record:** `.agentic-loop/runs/<runId>.json`. It holds status, gates, attempts, issues, lessons, checkpoints and endpoints. Improve mode in the `foundry-agentic-loop` skill learns from it.
 - **Result:** `{ status, runId, phases, rounds, endpoints, flightRecord }`, where `status` is `deployed` or `verified`.
 

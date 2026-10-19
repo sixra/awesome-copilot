@@ -9,7 +9,7 @@ Recursive improvement: learn from past executions and refine the Agentic Loop sk
 **Budget.** Present proposals within about 20 minutes. Start from the distilled records below. Use session history only to confirm or quantify a candidate cluster, and never read raw transcripts (`events.jsonl`) end to end.
 
 - **Flight records:** `.agentic-loop/runs/*.json`, with phases, rounds, gate status, issues, lessons, durations and outcome.
-- **Lessons:** `docs/loop-sri.md` entries and their status.
+- **Lessons:** `docs/LOOP.md` entries and their status.
 - **Workflow history:** `dynamic_workflows_manage` with `runs`, filtered to `foundry-agentic-loop-workflow`, then `inspect-run` for each failed, blocked or slow run.
 - **Session history:** `session_store_sql` for recent Agentic Loop sessions in scope: failed tools, retries, user corrections, questions asked and manual fixes after a blocked pause. Time-bound every query and use `LIMIT`.
 - **Current sources:** the `foundry-agentic-loop` skill (`SKILL.md`, `references/`, `assets/` and `evals/evals.json`) and the workflow `lib/*.mjs`.
@@ -42,4 +42,4 @@ Prefer tightening or deleting text over adding it. Keep `SKILL.md` lean and put 
 
 - **In a clone of `github/awesome-copilot`:** edit `skills/foundry-agentic-loop/` and `extensions/foundry-agentic-loop-*` directly. Validate with `npm run skill:validate`, `npm run plugin:validate` and `node --test extensions/foundry-agentic-loop-*/tests/*.test.mjs`, then offer a pull request.
 - **In a solution repository:** plugin files are replaced on update, so write project overrides instead. Copy the whole skill folder to `.github/skills/foundry-agentic-loop/` and edit it there; the workflow ignores a copy without `SKILL.md`, `references/sdd.md` and the four phase guides. Workflow subagents read project skills first, so overrides apply to the next run. Change workflow code only through an upstream pull request.
-- **Afterwards:** reload with `extensions_reload` when extensions change. Run the affected evals in one parallel batch, fix the failures, then rerun only those, once. If an eval still fails, run it once against the base commit. If it fails there too, record it as pre-existing and stop iterating. Mark matching `docs/loop-sri.md` lessons `adopted`, and mark them `validated` only after a later run confirms the benefit. Offer to upstream generalizable improvements.
+- **Afterwards:** reload with `extensions_reload` when extensions change. Run the affected evals in one parallel batch, fix the failures, then rerun only those, once. If an eval still fails, run it once against the base commit. If it fails there too, record it as pre-existing and stop iterating. Mark matching `docs/LOOP.md` lessons `adopted`, and mark them `validated` only after a later run confirms the benefit. Offer to upstream generalizable improvements.

@@ -151,7 +151,7 @@ test("gated run: phases in order, approvals, replay without duplicate work, flig
     assert.equal(foundation.schema, FOUNDATION_SCHEMA);
     const integration = run.state.calls.find(call => call.label === "Implement · integration");
     assert.ok(integration.prompt.includes("- api: passed. Implement · api done\n  Lessons:\n    - Implement · api lesson\n- web: passed."), "integration sees each workstream with its lessons");
-    assert.match(integration.prompt, /Workstream results \(resolve every issue and upsert the worker lessons you verify in docs\/loop-sri\.md\):/);
+    assert.match(integration.prompt, /Workstream results \(resolve every issue and upsert the worker lessons you verify in docs\/LOOP\.md\):/);
     assert.ok(run.state.logs.includes("Implement plan: 2 parallel workstreams (api, web)"));
     assert.ok(run.state.logs.includes("Spec approved. Continuing with Implement."));
     assert.ok(run.state.logs.includes("Implement · foundation passed: Implement · foundation done. Next: workstream plan."));

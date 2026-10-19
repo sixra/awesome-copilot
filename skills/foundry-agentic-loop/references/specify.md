@@ -4,7 +4,7 @@ Write the source of truth for an agentic solution. Apply the [skill defaults](..
 
 ## Operating mode
 
-- Read the brief, any canvas scenario, existing `docs/spec.md`, `.azure/deployment-plan.md`, `README.md` and the `docs/loop-sri.md` lessons. Update existing artifacts instead of starting over.
+- Read the brief, any canvas scenario, existing `docs/spec.md`, `.azure/deployment-plan.md`, `README.md` and the `docs/LOOP.md` lessons. Update existing artifacts instead of starting over.
 - **Interactive:** ask once, with choices, only questions whose answers change scope: users, data, tools, UX or compliance.
 - **In the workflow:** never ask. Take the documented default, or the safest reasonable one when none applies, record it under Assumptions and continue. Return `blocked` only for decisions on permissions, quota, cost or security.
 

@@ -11,7 +11,7 @@ SDD turns a brief into a deployed, reproducible solution: a new Foundry project 
 
 In each phase a lead does the work, a fresh-context reviewer reruns the checks, and fixers get up to `maxFixLoops` rounds. Only the reviewer's verdict passes a gate. Implement runs disjoint workstreams in parallel.
 
-Phases reconcile existing artifacts instead of starting over, so reruns are safe. Lessons go to `docs/loop-sri.md`. Each run writes a flight record to `.agentic-loop/runs/<runId>.json`, with status `running`, `awaiting-approval`, `blocked`, `deployed`, `verified` or `error`, saved at the start, at the first step after a resume, at each gate and checkpoint, and at the end.
+Phases reconcile existing artifacts instead of starting over, so reruns are safe. Lessons go to `docs/LOOP.md`. Each run writes a flight record to `.agentic-loop/runs/<runId>.json`, with status `running`, `awaiting-approval`, `blocked`, `deployed`, `verified` or `error`, saved at the start, at the first step after a resume, at each gate and checkpoint, and at the end.
 
 ## Start a run
 
@@ -43,7 +43,7 @@ A pause posts a `Needs you:` line. Answer it in one message: what paused and why
 | --- | --- | --- |
 | `approve-spec-v1` | Spec ready for review | Summarize scope, assumptions, region and cost drivers; apply requested edits to the artifacts |
 | `approve-deploy-v1` | Verified and ready to deploy (always pauses) | Summarize resources, cost, security and region impact; apply requested edits without deploying |
-| `blocked-<phase>-r<n>` | A gate failed after its fix rounds, a subagent ended twice without a report (usually a provider error), or a decision is needed (permissions, quota, cost, security) | List every issue from that phase and round in the flight record's `phases`, not just the first from the log. Fix and verify each root cause in the artifacts, record the evidence and `docs/loop-sri.md` lessons. Resuming starts round n+1, which continues from the current state; its review first confirms these issues are resolved. |
+| `blocked-<phase>-r<n>` | A gate failed after its fix rounds, a subagent ended twice without a report (usually a provider error), or a decision is needed (permissions, quota, cost, security) | List every issue from that phase and round in the flight record's `phases`, not just the first from the log. Fix and verify each root cause in the artifacts, record the evidence and `docs/LOOP.md` lessons. Resuming starts round n+1, which continues from the current state; its review first confirms these issues are resolved. |
 
 - Resume with `run_dynamic_workflow` and `resumeFromRunId` only when the user asks. When a canvas prompt says "Do not resume the run", don't: the canvas resumes it.
 - **Liveness.** Workflow subagents don't appear in `list_agents` or `read_agent`, and one Implement step can run for over an hour without a record change. The canvas Build tab shows live subagent activity. Never cancel, pause or restart a run to unstick it; only the user decides that.

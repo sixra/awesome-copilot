@@ -12,6 +12,6 @@ This workspace is built with spec-driven development. For build requests and the
 | `build <brief>` | Offer to resume a running or paused run; otherwise start a new `foundry-agentic-loop-workflow` run |
 | `improve` | Improve mode |
 
-- The spec and contract live in `docs/spec.md`, lessons in `docs/loop-sri.md` and Azure settings only in `.azure/deployment-plan.md`, never here.
+- The spec and contract live in `docs/spec.md`, lessons in `docs/LOOP.md` and Azure settings only in `.azure/deployment-plan.md`, never here.
 - This section locks the build mode. Change it only when the user explicitly confirms a switch.
 <!-- foundry-agentic-loop:end -->

@@ -9,7 +9,7 @@ export const ARTIFACTS = Object.freeze({
     Verify: ["docs/verify.md"],
     Deploy: ["docs/deploy.md"],
 });
-export const LESSONS = "docs/loop-sri.md";
+export const LESSONS = "docs/LOOP.md";
 export const ARTIFACT_PATHS = Object.freeze([...Object.values(ARTIFACTS).flat(), LESSONS]);
 export const AGENTS = "AGENTS.md";
 // The rapid contract and hosted checkpoint evidence.
