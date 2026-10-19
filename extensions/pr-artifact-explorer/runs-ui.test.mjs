@@ -233,6 +233,58 @@ test("an all-hidden page offers a way out and run detail keeps artifact context"
   assert.deepEqual(errors, []);
 });
 
+test("filtering a retried PR by Failing still lists the superseded failing artifact", async (t) => {
+  const launched = await launch(t);
+  if (!launched) return;
+  const page = await launched.browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await mockApi(page);
+  const failed = run(201, { name: "CI", event: "pull_request", conclusion: "failure", createdAt: "2026-01-01T00:00:00Z" });
+  const retried = run(202, { name: "CI", event: "pull_request", conclusion: "success", createdAt: "2026-01-02T00:00:00Z" });
+  const artifact = (id, source) => ({
+    id,
+    name: "All-TestResults",
+    sizeInBytes: 1024,
+    expired: false,
+    createdAt: source.createdAt,
+    expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    run: source,
+  });
+  await page.route("**/api/pulls/9?*", (route) =>
+    json(route, {
+      repository: "o/r",
+      pullRequest: {
+        number: 9,
+        title: "Retried PR",
+        state: "open",
+        author: "octo",
+        baseRef: "main",
+        headRef: "feature",
+        headSha: "c".repeat(40),
+        url: "https://github.com/o/r/pull/9",
+        updatedAt: new Date().toISOString(),
+      },
+      runs: [retried, failed],
+      runCount: 2,
+      runsTruncated: false,
+      artifacts: [artifact(2, retried), artifact(1, failed)],
+      artifactCount: 2,
+      artifactsTruncated: false,
+    }),
+  );
+
+  await page.goto(`${launched.base}#/pull/o%2Fr/9`);
+  await page.waitForSelector(".artifact-row");
+  assert.equal(await page.locator(".artifact-row").count(), 1, "default view shows only the latest copy");
+  await page.click('[data-toggle-artifact-filter="status"]');
+  assert.match(await page.locator('[data-select-artifact-status="failing"]').textContent(), /1/);
+  await page.click('[data-select-artifact-status="failing"]');
+  await page.waitForSelector("button[data-inspect-artifact='1']");
+  assert.equal(await page.locator(".artifact-row").count(), 1);
+  assert.deepEqual(errors, []);
+});
+
 test("a failed runs request shows a retryable error inside the page shell", async (t) => {
   const launched = await launch(t);
   if (!launched) return;

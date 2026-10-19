@@ -2067,16 +2067,16 @@ function artifactStatus(artifact) {
   return "skipped";
 }
 
-function artifactStatusOptions(artifacts) {
-  const counts = new Map(ARTIFACT_STATUS_OPTIONS.map((option) => [option.value, 0]));
-  counts.set("all", artifacts.length);
-  for (const artifact of artifacts) {
-    const value = artifactStatus(artifact);
-    counts.set(value, (counts.get(value) ?? 0) + 1);
-  }
+function artifactStatusOptions(artifacts, selectedRun = "all") {
   return ARTIFACT_STATUS_OPTIONS.map((option) => ({
     ...option,
-    count: counts.get(option.value) ?? 0,
+    count: artifactsForRunFilter(
+      artifacts,
+      selectedRun,
+      option.value === "all"
+        ? null
+        : (artifact) => artifactStatus(artifact) === option.value,
+    ).length,
   }));
 }
 
@@ -2158,14 +2158,17 @@ function artifactRunOptions(artifacts, runsTruncated = false) {
   ];
 }
 
-function artifactsForRunFilter(artifacts, selectedRun) {
-  if (selectedRun === "all") return artifacts;
+// With a predicate, "latest" keeps the newest match per name so a retry that
+// superseded a failing run never hides the failing artifact being searched for.
+function artifactsForRunFilter(artifacts, selectedRun, predicate = null) {
+  const matching = predicate ? artifacts.filter(predicate) : artifacts;
+  if (selectedRun === "all") return matching;
   if (String(selectedRun).startsWith("run:")) {
     const runId = String(selectedRun).slice(4);
-    return artifacts.filter((artifact) =>
+    return matching.filter((artifact) =>
       String(artifact.run?.id ?? "unknown") === runId);
   }
-  return latestArtifactsByName(artifacts);
+  return latestArtifactsByName(matching);
 }
 
 function artifactScopeCountLabel(
@@ -2255,9 +2258,7 @@ function artifactFilterPickerHtml(kind, label, options, selectedValue) {
 }
 
 function artifactFilterControlsHtml(artifacts) {
-  const statuses = artifactStatusOptions(
-    artifactsForRunFilter(artifacts, artifactFilters.run),
-  );
+  const statuses = artifactStatusOptions(artifacts, artifactFilters.run);
   const runs = artifactRunOptions(
     artifacts,
     currentPullContext?.runsTruncated ?? false,
@@ -3342,7 +3343,7 @@ function renderPullArtifactRows(filter = artifactFilters.query) {
   const scopedArtifacts = artifactsForRunFilter(allArtifacts, artifactFilters.run);
   const hasContentFilters =
     Boolean(normalizedFilter) || artifactFilters.status !== "all";
-  const matches = scopedArtifacts.filter((artifact) => {
+  const matches = artifactsForRunFilter(allArtifacts, artifactFilters.run, (artifact) => {
     const textMatches =
       !normalizedFilter ||
       artifact.name.toLocaleLowerCase().includes(normalizedFilter) ||
