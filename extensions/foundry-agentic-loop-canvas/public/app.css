@@ -114,12 +114,18 @@ main { flex: 1 0 auto; width: 100%; max-width: 1120px; margin: 0 auto; padding: 
 .step { margin: 0 0 12px; border: 1px solid var(--border); border-radius: 8px; scroll-margin-top: 104px; }
 .step > summary { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; list-style: none; border-radius: 7px; }
 .step > summary::-webkit-details-marker { display: none; }
-.step > summary:hover { background: var(--surface); }
+.step > summary:hover { --ring: var(--surface); background: var(--surface); }
 .step[open] > summary { border-bottom: 1px solid var(--border); border-radius: 7px 7px 0 0; }
-.step-glyph { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; border: 1.5px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 700; line-height: 1; }
-.step-glyph[data-state="ready"] { border-color: var(--success); background: var(--success); color: var(--bg); }
-.step-glyph[data-state="attention"] { border-color: var(--warning); background: var(--warning); color: var(--bg); }
+.step-glyph { position: relative; display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; border: 1.5px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.step-glyph[data-state="ready"] { border-color: var(--success); background: color-mix(in srgb, var(--success) 12%, var(--bg)); color: var(--success); }
+.step-glyph[data-state="attention"] { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, var(--bg)); color: var(--warning); }
 .step-glyph[data-state="checking"] { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); color: var(--accent); }
+/* Status badge on a numbered marker; the ring matches the background behind it. */
+.step-badge { position: absolute; right: -6px; bottom: -5px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2px var(--ring, var(--bg)); fill: none; stroke: var(--bg); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.step-badge[data-kind="done"] { background: var(--success); }
+.step-badge:is([data-kind="attention"], [data-kind="paused"]) { background: var(--warning); }
+.step-badge[data-kind="failed"] { background: var(--error); }
+.step-glyph .step-badge { width: 12px; height: 12px; }
 .step-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; flex: 1; min-width: 0; }
 .step-title { font-size: 15px; font-weight: 650; }
 .step-summary { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--muted); }
@@ -304,20 +310,17 @@ main { flex: 1 0 auto; width: 100%; max-width: 1120px; margin: 0 auto; padding: 
 .danger-quiet.danger { border-color: var(--error); background: var(--error); color: var(--bg); font-weight: 600; }
 .danger-quiet.danger:hover { background: color-mix(in srgb, var(--error) 85%, var(--text)); }
 
-.phases { list-style: none; margin: 0 0 22px; padding: 0; counter-reset: step; }
-.phase { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; padding-bottom: 20px; counter-increment: step; }
+.phases { list-style: none; margin: 0 0 22px; padding: 0; }
+.phase { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; padding-bottom: 20px; }
 .phase:last-child { padding-bottom: 0; }
 .phase:not(:last-child)::before { content: ""; position: absolute; left: 13.5px; top: 32px; bottom: 4px; width: 1px; background: var(--border); }
 .phase[data-view="completed"]:not(:last-child)::before { background: color-mix(in srgb, var(--success) 55%, var(--border)); }
-.phase-icon { position: relative; display: grid; place-items: center; width: 28px; height: 28px; border: 1.5px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--muted); font-size: 13px; font-weight: 750; line-height: 1; }
-.phase[data-view="pending"] .phase-icon::before { content: counter(step); font-size: 12px; font-weight: 650; }
-.phase[data-view="active"] .phase-icon { border-color: color-mix(in srgb, var(--accent) 25%, var(--border)); }
-.phase[data-view="active"] .phase-icon::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.phase-icon { position: relative; display: grid; place-items: center; width: 28px; height: 28px; border: 1.5px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.phase[data-view="active"] .phase-icon { border-color: color-mix(in srgb, var(--accent) 25%, var(--border)); color: var(--accent); }
 .phase[data-view="active"] .phase-icon::after { content: ""; position: absolute; inset: -1.5px; border: 2px solid transparent; border-top-color: var(--accent); border-radius: 50%; }
-.phase[data-view="completed"] .phase-icon { border-color: var(--success); background: var(--success); color: var(--bg); }
-.phase[data-view="waiting"] .phase-icon { border-color: var(--warning); background: var(--warning); color: var(--bg); }
-.phase[data-view="paused"] .phase-icon { border-color: var(--warning); color: var(--warning); }
-.phase[data-view="failed"] .phase-icon { border-color: var(--error); color: var(--error); }
+.phase[data-view="completed"] .phase-icon { border-color: var(--success); background: color-mix(in srgb, var(--success) 12%, var(--bg)); color: var(--success); }
+.phase:is([data-view="waiting"], [data-view="paused"]) .phase-icon { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, var(--bg)); color: var(--warning); }
+.phase[data-view="failed"] .phase-icon { border-color: var(--error); background: color-mix(in srgb, var(--error) 12%, var(--bg)); color: var(--error); }
 .phase-body { min-width: 0; padding-top: 3px; }
 .phase-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; }
 .phase-head h3 { font-size: 15px; }
@@ -454,7 +457,7 @@ body.is-busy .dock { display: block; }
     .skeleton span { animation: pulse 1.4s ease-in-out infinite; }
     .skeleton span:nth-child(2) { animation-delay: .15s; }
     .skeleton span:nth-child(3) { animation-delay: .3s; }
-    .check .status-ok { animation: confirm 200ms var(--ease); }
+    .check .status-ok, .step-glyph .step-badge { animation: confirm 200ms var(--ease); }
     @keyframes loop-flow { to { stroke-dashoffset: -100; } }
     @keyframes spin { to { rotate: 360deg; } }
     @keyframes pulse { 50% { opacity: .4; } }
@@ -463,6 +466,10 @@ body.is-busy .dock { display: block; }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { transition-duration: 0s !important; }
     .phase[data-view="active"] .phase-icon::after { border-color: var(--accent); }
+}
+/* High-contrast palettes drop backgrounds and shadows; keep status badges visible by their shape. */
+@media (forced-colors: active) {
+    .step-badge[data-kind] { forced-color-adjust: none; background: CanvasText; stroke: Canvas; box-shadow: 0 0 0 2px Canvas; }
 }
 @media (max-width: 560px) {
     .fields, .fields.pair { grid-template-columns: 1fr; }

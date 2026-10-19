@@ -305,10 +305,22 @@ function renderStart() {
 
 const capitalize = text => text.charAt(0).toUpperCase() + text.slice(1);
 
-function stepGlyph(id, state, text) {
+// Step markers keep their number visible; a corner badge shows the state.
+const BADGES = {
+    done: "m4.6 8.2 2.3 2.3 4.5-4.8",
+    attention: "M8 4.4v4.2m0 3.1v.01",
+    paused: "M6.3 5v6m3.4-6v6",
+    failed: "m5.6 5.6 4.8 4.8m0-4.8-4.8 4.8",
+    skipped: "M5 8h6",
+};
+const stepBadge = kind => kind ? `<svg class="step-badge" data-kind="${kind}" viewBox="0 0 16 16" aria-hidden="true"><path d="${BADGES[kind]}"/></svg>` : "";
+
+function stepGlyph(id, state) {
     const glyph = $(id);
+    if (glyph.dataset.state === state) return;
     glyph.dataset.state = state;
-    glyph.textContent = text;
+    glyph.querySelector(".step-badge")?.remove();
+    glyph.insertAdjacentHTML("beforeend", stepBadge({ ready: "done", attention: "attention" }[state]));
 }
 
 // Collapsing a step first moves focus from its body to its summary, so keyboard focus never lands on a hidden control.
@@ -328,7 +340,7 @@ function renderWhere(picked = false) {
     $("where-title").textContent = sdd ? "Deployment target" : "Foundry project";
     $("where-summary").textContent = sdd ? capitalize(targetSummary())
         : selected ? `${selected.name} · ${selected.resourceGroup}` : discovering ? "Discovering projects…" : "Choose a project";
-    stepGlyph("where-glyph", has ? "ready" : "", has ? "✓" : "2");
+    stepGlyph("where-glyph", has ? "ready" : "");
     if (has === whereSelected) return;
     whereSelected = has;
     if (!has) $("step-where").open = true;
@@ -389,11 +401,11 @@ function renderRapidProgress() {
     const next = steps.findIndex(step => !step.done && !step.optional);
     const current = steps.findIndex(step => !step.done);
     region("rapid", $("rapid-steps"), [locked, working, projectName, local, deployed], () => steps.map((step, index) => {
-        const [view, glyph, label] = step.done ? ["completed", "✓", "Done"]
-            : index === next ? (working ? ["active", "", "In progress"] : ["pending", "", "Next"])
-                : ["pending", "", step.optional ? "Optional" : "Not started"];
+        const [view, label] = step.done ? ["completed", "Done"]
+            : index === next ? (working ? ["active", "In progress"] : ["pending", "Next"])
+                : ["pending", step.optional ? "Optional" : "Not started"];
         return `<li class="phase" data-view="${view}"${index === current ? ' aria-current="step"' : ""}>
-        <span class="phase-icon" aria-hidden="true">${glyph}</span>
+        <span class="phase-icon" aria-hidden="true">${index + 1}${stepBadge(step.done ? "done" : "")}</span>
         <div class="phase-body">
             <div class="phase-head"><h3>${escape(step.title)}</h3><span class="phase-state">${label}</span></div>
             <p class="muted">${escape(step.done ? step.detail : step.todo)}</p>
@@ -520,7 +532,7 @@ async function checkReadiness() {
     const skillsOpen = $("setup-skills")?.open ?? false;
     $("setup-actions").hidden = true;
     $("checks").innerHTML = SKELETON;
-    stepGlyph("ready-glyph", "checking", "1");
+    stepGlyph("ready-glyph", "checking");
     $("ready-summary").textContent = "Checking skills, extensions, tools and Azure sign-in…";
     try {
         const result = await api("setup");
@@ -554,7 +566,7 @@ async function checkReadiness() {
         }
         $("setup-actions").hidden = !missingPlugin.length && !missingTools.length && !missingAuth.length;
         const pending = result.checks.filter(check => check.status !== "ready").length;
-        stepGlyph("ready-glyph", setupReady ? "ready" : "attention", setupReady ? "✓" : "!");
+        stepGlyph("ready-glyph", setupReady ? "ready" : "attention");
         $("ready-summary").textContent = result.discoveryError ? "Skill discovery failed. Check again."
             : setupReady ? "All set: skills, extensions, CLIs and Azure sign-in" : `${pending} of ${result.checks.length} checks need attention`;
         setStepOpen("step-ready", !setupReady);
@@ -564,7 +576,7 @@ async function checkReadiness() {
     } catch (error) {
         setupDone = true;
         setupReady = false;
-        stepGlyph("ready-glyph", "attention", "!");
+        stepGlyph("ready-glyph", "attention");
         $("ready-summary").textContent = "Couldn't check readiness";
         setStepOpen("step-ready", true);
         failure($("checks"), error);
@@ -1073,8 +1085,8 @@ const STATUS = {
     completed: ["Completed", "success"], halted: ["Halted", "warning"], error: ["Failed", "error"], cancelled: ["Cancelled", "muted"],
 };
 const VIEW = {
-    pending: ["", "Not started"], active: ["", "In progress"], waiting: ["!", "Waiting for you"], paused: ["‖", "Paused"],
-    completed: ["✓", "Done"], failed: ["✕", "Needs attention"], stopped: ["–", "Stopped"], skipped: ["–", "Skipped"],
+    pending: ["", "Not started"], active: ["", "In progress"], waiting: ["attention", "Waiting for you"], paused: ["paused", "Paused"],
+    completed: ["done", "Done"], failed: ["failed", "Needs attention"], stopped: ["skipped", "Stopped"], skipped: ["skipped", "Skipped"],
 };
 const isLive = run => run?.status === "running" || run?.status === "pending";
 const statusOf = run => run.status === "paused" && run.checkpoint ? ["Needs you", "warning"] : STATUS[run.status] ?? [run.status, "muted"];
@@ -1126,7 +1138,7 @@ function nowLines(phase, run) {
 
 function renderPhase(phase, index, run) {
     const view = phaseView(phase, run);
-    const [glyph, label] = VIEW[view];
+    const [badge, label] = VIEW[view];
     const started = view !== "pending" && view !== "skipped";
     const gate = phase.gate ? `<p class="gate"><span class="badge" data-gate="${escape(phase.gate.status)}">Gate ${escape(phase.gate.status)}</span>${phase.gate.summary ? ` ${escape(phase.gate.summary)}` : ""}</p>` : "";
     const now = view === "active" ? nowLines(phase, run) : "";
@@ -1134,7 +1146,7 @@ function renderPhase(phase, index, run) {
         (phase.agents.length > 6 ? `<li class="agent more">+${phase.agents.length - 6} more</li>` : "");
     const artifacts = started && phase.artifacts.length ? `<div class="artifacts">${phase.artifacts.map(row => artifactButton(run, row.path, row.path.split("/").at(-1))).join("")}</div>` : "";
     return `<li class="phase" data-view="${view}"${view === "active" || view === "waiting" ? ' aria-current="step"' : ""}>
-        <span class="phase-icon" aria-hidden="true">${glyph}</span>
+        <span class="phase-icon" aria-hidden="true">${index + 1}${stepBadge(badge)}</span>
         <div class="phase-body">
             <div class="phase-head"><h3>${escape(phase.title)}</h3><span class="phase-state">${label}${started ? ` · <span data-duration="${index}">${duration(phase.activeMs)}</span>` : ""}</span></div>
             ${started && (phase.gate || phase.agents.length || now) ? "" : `<p class="muted">${escape(PHASE_COPY[phase.title])}</p>`}
