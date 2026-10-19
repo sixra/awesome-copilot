@@ -184,14 +184,17 @@ function notice(message, error = false, action = null) {
     const node = $("notice");
     node.hidden = false;
     node.className = error ? "error" : "";
-    node.textContent = message;
+    const text = document.createElement("span");
+    text.className = "notice-text";
+    text.textContent = message;
+    node.replaceChildren(text);
     announce(message, error);
     if (action) {
         const button = document.createElement("button");
         button.className = "quiet";
         button.dataset.go = action.go;
         button.textContent = action.label;
-        node.append(" ", button);
+        node.append(button);
     }
     const close = document.createElement("button");
     close.className = "quiet icon-button notice-close";
