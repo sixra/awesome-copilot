@@ -8,7 +8,7 @@ const MAX_FILES = 500;
 const MAX_BYTES = 2 * 1024 * 1024;
 
 // The newest flight record of this workflow in the workspace, other than the current run. Any record that cannot be
-// inspected safely (a link, oversized, unparseable, or more files than the scan limit) refuses the rerun rather than
+// inspected safely (a link, oversized, unparsable, or more files than the scan limit) refuses the rerun rather than
 // risk inheriting gates from an older run while a newer one failed.
 export async function latestRecord(cwd, excludeRunId) {
     const folder = await contained(cwd, ".agentic-loop/runs");
