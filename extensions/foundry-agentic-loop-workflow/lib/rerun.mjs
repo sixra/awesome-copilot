@@ -7,8 +7,9 @@ import { clean } from "./record.mjs";
 const MAX_FILES = 500;
 const MAX_BYTES = 2 * 1024 * 1024;
 
-// The newest flight record of this workflow in the workspace, other than the current run; links and oversized files are skipped.
-// Run IDs do not sort by time, so a folder over the scan limit fails closed rather than risk missing the newest run.
+// The newest flight record of this workflow in the workspace, other than the current run. Any record that cannot be
+// inspected safely (a link, oversized, unparseable, or more files than the scan limit) refuses the rerun rather than
+// risk inheriting gates from an older run while a newer one failed.
 export async function latestRecord(cwd, excludeRunId) {
     const folder = await contained(cwd, ".agentic-loop/runs");
     let names;
@@ -21,16 +22,16 @@ export async function latestRecord(cwd, excludeRunId) {
     let latest = null;
     for (const name of names) {
         const file = path.join(folder, name);
-        try {
-            const info = await lstat(file);
-            if (!info.isFile() || info.size > MAX_BYTES) continue;
-            const record = JSON.parse(await readFile(file, "utf8"));
-            if (record?.workflow !== WORKFLOW || record.runId === excludeRunId || !Array.isArray(record.phases)) continue;
-            const at = Date.parse(record.startedAt ?? record.updatedAt) || 0;
-            if (!latest || at > latest.at) latest = { at, record, file: `.agentic-loop/runs/${name}` };
-        } catch {
-            // Unreadable or partial records cannot vouch for a phase.
-        }
+        const refuse = reason => new Error(`.agentic-loop/runs/${name} ${reason}, so the latest run cannot be identified safely. Fix or move that record, or run the full loop.`);
+        const info = await lstat(file);
+        if (!info.isFile()) throw refuse("is not a regular file");
+        if (info.size > MAX_BYTES) throw refuse(`is larger than ${MAX_BYTES / 1024 / 1024} MiB`);
+        let record;
+        try { record = JSON.parse(await readFile(file, "utf8")); }
+        catch { throw refuse("is not valid JSON"); }
+        if (record?.workflow !== WORKFLOW || record.runId === excludeRunId || !Array.isArray(record.phases)) continue;
+        const at = Date.parse(record.startedAt ?? record.updatedAt) || 0;
+        if (!latest || at > latest.at) latest = { at, record, file: `.agentic-loop/runs/${name}` };
     }
     return latest;
 }

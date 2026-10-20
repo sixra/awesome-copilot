@@ -445,6 +445,19 @@ test("from refuses to rerun when there are too many flight records to find the l
     assert.equal(await exists(path.join(cwd, ...recordFile("run-1").split("/"))), false, "a refused rerun writes no record");
 });
 
+test("from refuses to rerun when a flight record cannot be inspected safely", async t => {
+    const { cwd, home } = await workspace(t);
+    const first = harness({ cwd, home, runId: "run-1", args: { ...AUTO, skipDeploy: true } });
+    assert.equal((await first.attempt()).status, "completed");
+    const newer = path.join(cwd, ".agentic-loop", "runs", "run-2.json");
+    for (const [content, reason] of [["x".repeat(2 * 1024 * 1024 + 1), /run-2\.json is larger than 2 MiB/], ["{\"workflow\":", /run-2\.json is not valid JSON/]]) {
+        await writeFile(newer, content);
+        const refused = await harness({ cwd, home, runId: "run-3", args: { ...AUTO, from: "Deploy" } }).attempt();
+        assert.equal(refused.status, "error");
+        assert.match(refused.error.message, reason);
+    }
+});
+
 test("from and to run a single phase, and to ends the run early without the spec approval", async t => {
     assert.throws(() => validateArgs({ brief: BRIEF, to: "verify" }), /args.to must be one of Specify, Implement, Verify, Deploy/);
     assert.throws(() => validateArgs({ brief: BRIEF, to: "Deploy", skipDeploy: true }), /args.to cannot be Deploy when skipDeploy/);
