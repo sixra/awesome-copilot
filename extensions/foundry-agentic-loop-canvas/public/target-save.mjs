@@ -1,7 +1,7 @@
 // Saves the SDD target (environment, subscription, location) one request at a time. Edits are merged and debounced;
 // flush() saves whatever is pending now and resolves once every save so far has settled, so a send never carries a
-// stale target. A failed field stays failed until a later save of that same field succeeds; once nothing else is
-// queued, any field still failed is reported and the server's target is restored.
+// stale target. A failed field stays failed until a later save of that same field succeeds or the server's target is
+// restored; once nothing else is queued, any field still failed is reported and restoration is attempted.
 // Timers are wrapped because browsers reject setTimeout and clearTimeout called as methods of another object.
 export class TargetSaver {
     constructor({ save, restore = async () => {}, delay = 400, onChange = () => {}, setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = id => clearTimeout(id) }) {
@@ -65,13 +65,16 @@ export class TargetSaver {
         return this.#finish(result);
     }
 
-    // The last queued save reports any field that is still failed, whichever save failed it.
+    // The last queued save reports any field that is still failed, whichever save failed it. The failure is kept until
+    // the server's target is restored, so a failed restore keeps blocking and the next flush retries it.
     async #finish(result) {
         if (!this.pending && this.inflight === 1 && this.failed.size) {
             const error = [...this.failed.values()].at(-1);
-            this.failed.clear();
             result = { ok: false, error };
-            try { await this.restore(error); } catch { /* The next poll or save brings the target back in line. */ }
+            try {
+                await this.restore(error);
+                this.failed.clear();
+            } catch { /* Still failed: the controls may show a target the server does not have. */ }
         }
         this.inflight--;
         this.onChange(this.saving);

@@ -163,6 +163,23 @@ test("target saver reports a failed field once the queued edit after it is disca
     assert.equal(saver.saving, false);
 });
 
+test("target saver keeps blocking after a failed restore and retries the restore on the next flush", async () => {
+    const timers = fakeTimers();
+    let restores = 0;
+    const saver = new TargetSaver({
+        save: async () => { throw new Error("Invalid location."); },
+        restore: async () => { if (++restores === 1) throw new Error("Offline."); },
+        ...timers,
+    });
+    saver.schedule({ location: "nowhere" });
+    assert.equal((await saver.flush()).ok, false);
+    const retry = await saver.flush();
+    assert.equal(retry.ok, false, "a send must not proceed while the controls may differ from the server");
+    assert.equal(retry.error.message, "Invalid location.");
+    assert.equal(restores, 2);
+    assert.deepEqual(await saver.flush(), { ok: true }, "once restored, the failure no longer blocks");
+});
+
 test("target saver discards an invalid pending field", () => {
     const timers = fakeTimers();
     const saver = new TargetSaver({ save: async () => {}, ...timers });
