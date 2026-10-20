@@ -49,6 +49,12 @@ const CATEGORY_ICONS = {
 };
 
 type ResultGroup = { category: SearchCategory; items: SearchItem[] };
+type NormalizedSearchItem = {
+  item: SearchItem;
+  title: string;
+  description: string;
+  category: string;
+};
 
 /**
  * Shared top-navigation search. A collapsed magnifier button expands into a
@@ -142,16 +148,28 @@ export function TopNavSearch({
     };
   }, [trimmed, locale]);
 
+  const normalizedIndex = useMemo<NormalizedSearchItem[]>(
+    () =>
+      index.map((item) => ({
+        item,
+        title: item.title.toLowerCase(),
+        description: item.description.toLowerCase(),
+        category: `${CATEGORY_LABELS[item.category]} ${item.category}`.toLowerCase(),
+      })),
+    [index],
+  );
+
   const groups = useMemo<ResultGroup[]>(() => {
     const query = trimmed.toLowerCase();
     if (query.length === 0) return [];
-    const staticMatches = index.filter(
-      (item) =>
-        item.title.toLowerCase().includes(query) ||
-        item.description.toLowerCase().includes(query) ||
-        CATEGORY_LABELS[item.category].toLowerCase().includes(query) ||
-        item.category.toLowerCase().includes(query),
-    );
+    const staticMatches = normalizedIndex
+      .filter(
+        ({ title, description, category }) =>
+          title.includes(query) ||
+          description.includes(query) ||
+          category.includes(query),
+      )
+      .map(({ item }) => item);
     // Static hits win on ties: they carry curated titles and descriptions.
     const matches = mergeSearchItems(filterSearchItemsByLocale([
       ...staticMatches,
@@ -173,7 +191,7 @@ export function TopNavSearch({
       category,
       items: selected.filter((item) => item.category === category),
     })).filter((group) => group.items.length > 0);
-  }, [trimmed, index, pagefindResult, locale]);
+  }, [trimmed, normalizedIndex, pagefindResult, locale]);
 
   const flatResults = useMemo(
     () => groups.flatMap((group) => group.items),

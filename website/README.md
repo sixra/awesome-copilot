@@ -156,12 +156,13 @@ generated commit ref as their preview image; other curated documents use their
 existing `main` source. Site-root `/images/...` assets and HTTP(S) images remain
 valid, and ordinary image hyperlinks remain links.
 
-External catalog entries do not currently fetch README bodies. Any future
-cached external README must supply its actual raw repository base, revision,
-and document path to `readResourceMarkdown`; its local cache filename is not
-source provenance. Missing or invalid provenance for relative images is
-reported and the image URL is removed rather than guessed. Sanitization still
-runs on the resolved attributes.
+Cached external READMEs use their recorded source and raw document URLs to
+resolve links and images, while stripping inline styles and `srcset` attributes.
+Their bodies stay out of catalog hydration. Curated documents and file previews
+use the raw repository base, revision, and document path; a local cache filename
+is not source provenance. Missing or invalid provenance for their relative images
+is reported and the image URL is removed rather than guessed. Both rendering
+paths sanitize again after accessibility processing.
 
 Run focused media regressions from the repository root with Node 24 or later:
 

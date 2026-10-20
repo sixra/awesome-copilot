@@ -21,7 +21,7 @@ process.chdir(fileURLToPath(new URL("..", import.meta.url)));
 const { resolveMarkdownImage, resolveMarkdownSrcset } =
   await import("../src/lib/markdown-images.ts");
 const { sanitizeHtml } = await import("../src/lib/sanitize-html.ts");
-const { readResourceMarkdown } = await import("../src/lib/detail-page.ts");
+const { readResourceMarkdown, renderResourceMarkdown } = await import("../src/lib/detail-page.ts");
 
 const revision = "a".repeat(40);
 const rawBase = `https://raw.githubusercontent.com/github/awesome-copilot/${revision}`;
@@ -161,6 +161,30 @@ test("external documents use explicit remote provenance, not the local cache pat
     }),
     "https://raw.githubusercontent.com/third-party/plugin/release%2Fv1/packages/canvas/image.png",
   );
+});
+
+test("shared rendering isolates curated provenance from cached external README URLs", () => {
+  const markdown = `[Guide](./guide.md)
+
+<picture><source srcset="assets/dark.png"><img src="assets/preview.png" style="color:red" alt="Preview"></picture>`;
+  const urls = {
+    linkBaseUrl: `https://github.com/owner/plugin/blob/${revision}/docs/README.md`,
+    imageBaseUrl: `https://raw.githubusercontent.com/owner/plugin/${revision}/docs/README.md`,
+  };
+  for (let i = 0; i < 2; i++) {
+    const curated = renderResourceMarkdown(markdown, source).markdownHtml;
+    assert.ok(curated.includes(`src="${rawBase}/extensions/pr-artifact-explorer/assets/preview.png"`));
+    assert.ok(curated.includes(`srcset="${rawBase}/extensions/pr-artifact-explorer/assets/dark.png"`));
+    assert.match(curated, /href="\.\/guide.md"/);
+    assert.match(curated, /style="color:red"/);
+    assert.match(curated, /data-markdown-block-image/);
+
+    const external = renderResourceMarkdown(markdown, urls).markdownHtml;
+    assert.ok(external.includes(`src="https://raw.githubusercontent.com/owner/plugin/${revision}/docs/assets/preview.png"`));
+    assert.ok(external.includes(`href="https://github.com/owner/plugin/blob/${revision}/docs/guide.md"`));
+    assert.doesNotMatch(external, /srcset=|style=|pr-artifact-explorer/);
+    assert.match(external, /data-markdown-block-image/);
+  }
 });
 
 test("Artifact Explorer README rewrites img and both themed picture sources", () => {

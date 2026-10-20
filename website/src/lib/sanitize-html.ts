@@ -3,8 +3,8 @@
  *
  * `marked` allows raw HTML to pass through untouched, and the resulting string
  * is injected via `set:html` / `innerHTML` on the resource detail pages and in
- * the client-side file browser. Even though the markdown we render originates
- * from this repository, a compromised or malicious resource file could
+ * the client-side file browser. Markdown may come from this repository or an
+ * external plugin's repository, so a compromised or malicious file could
  * otherwise introduce persistent XSS. Sanitizing the generated HTML gives us
  * defense-in-depth on both the server (build time) and the client.
  *
@@ -18,6 +18,11 @@ import {
   resolveMarkdownSrcset,
   type MarkdownImageSource,
 } from "./markdown-images";
+
+export type MarkdownSource =
+  | MarkdownImageSource
+  | { linkBaseUrl: string; imageBaseUrl: string }
+  | null;
 
 let markdownHooksInstalled = false;
 
@@ -71,10 +76,19 @@ function ensureMarkdownHooks(): void {
  */
 export function sanitizeHtml(
   html: string,
-  imageSource?: MarkdownImageSource | null,
+  source?: MarkdownSource,
 ): string {
   if (!html) return html;
   ensureMarkdownHooks();
+  const urls = source && "linkBaseUrl" in source ? source : undefined;
+  const imageSource = source === null || (source && "rawBase" in source)
+    ? source : undefined;
+  const config = {
+    // Keep links that open in a new tab (target/rel) which some resource docs
+    // author directly as raw HTML.
+    ADD_ATTR: ["target", "rel"],
+    ...(urls ? { FORBID_ATTR: ["style"], FORBID_TAGS: ["style"] } : {}),
+  };
   // Scope provenance to this synchronous render; it must never leak between
   // documents (or between the build-time and file-browser rendering paths).
   if (imageSource !== undefined) {
@@ -98,13 +112,37 @@ export function sanitizeHtml(
       }
     });
   }
-  try {
-    return DOMPurify.sanitize(html, {
-      // Keep links that open in a new tab (target/rel) which some resource docs
-      // author directly as raw HTML.
-      ADD_ATTR: ["target", "rel"],
+  if (urls) {
+    DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+      if (
+        (node.nodeName === "IMG" || node.nodeName === "SOURCE") &&
+        node.hasAttribute("srcset")
+      ) {
+        node.removeAttribute("srcset");
+      }
+      const attribute = node.nodeName === "A" ? "href" : node.nodeName === "IMG" ? "src" : null;
+      if (!attribute) return;
+      const value = node.getAttribute(attribute);
+      if (!value || value.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(value)) return;
+      const base = attribute === "href" ? urls.linkBaseUrl : urls.imageBaseUrl;
+      let resolved: URL;
+      if (value.startsWith("/") && !value.startsWith("//")) {
+        const root = new URL(base);
+        // GitHub blob URLs include /blob/; raw-content URLs do not.
+        root.pathname = root.pathname.split("/").slice(0, attribute === "href" ? 5 : 4).join("/") + "/";
+        resolved = new URL(value.slice(1), root);
+      } else {
+        resolved = new URL(value, base);
+      }
+      if (resolved.protocol === "https:" || resolved.protocol === "http:") {
+        node.setAttribute(attribute, resolved.href);
+      }
     });
+  }
+  try {
+    return DOMPurify.sanitize(html, config);
   } finally {
     if (imageSource !== undefined) DOMPurify.removeHook("uponSanitizeAttribute");
+    if (urls) DOMPurify.removeHook("afterSanitizeAttributes");
   }
 }
