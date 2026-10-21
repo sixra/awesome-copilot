@@ -1,5 +1,5 @@
 ---
-name: pr-feedback
+name: pr-address-feedback
 description: 'Walk through PR review comments one-by-one, deciding for each whether to act on the feedback or reply with reasoning, and build an approvable resolution plan before changing anything. Use when the user wants to address, respond to, or triage PR review feedback.'
 argument-hint: "[PR number or URL] (defaults to current branch's PR)"
 user-invocable: true
