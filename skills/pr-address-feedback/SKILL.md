@@ -95,11 +95,12 @@ When every item is decided, write a single plan that lists, for each item: the c
   3. Only then post the replies. Use the full 40-character SHA (or a `https://{host}/{owner}/{repo}/pull/{n}/commits/{sha}` link, using the PR's host) so GitHub links it.
 - Reply **inside the existing thread** (`gh api repos/{owner}/{repo}/pulls/{n}/comments/{comment_id}/replies -f body=...`), not as a new top-level comment. For top-level review or conversation feedback, post one PR comment that quotes what it's answering.
 - Post the reply text I approved. Changing only the SHAs is fine.
-- **Resolve threads after replying.** Once a thread's reply is posted successfully, resolve it — never resolve before the reply is up. Defaults (I can override per item in the plan):
+- **Resolve only threads the plan marks for resolution**, and only after their reply is posted. Defaults (I can override per item in the plan):
   - **Act** items: resolve.
   - **Reply with reasoning** items: leave open so the reviewer can respond.
   - **Skip / defer** items: leave open, don't reply.
   - Top-level review / conversation feedback has no thread to resolve; skip.
-  - Prefer the `reply_and_resolve_review_thread` tool when available (only some Copilot surfaces provide it; pass the thread `id` + root comment `databaseId`), which replies and resolves in one step. Otherwise post the reply with `gh api` as above, then resolve via GraphQL: `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread id>`.
+  - For threads marked for resolution, prefer the `reply_and_resolve_review_thread` tool when available (only some Copilot surfaces provide it; pass the thread `id` + root comment `databaseId`), which replies and resolves in one step. Otherwise post the reply with `gh api` as above, then resolve via GraphQL: `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread id>`.
+  - For threads staying open, use a reply-only call (`reply_to_review_thread` if available, otherwise the `gh api …/replies` call above). Never use the reply-and-resolve tool for them.
 - **Re-request review last.** After all commits are pushed, replies posted, and threads resolved, re-request review from every human reviewer whose feedback was addressed in this pass (excluding me and bot accounts): `gh api -X POST repos/{owner}/{repo}/pulls/{n}/requested_reviewers -f 'reviewers[]=<login>'` (repeat `reviewers[]` for each). Skip anyone who already has a pending review request. If a call fails, report it rather than retrying blindly.
 - At the end, give me a short summary with links to each reply you posted, each commit you pushed, which threads were resolved, and who was re-requested.
