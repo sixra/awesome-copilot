@@ -11,7 +11,7 @@ PR target: use the PR number/URL I passed with this command, if any; otherwise t
 
 You are in **plan mode**. Until I approve the final plan, do NOT edit files, commit, push, resolve threads, or post anything to GitHub. Read-only commands (`gh`, `git log/diff/show`, viewing files) are fine.
 
-The PR may live on github.com or on another GitHub host (e.g. GitHub Enterprise Server). Run `gh` from the repo checkout (or pass `--hostname`) so it targets the PR's host.
+The PR may live on github.com or on another GitHub host (e.g. GitHub Enterprise Server). Take the host from the PR's `url` and pass `--hostname <host>` to every `gh api` call (or `export GH_HOST=<host>` once). `gh api` defaults to github.com even inside an Enterprise Server checkout.
 
 ## 1. Gather the feedback
 
