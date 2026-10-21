@@ -47,7 +47,7 @@ A `@OneToMany` without `mappedBy` and without `@JoinColumn` creates a join table
 | Pitfall | Fix |
 | --- | --- |
 | `CascadeType.ALL`/`REMOVE` on `@ManyToOne` or `@ManyToMany`: deleting one child deletes the shared parent or related rows | Cascade only parent -> owned child. |
-| `CascadeType.REMOVE` for a large collection loads and deletes row by row | Use a bulk `DELETE ... WHERE parent_id = :id` (after clearing the context), or DB `ON DELETE CASCADE` with `@OnDelete(action = OnDeleteAction.CASCADE)`. |
+| `CascadeType.REMOVE` for a large collection loads and deletes row by row | Flush pending changes, execute a bulk `DELETE ... WHERE parent_id = :id`, then clear the context; alternatively use DB `ON DELETE CASCADE` with `@OnDelete(action = OnDeleteAction.CASCADE)`. |
 | `CascadeType.PERSIST` on a detached child: `PersistentObjectException: detached entity passed to persist` | Use `merge` (or load the entity first); do not set a detached instance on a persist-cascaded association. |
 | `CascadeType.MERGE` overwrites state with stale DTO data | Copy only allowed fields onto a managed entity. |
 | `orphanRemoval = true` on a shared child | Only for exclusive, parent-owned children; removing from the collection deletes the row. |
