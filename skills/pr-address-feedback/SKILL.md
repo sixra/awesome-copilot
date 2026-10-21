@@ -87,10 +87,11 @@ When every item is decided, write a single plan that lists, for each item: the c
 
 ## 4. Rules for carrying out the approved plan
 
+- Before any edits, make sure the working tree is a clean checkout of the PR head: `gh pr checkout <n>` (which also sets the push destination for PRs from forks), then check that `HEAD` matches the verified `<headSha>`. If it doesn't, or the tree is dirty, stop and ask me.
 - Make the code changes as small, focused commits. Where it makes sense, use one commit per feedback item so replies can point to a specific commit.
 - **Push before you reply.** Any reply that mentions a commit SHA must only be posted after that commit is on GitHub. Otherwise the SHA won't render as a link. In order:
   1. Commit, then `git push`.
-  2. Check that each referenced commit exists on the remote, e.g. `gh api repos/{owner}/{repo}/commits/{sha} --jq .sha`, or `git fetch` then `git branch -r --contains {sha}`. If it isn't there yet, stop and fix that before posting.
+  2. Re-read the PR's `headRefOid` (`gh pr view <n> --json headRefOid`) and confirm each referenced commit is reachable from it: `git fetch <base remote> refs/pull/<n>/head`, then `git merge-base --is-ancestor <sha> FETCH_HEAD`. If it isn't, stop and fix that before posting.
   3. Only then post the replies. Use the full 40-character SHA (or a `https://{host}/{owner}/{repo}/pull/{n}/commits/{sha}` link, using the PR's host) so GitHub links it.
 - Reply **inside the existing thread** (`gh api repos/{owner}/{repo}/pulls/{n}/comments/{comment_id}/replies -f body=...`), not as a new top-level comment. For top-level review or conversation feedback, post one PR comment that quotes what it's answering.
 - Post the reply text I approved. Changing only the SHAs is fine.
