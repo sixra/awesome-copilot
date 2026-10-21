@@ -82,11 +82,11 @@ Verified: 1,000 tasks, each sleeping 10 ms, run through `newVirtualThreadPerTask
 
 ```java
 static <T> Optional<T> last(SequencedCollection<T> c) {
-    return c.isEmpty() ? Optional.empty() : Optional.of(c.getLast());   // List, Deque, LinkedHashSet...
+    return c.isEmpty() ? Optional.empty() : Optional.ofNullable(c.getLast()); // Null-permitting collections
 }
 ```
 
-`getFirst/getLast/addFirst/removeLast/reversed()` are available on `List`, `Deque`, `LinkedHashSet`, `SortedSet`; `getFirst()` on an empty list throws `NoSuchElementException`.
+`getFirst/getLast/addFirst/removeLast/reversed()` are available on `List`, `Deque`, `LinkedHashSet`, `SortedSet`; `getFirst()` on an empty list throws `NoSuchElementException`. `SequencedCollection` implementations may permit null elements (for example, `LinkedList` and `LinkedHashSet`), so use `Optional.ofNullable` when the result can be null.
 
 ## Later features
 

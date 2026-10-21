@@ -57,16 +57,23 @@ A separate `count` query per page is costly; skip it when the UI can use "has ne
 
 ## JDBC batching (inserts and updates)
 
-Settings:
+Enable JDBC batching with a positive batch size:
 
 ```properties
 hibernate.jdbc.batch_size=50
+```
+
+Hibernate can batch inserts with sequence, UUID, or assigned identifiers. `IDENTITY` prevents JDBC batching of entity **inserts** because Hibernate must execute each insert to obtain its generated id; it does not prevent batching updates. Do not change an existing identifier strategy solely to enable batching without considering its other tradeoffs.
+
+Optional tuning (measure against the actual database and driver):
+
+```properties
 hibernate.order_inserts=true
 hibernate.order_updates=true
 hibernate.jdbc.batch_versioned_data=true
 ```
 
-Requirements: sequence (not `IDENTITY`) ids; ordered statements; PostgreSQL driver `reWriteBatchedInserts=true`, MySQL `rewriteBatchedStatements=true`.
+Ordering statements may group compatible operations, and PostgreSQL `reWriteBatchedInserts=true` / MySQL `rewriteBatchedStatements=true` may improve driver throughput; neither ordering nor driver rewrite flags are prerequisites for Hibernate JDBC batching. Check the dialect, driver, and Hibernate version before changing settings.
 
 Write pattern for large loads:
 
