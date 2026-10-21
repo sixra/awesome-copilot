@@ -101,11 +101,8 @@ static <T> Optional<T> last(SequencedCollection<T> c) {
 
 Verify the status of any other feature with `java <File>.java` on the target JDK before recommending it; JEP statuses change every six months.
 
-## Other everyday idioms
+## Collection and API pitfalls
 
-- `var` for obvious local types; not for fields, parameters or when the type is unclear.
 - `stream().toList()` (16+) returns an unmodifiable list; `Collectors.toList()` makes no guarantee.
 - `Map.of`/`List.of` reject nulls and `Map.of` has undefined iteration order; use `LinkedHashMap` when order matters.
-- Prefer `enum` + `EnumMap`/`EnumSet` over int/String constants.
-- Use `String.formatted`, `String.join`, `Objects.equals`, `Objects.hash`, `Comparator.comparing(...).thenComparing(...)`.
 - Do not use `finalize`, `Thread.stop`, `new Integer(...)`, `Date`/`Calendar`, `SecurityManager`.
