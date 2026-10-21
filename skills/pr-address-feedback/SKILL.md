@@ -15,11 +15,11 @@ The PR may live on github.com or on another GitHub host (e.g. GitHub Enterprise 
 
 ## 1. Gather the feedback
 
-- Resolve the PR: use the target above if provided (number, URL, or `owner/repo#N`); otherwise use the PR for the current branch (`gh pr view --json number,url,headRefName,baseRefName,headRepository,headRepositoryOwner`). If none is found, ask me.
+- Resolve the PR: use the target above if provided (number, URL, or `owner/repo#N`); otherwise use the PR for the current branch (`gh pr view --json number,url,headRefName,headRefOid,baseRefName,headRepository,headRepositoryOwner`). If none is found, ask me.
 - Fetch **all** review threads with GraphQL (paginate), including for each thread: `id`, `isResolved`, `isOutdated`, `path`, `line`, `startLine`, `originalLine`, `diffSide`, and every comment's `databaseId`, `url`, `author.login`, `body`, `diffHunk`, `createdAt`.
 - Also fetch top-level review bodies (`reviews` with non-empty `body`) and general PR conversation comments, since those can contain feedback too.
 - Skip resolved threads and threads where I (the PR author) had the last word unless they still look unaddressed. Mention outdated threads but check whether the feedback still applies to current code.
-- `git fetch` the PR head first; if my local branch is behind, say so and read code from `origin/<headRef>` instead.
+- `git fetch <base remote> refs/pull/<n>/head` first and check that the fetched SHA matches the PR's `headRefOid`. Read code from that SHA (`<headSha>` below), not from `origin/<headRef>`, which may not exist for PRs from forks. If my local branch is behind it, say so.
 - **Order the items so the review reads coherently**, not just by position in the diff:
   - Before ordering, read every item and spot dependencies and patterns. Some comments point back to others ("same as above", "ditto", "as I mentioned on `foo.go`", "same issue here"). Others repeat the same kind of feedback (e.g. the same naming nit or missing error check in several places).
   - Put the comment that sets up a pattern first: the one that explains it fully, usually the earliest-written. Then put every comment that refers back to it or repeats it right after it, so you only have to understand the pattern once.
@@ -68,7 +68,7 @@ Rules for the block:
 
 - `COMMENT_URL` is the comment's `url` field (e.g. `https://github.com/o/r/pull/123#discussion_r456`; the host may differ, e.g. on GitHub Enterprise Server). Never omit it.
 - Quote the feedback **verbatim** from the fetched `body`, not from memory. For top-level review / conversation feedback, use that comment's URL and replace "Diff context" with "n/a (not a line comment)", but still show the relevant current code.
-- Get current code with line numbers from the PR head (e.g. `git show origin/<headRef>:path | sed -n 'A,Bp' | nl -ba -v A` or `gh api .../contents/path?ref=<headRef>`) — don't rely on a local branch that may be stale. Use the file's language for the code fence.
+- Get current code with line numbers from the PR head (e.g. `git show <headSha>:path | sed -n 'A,Bp' | nl -ba -v A` or `gh api repos/<headOwner>/<headRepo>/contents/path?ref=<headSha> -H 'Accept: application/vnd.github.raw'`) — don't rely on a local branch that may be stale. Use the file's language for the code fence.
 - Every claim in Assessment should be backed by something in "Evidence" (a `path:line` + snippet, a commit, a doc link, a related comment). If you investigated something while thinking, put the finding there so I can see it.
 
 Then call `ask_user` to get my decision:
