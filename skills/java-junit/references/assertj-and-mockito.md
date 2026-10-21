@@ -105,7 +105,9 @@ WARNING: A Java agent has been loaded dynamically (.../byte-buddy-agent-....jar)
 WARNING: Dynamic loading of agents will be disallowed by default in a future release
 ```
 
-Fix by registering `mockito-core` as an agent (verified: warnings gone on JDK 21).
+For **Mockito 5.14.0+ only**, fix by registering `mockito-core` as an agent (verified: warnings gone on JDK 21). The agent entry point was introduced in [Mockito 5.14.0](https://github.com/mockito/mockito/releases/tag/v5.14.0); earlier 5.x jars lack the `Premain-Class` manifest entry, so using them with `-javaagent` aborts the test JVM.
+
+Before applying either snippet below, check the resolved `mockito-core` version (`./mvnw dependency:tree -Dincludes=org.mockito:mockito-core` or `./gradlew dependencyInsight --dependency mockito-core --configuration testRuntimeClasspath`). Preserve the project's BOM/version-catalog management and ask before upgrading. If the version is below 5.14.0 and no upgrade is approved, do not use these snippets; follow that version's documented instrumentation setup.
 
 Maven (`maven-dependency-plugin` `properties` goal exposes `${org.mockito:mockito-core:jar}`; keep `@{argLine}` when JaCoCo is used):
 

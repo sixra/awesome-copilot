@@ -24,12 +24,14 @@ java -agentlib:native-image-agent=config-output-dir=src/main/resources/META-INF/
 Via the build tool (preferred):
 
 ```sh
-./mvnw -Pnative -Dagent=true test          # agent during JVM tests, Maven
+./mvnw -Pnative -Dagent=true -DskipNativeTests=true test # collect metadata during JVM tests only
 ./mvnw -Pnative -Dagent=true exec:exec@java-agent   # agent for a manual run, if configured
 ./gradlew -Pagent test                      # agent during tests, Gradle
 ./gradlew -Pagent run
 ./gradlew metadataCopy --task test --dir src/main/resources/META-INF/native-image/<groupId>/<artifactId>
 ```
+
+The Maven example assumes the plain-Java `native` profile in [build-tools.md](build-tools.md), which also binds `native:test` to the test phase. Check the actual project's profile bindings: Spring Boot uses a separate `nativeTest` profile (see [spring-boot.md](spring-boot.md)). Use `-DskipNativeTests=true` for this metadata-collection run so the JVM tests still execute with the tracing agent, without compiling or running the native test binary. Do not use `-DskipTests` or `-Dmaven.test.skip`: those would skip the JVM tests needed to exercise the agent. Afterwards, rerun native tests with the project's appropriate profile and without `-DskipNativeTests=true` to validate the collected metadata; this diagnostic run is not evidence that native tests passed.
 
 See the Native Build Tools "Agent Support" page for the exact setup for your plugin version.
 
