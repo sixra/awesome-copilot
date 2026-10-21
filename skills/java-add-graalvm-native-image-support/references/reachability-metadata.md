@@ -24,14 +24,47 @@ java -agentlib:native-image-agent=config-output-dir=src/main/resources/META-INF/
 Via the build tool (preferred):
 
 ```sh
-./mvnw -Pnative -Dagent=true -DskipNativeTests=true test # collect metadata during JVM tests only
-./mvnw -Pnative -Dagent=true exec:exec@java-agent   # agent for a manual run, if configured
+./mvnw -Pnative -Dagent=true -DskipNativeTests=true test # collect test-stage metadata on the JVM
 ./gradlew -Pagent test                      # agent during tests, Gradle
 ./gradlew -Pagent run
 ./gradlew metadataCopy --task test --dir src/main/resources/META-INF/native-image/<groupId>/<artifactId>
 ```
 
-The Maven example assumes the plain-Java `native` profile in [build-tools.md](build-tools.md), which also binds `native:test` to the test phase. Check the actual project's profile bindings: Spring Boot uses a separate `nativeTest` profile (see [spring-boot.md](spring-boot.md)). Use `-DskipNativeTests=true` for this metadata-collection run so the JVM tests still execute with the tracing agent, without compiling or running the native test binary. Do not use `-DskipTests` or `-Dmaven.test.skip`: those would skip the JVM tests needed to exercise the agent. Afterwards, rerun native tests with the project's appropriate profile and without `-DskipNativeTests=true` to validate the collected metadata; this diagnostic run is not evidence that native tests passed.
+The Maven example assumes the plain-Java `native` profile in [build-tools.md](build-tools.md), which also binds `native:test` to the test phase. Check the actual project's profile bindings: Spring Boot uses a separate `nativeTest` profile (see [spring-boot.md](spring-boot.md)). Use `-DskipNativeTests=true` for metadata collection so JVM tests still execute with the tracing agent, without compiling or running native test binaries. Do not use `-DskipTests` or `-Dmaven.test.skip`: those skip the JVM tests needed to exercise the agent.
+
+The Maven agent writes to `target/native/agent-output/{test,main}`. Review the files for noise, then configure [metadata copying](https://graalvm.github.io/native-build-tools/latest/maven-plugin.html#metadata-copy) inside the Native Build Tools plugin so the approved output survives `clean` and is included in the native build:
+
+```xml
+<configuration>
+  <!-- Keep any existing Native Build Tools configuration here. -->
+  <agent>
+    <metadataCopy>
+      <!-- For the JVM test command above, skip the main stage that was not run. -->
+      <disabledStages>
+        <stage>main</stage>
+      </disabledStages>
+      <merge>true</merge>
+      <outputDirectory>${project.basedir}/src/main/resources/META-INF/native-image/${project.groupId}/${project.artifactId}</outputDirectory>
+    </metadataCopy>
+  </agent>
+</configuration>
+```
+
+After reviewing the test-stage output, persist it with:
+
+```sh
+./mvnw -Pnative -Dagent=true native:metadata-copy
+```
+
+If you collected only the application (`main`) stage, disable `test` instead; configure `disabledStages` for every stage you did not collect. `merge=true` merges with existing metadata when the destination has a complete metadata set (unified `reachability-metadata.json` or all four legacy files); otherwise merge or reconcile existing partial files manually before copying, so valid metadata is not discarded. Run native tests afterwards with the project's appropriate profile and without `-DskipNativeTests=true`; the metadata-collection run is not evidence that native tests passed.
+
+For a manual application run, configure the `exec-maven-plugin` execution described in the Native Build Tools [Maven agent guide](https://graalvm.github.io/native-build-tools/latest/maven-plugin.html#agent-support-running-application), then run it with:
+
+```sh
+./mvnw -Pnative -Dagent=true -DskipTests -DskipNativeBuild=true package exec:exec@java-agent
+```
+
+Copy the collected `main` stage as above, disabling the uncollected `test` stage.
 
 See the Native Build Tools "Agent Support" page for the exact setup for your plugin version.
 

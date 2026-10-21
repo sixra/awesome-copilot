@@ -18,7 +18,7 @@ hibernate.generate_statistics=true
 hibernate.session.events.log.LOG_QUERIES_SLOWER_THAN_MS=25
 ```
 
-Statement counting in tests: read `sessionFactory.getStatistics().getPrepareStatementCount()` (or `getQueryExecutionCount()`, `getEntityFetchCount()`, `getCollectionFetchCount()`) before and after a use case and assert an upper bound. Alternative: a datasource proxy (e.g. datasource-proxy, p6spy) that counts statements. Keep logging at DEBUG/TRACE only in dev/test; statistics have overhead.
+For total SQL statement-count assertions in N+1 regression tests, compare `sessionFactory.getStatistics().getPrepareStatementCount()` before and after the use case, or use a datasource proxy (e.g. datasource-proxy, p6spy). `getQueryExecutionCount()` counts executed ORM queries, not secondary SELECTs issued to initialize lazy associations; `getEntityFetchCount()` and `getCollectionFetchCount()` are useful supplemental diagnostics, not total statement counts. Keep logging at DEBUG/TRACE only in dev/test; statistics have overhead.
 
 Use `EXPLAIN (ANALYZE)` on the real database for slow SQL; indexes on foreign keys are your responsibility (Hibernate does not create them for FKs on most databases).
 
