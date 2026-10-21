@@ -9,7 +9,7 @@ Native Image only includes what it can see statically. Anything reached dynamica
 - Legacy per-feature files: `reflect-config.json`, `resource-config.json`, `jni-config.json`, `proxy-config.json`, `serialization-config.json`.
 - Unified `reachability-metadata.json` (introduced in GraalVM for JDK 23 and used by newer releases). The unified format is preferred for new metadata and supports newer capabilities, but Native Image still discovers legacy files under `META-INF/native-image`, so do not discard valid existing configuration. Check the GraalVM documentation for your version and prefer regenerating metadata with the tracing agent of the toolchain you use.
 
-Libraries often publish metadata themselves, and the community [GraalVM reachability metadata repository](https://github.com/oracle/graalvm-reachability-metadata) covers many popular ones. The Native Build Tools plugin pulls it automatically when enabled (`metadataRepository` in Gradle, default for recent plugin versions in Maven). Upgrade the library before hand-writing metadata.
+Libraries often publish metadata themselves, and the community [GraalVM reachability metadata repository](https://github.com/oracle/graalvm-reachability-metadata) covers many popular ones. The Native Build Tools plugin pulls it automatically when enabled (`metadataRepository` in Gradle, default for recent plugin versions in Maven). Check existing metadata first; if an upgrade would help, propose it for user approval and rerun the JVM baseline after the change. Otherwise collect or write metadata for the current version.
 
 ## Tracing agent
 

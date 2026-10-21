@@ -73,18 +73,25 @@ Run | Edit Configurations | + | Remote JVM Debug; host `127.0.0.1`, port `5005`,
 | Maven Failsafe IT | `mvn verify -Dmaven.failsafe.debug -Dit.test=OrderIT` |
 | Gradle test | `gradle test --debug-jvm --tests '*OrderServiceTest'` |
 | Spring Boot (Maven) | `mvn spring-boot:run -Dspring-boot.run.jvmArguments="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:5005"` |
-| Spring Boot (Gradle) | `gradle bootRun --debug-jvm` (see the loopback form below), or `jvmArgs` with an explicit `127.0.0.1` agent |
+| Spring Boot (Gradle) | Configure `bootRun` as below, then `gradle bootRun` (loopback, no suspend) |
 | Quarkus dev mode | `mvn quarkus:dev` (debug port 5005 open by default; `-Ddebug=5006` changes it, `-Ddebug=false` disables) |
 
-Surefire/Failsafe debug mode and `--debug-jvm` suspend until a debugger attaches, which is fine for a local run. Surefire and Failsafe accept a custom agent string instead of the bare flag, e.g. `-Dmaven.surefire.debug="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:5005"`. Verified listeners on `127.0.0.1` (via `lsof -nP -iTCP:5005 -sTCP:LISTEN`) for Gradle 9.7 `--debug-jvm`, Maven Surefire 3.5 `-Dmaven.surefire.debug` and Quarkus 3.40 dev mode on JDK 26; Gradle 7.6.4, 8.0.2 (JDK 17), 8.5 (JDK 21) and 8.14.3 also listened on `127.0.0.1`. Gradle passes a bare `address=5005` (no host), so the bind address comes from the JDK: loopback on JDK 9+, but all interfaces (`0.0.0.0:5005`, checked in an `eclipse-temurin:8-jdk` container with Gradle 7.6.4 and 8.14.3) on JDK 8. Older Gradle/plugin versions were not tested; run the same `lsof` check and use an explicit loopback agent on shared networks or JDK 8. Safe Gradle form (Gradle 5.6+; Kotlin DSL shown, for `test` or `bootRun`):
+Surefire/Failsafe debug mode and `--debug-jvm` suspend until a debugger attaches, which is fine for a local run. Surefire and Failsafe accept a custom agent string instead of the bare flag, e.g. `-Dmaven.surefire.debug="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:5005"`. Verified listeners on `127.0.0.1` (via `lsof -nP -iTCP:5005 -sTCP:LISTEN`) for Gradle 9.7 `--debug-jvm`, Maven Surefire 3.5 `-Dmaven.surefire.debug` and Quarkus 3.40 dev mode on JDK 26; Gradle 7.6.4, 8.0.2 (JDK 17), 8.5 (JDK 21) and 8.14.3 also listened on `127.0.0.1`. Gradle passes a bare `address=5005` (no host), so the bind address comes from the JDK: loopback on JDK 9+, but all interfaces (`0.0.0.0:5005`, checked in an `eclipse-temurin:8-jdk` container with Gradle 7.6.4 and 8.14.3) on JDK 8. Older Gradle/plugin versions were not tested; run the same `lsof` check and use an explicit loopback agent on shared networks or JDK 8.
+
+Explicit Gradle configuration (Gradle 7.6+; `debugOptions.host` was added in 7.6; Kotlin DSL):
 
 ```kotlin
 tasks.withType<Test> {
     debugOptions { enabled.set(true); host.set("127.0.0.1"); port.set(5005); server.set(true); suspend.set(true) }
 }
+
+// BootRun extends JavaExec, not Test; configure it separately when the Boot plugin is applied.
+tasks.named<JavaExec>("bootRun") {
+    debugOptions { enabled.set(true); host.set("127.0.0.1"); port.set(5005); server.set(true); suspend.set(false) }
+}
 ```
 
-Then run `gradle test --tests '*OrderServiceTest'`. Alternatively pass `jvmArgs("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:5005")` to the task.
+Then run `gradle test --tests '*OrderServiceTest'` or `gradle bootRun`, without `--debug-jvm` (which enables suspension). Configure only the task you are debugging; do not run both listeners on port 5005 at once. For Gradle before 7.6, use `jvmArgs("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:5005")` on the target task instead (`suspend=y` for local tests), without also enabling `debugOptions` or `--debug-jvm`. On JDK 8 and older, retain the firewall/tunnel precaution above.
 
 ## Containers
 

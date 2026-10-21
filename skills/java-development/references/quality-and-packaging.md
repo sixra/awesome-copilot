@@ -18,7 +18,7 @@ log.atInfo().addKeyValue("area", area).log("computed");     // SLF4J 2 fluent AP
 ```
 
 - Libraries depend only on `slf4j-api`; the application chooses the backend. Exactly one backend on the runtime classpath (otherwise SLF4J warns about multiple bindings).
-- Minimal `src/main/resources/logback.xml` (verified): a `ConsoleAppender` with pattern `%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n`, `<logger name="your.package" level="DEBUG"/>`, root level `INFO`. Without a config file Logback logs at DEBUG to the console.
+- Minimal `src/main/resources/logback.xml` (verified): a `ConsoleAppender` with pattern `%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} requestId=%X{requestId} - %msg %kvp%n`, `<logger name="your.package" level="DEBUG"/>`, root level `INFO`. `%X{requestId}` renders the MDC request ID and `%kvp` renders fluent `addKeyValue` fields; `%msg` alone renders neither. Without a config file Logback logs at DEBUG to the console.
 - Guard expensive argument construction with a lambda (`log.atDebug().log(() -> ...)`) or `isDebugEnabled`. Levels: ERROR = needs attention now, WARN = unexpected but handled, INFO = business events, DEBUG/TRACE = diagnostics.
 - Never log secrets, tokens, full request bodies or personal data; use MDC (`MDC.put("requestId", id)` ... `finally MDC.remove`) for correlation. Do not use `System.out` for diagnostics in application code.
 - Do not log an exception and also rethrow it (duplicate noise); log at the place that handles it.

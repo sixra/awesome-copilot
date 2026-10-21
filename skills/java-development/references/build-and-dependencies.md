@@ -93,7 +93,7 @@ Renovate (`renovate.json`) is the alternative; both need the user's consent to e
 Not run in this skill's verification (it needs network downloads of vulnerability databases and, for NVD, an API key). Pick what fits the project:
 
 - GitHub Dependabot alerts / dependency review action (no build change).
-- OWASP dependency-check Maven plugin `org.owasp:dependency-check-maven` (13.0.0 on Maven Central when this was written): `mvn org.owasp:dependency-check-maven:check`; set `NVD_API_KEY` via CI secret, never in the repo.
+- OWASP dependency-check Maven plugin `org.owasp:dependency-check-maven` (13.0.0 on Maven Central when this was written): `mvn org.owasp:dependency-check-maven:check -DnvdApiKeyEnvironmentVariable=NVD_API_KEY`; set `NVD_API_KEY` via CI secret, never in the repo or as a literal command-line value. The parameter tells the plugin which environment variable to read; exporting the variable alone does not configure it.
 - OSV-Scanner (`osv-scanner scan source -r .`) reads `pom.xml`/Gradle lockfiles.
 
 Report findings with the vulnerable artifact, the fixed version and whether it is direct or transitive; fix by raising the managed version, and run `verify`.

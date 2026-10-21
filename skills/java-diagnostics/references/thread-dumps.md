@@ -4,8 +4,9 @@
 jcmd <pid> Thread.print              # preferred; includes deadlock report
 jcmd <pid> Thread.print -l           # also lists ownable synchronizers/locks
 jstack <pid>                         # equivalent older tool
-kill -3 <pid>                        # prints to the JVM's stdout (no attach needed)
 ```
+
+Do not use `kill -3 <pid>` / SIGQUIT as an unconditional fallback. On Unix, use it only after verifying that the target JVM has its thread-dump SIGQUIT handler installed and that stdout/stderr are captured. Explicitly exclude JVMs started with `-Xrs` / `-XX:+ReduceSignalUsage`, or with unknown/custom signal handling: without the JVM handler, SIGQUIT can terminate the process and produce a core dump. If signal handling cannot be verified, do not send the signal; resolve the `jcmd`/attach permissions instead. See the [JDK launcher `-Xrs` documentation](https://docs.oracle.com/en/java/javase/21/docs/specs/man/java.html) and [Linux signal defaults](https://man7.org/linux/man-pages/man7/signal.7.html).
 
 Take **3 dumps, 5-10 seconds apart**, to see what changes. A single dump is a snapshot, not a trend. Thread dumps include stack frames and thread names, which may contain request data; do not share publicly.
 

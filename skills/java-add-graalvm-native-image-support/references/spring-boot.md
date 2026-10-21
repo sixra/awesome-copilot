@@ -64,5 +64,5 @@ Alternatives: `@RegisterReflectionForBinding(MyDto.class)` on a bean or configur
 3. **Logback**: Spring's AOT supports standard Logback configs (`logback-spring.xml`). Custom Logback components may need reflection hints.
 4. **Conditional beans**: `@Profile`, `@ConditionalOnProperty` and similar are evaluated at **build time** in AOT. Properties that change bean structure must be fixed when building; runtime overrides will not add or remove beans.
 5. **Dynamic proxies / CGLIB**: handled by AOT for Spring components; third-party proxies need `proxy-config` hints.
-6. **Libraries without metadata**: upgrade first; then use the tracing agent (see `reachability-metadata.md`).
+6. **Libraries without metadata**: check for a compatible update, but obtain user approval before upgrading and rerun the JVM baseline afterwards. If staying on current versions, use the tracing agent (see `reachability-metadata.md`).
 7. **Testcontainers / test slices** in native tests: follow the Spring Boot reference for native testing; some tests are not supported natively.

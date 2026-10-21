@@ -55,7 +55,8 @@ Enable only for read-mostly data that is expensive to load, and that this applic
 
 ```properties
 hibernate.cache.use_second_level_cache=true
-hibernate.cache.region.factory_class=jcache      # needs a provider, e.g. Ehcache or Infinispan on the classpath
+# Requires hibernate-jcache and a JCache provider, e.g. Ehcache, on the classpath.
+hibernate.cache.region.factory_class=jcache
 ```
 
 ```java

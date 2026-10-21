@@ -16,8 +16,7 @@ orders.forEach(o -> o.getLines().size());
 
 ```java
 List<Order> orders = em.createQuery(
-    "select o from Order o join fetch o.customer where o.status = :s", Order.class)
-  .setParameter("s", Status.OPEN)
+    "select o from Order o left join fetch o.lines", Order.class)
   .getResultList();
 ```
 

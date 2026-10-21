@@ -31,6 +31,13 @@ Detail lives in `references/`; load only what the project needs:
 
 If the framework is Quarkus, stop here and hand off to the `quarkus-native-and-container` skill. Container builds there need no local GraalVM.
 
+## Scope and JVM baseline
+
+- Adding native support does not authorize a JDK, framework, library, build-tool, or wrapper upgrade. Preserve the existing BOM/parent-managed versions and test conventions; ask before changing versions to solve native compatibility.
+- Run the project's existing JVM build and tests before editing. Record pre-existing failures rather than weakening checks to hide them. Keep the JVM packaging/run path working alongside native support.
+- After any approved dependency or framework change, rerun that JVM baseline before continuing with native builds. Verify the same relevant behavior on both JVM and native paths.
+- Ask before creating or changing CI workflows, adding native CI jobs, or changing runner resources. Suggest commands separately if CI changes were not requested.
+
 ## Step 2: Get a GraalVM toolchain
 
 - **Oracle GraalVM** (free under the GraalVM Free Terms and Conditions) and **GraalVM Community Edition** builds provide `native-image`. Use a release matching the project's Java version (for example, GraalVM for JDK 21 or newer; Spring Boot 3.x/4.x need a Java 17+ baseline, see the Spring reference).
@@ -64,7 +71,7 @@ Native builds are slow and memory hungry (several GB of RAM). Capture the full o
 1. Read the first real error, not the final summary.
 2. Match it against [references/troubleshooting.md](references/troubleshooting.md).
 3. Apply the smallest fix, in this order of preference:
-   1. Upgrade the library or framework to a version with built-in/known native support (check the [reachability metadata repository](https://github.com/oracle/graalvm-reachability-metadata)).
+   1. Check whether a compatible library/framework version has built-in native support (see the [reachability metadata repository](https://github.com/oracle/graalvm-reachability-metadata)). Propose the upgrade; apply it only with user approval and rerun the JVM baseline. If declined, try metadata or framework hints compatible with the current versions.
    2. Use the framework's own mechanism (Spring `RuntimeHints`, Quarkus `@RegisterForReflection`, Micronaut `@Introspected`).
    3. Collect metadata with the tracing agent (see [references/reachability-metadata.md](references/reachability-metadata.md)).
    4. Hand-write metadata under `src/main/resources/META-INF/native-image/<groupId>/<artifactId>/`.
@@ -82,7 +89,7 @@ A successful build is not enough: many problems only appear at runtime.
 
 ## Pitfalls
 
-- Add a native build and native test run to CI with an explicit GraalVM version.
+- Recommend a native build and native test run in CI with an explicit GraalVM version; add or change CI only with user consent.
 - Mockito's default inline mock maker does not work on native image (Mockito 5.0.0 release notes); use the subclass mock maker for native tests.
 - Do not leave `--report-unsupported-elements-at-runtime` or verbose flags in production builds unless justified.
 

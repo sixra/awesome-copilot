@@ -2,13 +2,14 @@
 
 ## SQL logging and statistics
 
-Prefer logger categories to `hibernate.show_sql` (which prints to stdout, unformatted, without parameters):
+Prefer logger categories to `hibernate.show_sql` (which prints to stdout, unformatted, without parameters). Add these elements inside the existing Logback `logback.xml` `<configuration>` (keep its appender and root logger):
 
-```properties
-# logging backend (example: Logback/Log4j2 logger names)
-org.hibernate.SQL=DEBUG
-org.hibernate.orm.jdbc.bind=TRACE        # Hibernate 6+: bound parameter values (older: org.hibernate.type.descriptor.sql.BasicBinder)
+```xml
+<logger name="org.hibernate.SQL" level="DEBUG"/>
+<logger name="org.hibernate.orm.jdbc.bind" level="TRACE"/>
 ```
+
+`org.hibernate.orm.jdbc.bind` is for Hibernate 6+; on Hibernate 5 use `org.hibernate.type.descriptor.sql.BasicBinder`. For Log4j2, configure the same categories with `<Logger name="..." level="..."/>` elements inside `<Loggers>` in `log4j2.xml`; bare category properties in `hibernate.properties` do not configure either backend.
 
 Statistics and slow-query log:
 

@@ -47,7 +47,7 @@ Option A (generated id, recommended pattern):
 
 ```java
 @Override
-public boolean equals(Object o) {
+public final boolean equals(Object o) {
     if (this == o) return true;
     if (o == null) return false;
     Class<?> oClass = o instanceof HibernateProxy p
@@ -56,18 +56,26 @@ public boolean equals(Object o) {
             ? p.getHibernateLazyInitializer().getPersistentClass() : getClass();
     if (thisClass != oClass) return false;                  // proxy-safe, symmetric
     Book other = (Book) o;
-    return getId() != null && getId().equals(other.getId()); // getters: proxies
+    Object thisId = this instanceof HibernateProxy p
+            ? p.getHibernateLazyInitializer().getInternalIdentifier() : getId();
+    Object otherId = other instanceof HibernateProxy p
+            ? p.getHibernateLazyInitializer().getInternalIdentifier() : other.getId();
+    return thisId != null && thisId.equals(otherId);
 }
 
 @Override
-public int hashCode() {
+public final int hashCode() {
     return this instanceof HibernateProxy p
             ? p.getHibernateLazyInitializer().getPersistentClass().hashCode()
             : getClass().hashCode();   // constant per persistent class; stable before/after persist
 }
 ```
 
+Keep both methods `final` so Hibernate does not intercept them and initialize the proxy before the method body runs. Use `getInternalIdentifier()` for proxies: unlike `getIdentifier()` or an intercepted `getId()`, it does not initialize them even with JPA proxy compliance enabled. This is a Hibernate-specific pattern, not a provider-portable JPA recipe.
+
 Constant `hashCode` is fine for entity sets of modest size (hundreds); large in-memory sets of entities are a design smell anyway. `getClass()` on a proxy returns the generated subclass, so both methods resolve the persistent class first (`Hibernate.getClass(x)` does the same but initializes the proxy). The class comparison keeps `equals` symmetric and consistent with `hashCode`; for entity hierarchies where a subclass should equal its parent type, compare against the root entity class instead.
+
+Validate with two distinct transient books (not equal), the same book before/after persist (hash unchanged), and an uninitialized `em.getReference(Book.class, id)` after closing its entity manager. Adding that detached proxy to a `HashSet`, comparing it to a detached book with the same id in both directions, and calling `contains` must not throw or initialize the proxy. Also check zero additional SQL while the proxy is still attached, including with `hibernate.jpa.compliance.proxy=true`.
 
 Option B (business/natural key): compare an immutable, unique attribute (ISBN, email), using getters. Implement `hashCode` on the same field. Mark it `@NaturalId`. Never use mutable fields.
 

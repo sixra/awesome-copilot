@@ -6,7 +6,9 @@ Micronaut performs ahead-of-time processing at compile time, so most native imag
 
 - Maven: `./mvnw package -Dpackaging=native-image` (container build: `./mvnw package -Dpackaging=docker-native`)
 - Gradle: `./gradlew nativeCompile` (container: `./gradlew dockerBuildNative`)
-- Native tests: `./mvnw -Pgraalvm test` or `./gradlew nativeTest`, depending on the generated project
+- Native tests: `./mvnw -Pnative test` or `./gradlew nativeTest`, depending on the generated project
+
+Check the generated project's profiles/tasks and use a compatible GraalVM JDK. In the standard Micronaut parent POM (4.10.0 and 5.0.2), `graalvm` configures annotation processing; `native` binds the Native Build Tools native-test goals. A successful `-Pgraalvm test` alone is not evidence that native tests ran.
 
 The Micronaut Maven/Gradle plugins configure the Native Build Tools plugin for you; do not add it again.
 
@@ -45,6 +47,6 @@ The Micronaut Maven/Gradle plugins configure the Native Build Tools plugin for y
 
 - Use Micronaut's compile-time features (`@Introspected`, `@Serdeable`, `@Client` interfaces) rather than runtime reflection.
 - Netty and HTTP client tuning is a runtime concern; do not change `netty.default.allocator` settings to fix native build errors.
-- Prefer upgrading Micronaut modules to current releases before adding manual metadata.
+- Check whether a compatible Micronaut module update supplies metadata before adding it manually; propose any upgrade for user approval, preserve managed versions, and rerun the JVM baseline afterwards.
 
 Guide: https://docs.micronaut.io/latest/guide/#graal

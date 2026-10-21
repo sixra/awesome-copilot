@@ -27,6 +27,7 @@
 
 ## Cautions
 
+- Dependency/framework upgrades and CI or runner changes require user approval even when suggested above; preserve managed versions and rerun the JVM baseline after dependency changes.
 - `--initialize-at-build-time` is an optimization with risks; apply it to named classes, not broad packages, unless the framework documents it.
 - `--report-unsupported-elements-at-runtime` only delays failures; use it for diagnosis, not as a fix.
 - Native binaries are platform-specific; build on the target OS/architecture (or in a matching container).
