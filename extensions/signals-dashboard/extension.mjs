@@ -1586,7 +1586,7 @@ const session = await joinSession({
             open: async (ctx) => {
                 const workshopDir = ctx.input?.workshopDir || process.cwd();
                 let entry = servers.get(ctx.instanceId);
-                const launchPreferences = resolveDeskLaunchPreferences(ctx.input ?? {}, entry?.launchPreferences);
+                const launchPreferences = resolveDeskLaunchPreferences(ctx.input ?? {});
                 if (!entry) {
                     entry = await startServer(ctx.instanceId, workshopDir);
                     entry.workshopDir = workshopDir;
