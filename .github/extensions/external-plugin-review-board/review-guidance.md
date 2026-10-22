@@ -26,6 +26,9 @@ submissions before reviewing (see "Calibrate" below).
   broadly relevant, neutrally framed plugins that are clear about their limitations are welcome.
 - Marketing pitches for brand-new products, often vibe-coded dumps (repo days old, 0 stars, few commits) —
   "This is primarily a marketing push for an external service."
+- Free skills as an on-ramp to the vendor's paid/credit-based MCP or connector: vendor LICENSE or
+  `metadata.author`, `mcp add` setup commands pointing at the vendor's API, UTM/referral links, or an upstream
+  README that markets the free content as a funnel — "we're not a marketing channel".
 - Crypto / payments / finance niches, or otherwise niche problem spaces — "This is not a fit for the repo."
   / "a bit too niche a problem space for this repo."
 - Duplicates of built-in Copilot features: memory ("Copilot has a built-in memory system"), tool-use guards
@@ -69,3 +72,16 @@ and read the `/approve` / `/reject` comments on the most recent ones.
 - `probably-reject` — likely reject, but something specific deserves a quick maintainer look.
 - `needs-review` — genuine judgement call.
 - `accept` — fits the approval pattern.
+
+## Ownership labels
+
+Intake labels submissions by who owns the plugin repository:
+
+- `first party` — owned by a Microsoft/GitHub organization (Microsoft, GitHub, Azure, dotnet, MicrosoftDocs,
+  microsoftgraph). The board fast-tracks these straight to `accept` without an AI review. If a maintainer
+  explicitly moves one to `Unreviewed`, that opts it out of the fast-track: review it using the same procedure,
+  maintainer decision pattern, and recommendation buckets as any other submission. Assess its repo fit,
+  usefulness, duplication, and content quality on their merits; first-party ownership is not a reason to
+  recommend `accept`.
+- `third party` — owned by another organization. This is a signal only; apply the normal decision pattern.
+- No ownership label — owned by a user account (or ownership couldn't be determined).
