@@ -42,6 +42,8 @@ type CatalogResourceSizeControlProps<T extends number> = {
  * adds the menu button keyboard pattern on top: opening moves focus to the
  * selected size, arrow keys and Home/End move between sizes, Escape closes the
  * menu and returns focus to the trigger, and Tab or a click outside closes it.
+ * Choosing a size closes the menu and lets go of focus, so the trigger does not
+ * stay highlighted and Enter, Space, and the arrow keys go back to the page.
  */
 export function CatalogResourceSizeControl<T extends number>({
   ariaLabel,
@@ -93,16 +95,9 @@ export function CatalogResourceSizeControl<T extends number>({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDetailsElement>) => {
-    const menu = event.currentTarget;
-    if (!menu.open) {
-      // Arrow keys open the menu from the trigger, as they do on a select.
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        event.preventDefault();
-        menu.open = true;
-        focusSelectedItem();
-      }
-      return;
-    }
+    // Enter or Space on the trigger opens the menu. While it is closed, leave
+    // the arrow keys to scroll the page, as they do on the Sort by menu.
+    if (!event.currentTarget.open) return;
 
     const items = menuItems();
     const current = items.indexOf(document.activeElement as HTMLButtonElement);
@@ -166,7 +161,11 @@ export function CatalogResourceSizeControl<T extends number>({
               )}
               onClick={() => {
                 onChange(option.value);
+                // A choice is the end of the menu, so let go of focus: the
+                // trigger stops looking active and keys go back to the page.
+                // Focusing it first keeps Tab moving on from the menu.
                 closeMenu(true);
+                triggerRef.current?.blur();
               }}
             >
               {option.label}
