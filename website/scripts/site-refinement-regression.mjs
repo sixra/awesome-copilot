@@ -299,50 +299,48 @@ try {
       assert.equal(iconArtwork(await icon.evaluate((element) => element.innerHTML)), iconArtwork(cardIcons[index]), `${catalog}: reuse the catalog artwork exactly`);
     }
     results.push("All six homepage icons match their catalog artwork");
-    for (const prefix of ["", "/ko-kr"]) {
-      await page.goto(`${baseUrl}${prefix}/extension/pr-artifact-explorer/`);
-      const images = page.locator("main img");
-      assert.ok(await images.count() >= 2, "Preview and embedded README image are present");
-      await page.waitForFunction(() => {
-        const images = [...document.querySelectorAll("main img")];
-        return images.length >= 2 && images.every((image) => image.complete && image.naturalWidth > 0);
-      });
-      const sources = await images.evaluateAll((elements) => elements.map((image) => image.src));
-      assert.ok(sources.every((src) => !src.includes("/extension/pr-artifact-explorer/assets/")));
-      for (const width of [1440, 390]) {
-        await page.setViewportSize({ width, height: 900 });
-        for (const colorScheme of ["light", "dark"]) {
-          await page.emulateMedia({ colorScheme });
-          await page.evaluate(() => document.fonts.ready);
-          await page.waitForFunction(() =>
-            [...document.querySelectorAll("main img")].every((image) => image.complete && image.naturalWidth > 0),
-          );
-          const spacing = await page.locator("img[data-markdown-block-image]").evaluate((image) => {
-            const block = image.closest("picture") ?? image;
-            const before = block.previousElementSibling.getBoundingClientRect();
-            const after = block.nextElementSibling.getBoundingClientRect();
-            const bounds = image.getBoundingClientRect();
-            const style = getComputedStyle(image);
-            return {
-              top: bounds.top - before.bottom,
-              bottom: after.top - bounds.bottom,
-              marginTop: style.marginTop,
-              marginBottom: style.marginBottom,
-              width: bounds.width,
-              available: image.closest("[data-reading-content]").getBoundingClientRect().width,
-            };
-          });
-          assert.equal(spacing.marginTop, "24px");
-          assert.equal(spacing.marginBottom, "24px");
-          assert.ok(spacing.top >= 24 && spacing.bottom >= 24,
-            `${prefix} ${width}px ${colorScheme}: rendered image separates adjacent content: ${JSON.stringify(spacing)}`);
-          assert.ok(spacing.width <= spacing.available, "Embedded images stay responsive");
-          assert.equal(await page.locator("main img:not([data-markdown-block-image])").count(), 1,
-            "The dedicated preview gallery keeps its own layout");
-        }
+    await page.goto(`${baseUrl}/extension/pr-artifact-explorer/`);
+    const images = page.locator("main img");
+    assert.ok(await images.count() >= 2, "Preview and embedded README image are present");
+    await page.waitForFunction(() => {
+      const images = [...document.querySelectorAll("main img")];
+      return images.length >= 2 && images.every((image) => image.complete && image.naturalWidth > 0);
+    });
+    const sources = await images.evaluateAll((elements) => elements.map((image) => image.src));
+    assert.ok(sources.every((src) => !src.includes("/extension/pr-artifact-explorer/assets/")));
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const colorScheme of ["light", "dark"]) {
+        await page.emulateMedia({ colorScheme });
+        await page.evaluate(() => document.fonts.ready);
+        await page.waitForFunction(() =>
+          [...document.querySelectorAll("main img")].every((image) => image.complete && image.naturalWidth > 0),
+        );
+        const spacing = await page.locator("img[data-markdown-block-image]").evaluate((image) => {
+          const block = image.closest("picture") ?? image;
+          const before = block.previousElementSibling.getBoundingClientRect();
+          const after = block.nextElementSibling.getBoundingClientRect();
+          const bounds = image.getBoundingClientRect();
+          const style = getComputedStyle(image);
+          return {
+            top: bounds.top - before.bottom,
+            bottom: after.top - bounds.bottom,
+            marginTop: style.marginTop,
+            marginBottom: style.marginBottom,
+            width: bounds.width,
+            available: image.closest("[data-reading-content]").getBoundingClientRect().width,
+          };
+        });
+        assert.equal(spacing.marginTop, "24px");
+        assert.equal(spacing.marginBottom, "24px");
+        assert.ok(spacing.top >= 24 && spacing.bottom >= 24,
+          `${width}px ${colorScheme}: rendered image separates adjacent content: ${JSON.stringify(spacing)}`);
+        assert.ok(spacing.width <= spacing.available, "Embedded images stay responsive");
+        assert.equal(await page.locator("main img:not([data-markdown-block-image])").count(), 1,
+          "The dedicated preview gallery keeps its own layout");
       }
-      results.push(`${prefix || "/"}: preview and README images load`);
     }
+    results.push("Preview and README images load on the canonical extension route");
     await page.goto(baseUrl);
     await page.emulateMedia({ forcedColors: "active" });
     assert.equal(

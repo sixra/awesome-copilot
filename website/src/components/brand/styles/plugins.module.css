@@ -1137,7 +1137,7 @@
 
 @media screen and (max-width: 119.99rem) {
   /* Section-framed bands (catalog + CTA): drop the native 1280 cap. */
-  :global([class*="Section__container"]) {
+  .page :global([class*="Section__container"]) {
     max-width: none;
   }
 

@@ -132,11 +132,31 @@ test("the real Spanish workshop remains searchable with its language context", a
   }
 });
 
+test("localized routes serve real translations without English fallback pages", async () => {
+  const page = await browser.newPage();
+  try {
+    for (const locale of ["es-es", "ja-jp", "ko-kr", "pt-br", "zh-cn"]) {
+      const translated = await page.request.get(`${base}/${locale}/learning-hub/copilot-workshops/app/`);
+      assert.equal(translated.status(), 200, `${locale}: translated workshop remains available`);
+      assert.match(await translated.text(), new RegExp(`<html\\b[^>]*\\blang="${locale}"`));
+      for (const route of [
+        "/", "/plugins/", "/plugin/pr-artifact-explorer/", "/extension/pr-artifact-explorer/",
+        "/learning-hub/github-copilot-app/", "/learning-hub/cookbook/",
+      ]) {
+        const response = await page.request.get(`${base}/${locale}${route}`);
+        assert.equal(response.status(), 404, `${locale}${route}: no generated English fallback`);
+      }
+    }
+  } finally {
+    await page.close();
+  }
+});
+
 for (const withIndex of [true, false]) {
   for (const width of [1440, 390]) {
     for (const [route, language, query] of [
       ["/es-es/learning-hub/copilot-workshops/app/", "es-es", "Copilot"],
-      ["/ko-kr/extension/pr-artifact-explorer/", "en", "Artifact Explorer"],
+      ["/extension/pr-artifact-explorer/", "en", "Artifact Explorer"],
     ]) {
       test(`content-language search: ${language}, ${width}px, Pagefind ${withIndex}`, async () => {
         const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });

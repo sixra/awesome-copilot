@@ -37,6 +37,8 @@ rest, hover, and pressed states instead of fixed gray fills.
 The resource grid stays single-column below 768px, uses two columns up to
 1280px, then three columns. Nested card padding decreases on narrower layouts
 so full CTA labels remain on one line without shrinking their text.
+Catalog frame and homepage card overrides are scoped more specifically than
+Primer defaults so padding and transitions do not depend on CSS chunk order.
 All pages share a centered maximum content width of 1280px. Responsive gutters
 remain on smaller viewports; intermediate desktop widths cannot grow beyond
 the same cap. Catalogs no longer break out 8px past each side of the frame.
@@ -129,8 +131,9 @@ These use the same `SITE_BASE_URL` setting and default as the landing-page regre
 ## Search locale
 
 Both catalog and Pagefind results are scoped to the rendered page's `<html lang>`,
-before grouping and result limits. English fallback pages search English even
-when their URL has another locale prefix. Real translated pages do not mix in
+before grouping and result limits. English pages use unprefixed URLs; only explicit
+Learning Hub translations receive locale prefixes, without generated English
+fallback pages. Real translated pages do not mix in
 English catalog records; without Pagefind, they show no results rather than
 silently searching another language.
 Each query inspects at most 48 Pagefind records, including locale misses and
@@ -139,6 +142,8 @@ duplicates; the returned-result limit still applies after filtering and merging.
 Run `node --test website/scripts/search.test.mjs` for adapter coverage and
 `node --test website/scripts/search-browser.test.mjs` after a production build
 for desktop/mobile locale and search interaction coverage.
+The browser suite also verifies translated workshop routes and the absence of
+locale-prefixed English fallback pages.
 
 ## Embedded markdown images
 

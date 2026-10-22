@@ -564,7 +564,7 @@
 
 /* Outline first, then make room for the label, then fade it in without sliding.
    On exit the label fades out before its space collapses. */
-.cardGridItem .resourceCard :global([class*="Card__action--arrowOnly"]) {
+.page .cardGridItem .resourceCard :global([class*="Card__action--arrowOnly"]) {
   max-inline-size: 100%;
   padding: var(--base-size-4);
   column-gap: 0;
@@ -575,7 +575,7 @@
     padding-inline 280ms ease-in-out 100ms;
 }
 
-.cardGridItem .resourceCard :global([class*="Card__actionLabelClip"]) {
+.page .cardGridItem .resourceCard :global([class*="Card__actionLabelClip"]) {
   flex: 0 1 auto;
   max-inline-size: 0;
   margin-inline: 0;
@@ -585,17 +585,17 @@
   transition: opacity 100ms ease-out, max-inline-size 280ms ease-in-out 100ms;
 }
 
-.cardGridItem .resourceCard :global([class*="Card--expandableArrow"]) {
+.page .cardGridItem .resourceCard :global([class*="Card--expandableArrow"]) {
   transition: transform 280ms ease-in-out 100ms;
 }
 
-.cardGridItem .resourceCard:is(:hover, :focus-within)
+.page .cardGridItem .resourceCard:is(:hover, :focus-within)
   :global([class*="Card__action--arrowOnly"]) {
   padding-inline-start: var(--base-size-24);
   column-gap: var(--base-size-8);
 }
 
-.cardGridItem .resourceCard:is(:hover, :focus-within)
+.page .cardGridItem .resourceCard:is(:hover, :focus-within)
   :global([class*="Card__actionLabelClip"]) {
   max-inline-size: 18rem;
   opacity: 1;
@@ -603,13 +603,13 @@
 }
 
 @media (hover: none), (max-width: 47.99rem) {
-  .cardGridItem .resourceCard :global([class*="Card__action--arrowOnly"]) {
+  .page .cardGridItem .resourceCard :global([class*="Card__action--arrowOnly"]) {
     padding-inline-start: var(--base-size-24);
     column-gap: var(--base-size-8);
     border-color: var(--brand-color-border-default);
   }
 
-  .cardGridItem .resourceCard :global([class*="Card__actionLabelClip"]) {
+  .page .cardGridItem .resourceCard :global([class*="Card__actionLabelClip"]) {
     max-inline-size: 18rem;
     opacity: 1;
   }
@@ -784,13 +784,13 @@
     --card-grid-inset: var(--base-size-12);
   }
 
-  .resourceCard {
+  .cardGridItem .resourceCard {
     padding: var(--base-size-16);
   }
 }
 
 @media screen and (min-width: 48rem) and (max-width: 63.99rem) {
-  .resourceCard {
+  .cardGridItem .resourceCard {
     padding-inline: var(--base-size-8);
   }
 }
@@ -800,7 +800,7 @@
     --card-grid-inset: var(--base-size-8);
   }
 
-  .resourceCard {
+  .cardGridItem .resourceCard {
     padding: var(--base-size-12) var(--base-size-8);
   }
 
@@ -810,7 +810,7 @@
 }
 
 @media screen and (max-width: 22.49rem) {
-  .resourceCard {
+  .cardGridItem .resourceCard {
     padding-inline: 0;
   }
 }
