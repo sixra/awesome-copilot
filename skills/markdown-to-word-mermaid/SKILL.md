@@ -114,7 +114,6 @@ Before reporting completion:
 - If Word or the actual renderer was unavailable, state which checks were not performed.
 
 For contribution scope, evaluation cases, and a draft submission description, see [references/publication.md](references/publication.md). That file is maintainer guidance, not permission to publish.
-scope notes, evaluation cases, and verification criteria, see [references/publication.md](references/publication.md)
 ## Gotchas
 
 - `mmdc.cmd` needs Windows command handling; pass its path with `--mermaid-cli` rather than rewriting the script.
