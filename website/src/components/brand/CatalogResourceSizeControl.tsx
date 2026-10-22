@@ -15,12 +15,12 @@ export type CatalogResourceSizeOption<T extends number> = {
 
 export const CATALOG_RESOURCE_SIZE_OPTIONS = [
   { value: 6, label: "6" },
-  { value: 25, label: "25" },
+  { value: 20, label: "20" },
   { value: 50, label: "50" },
   { value: 100, label: "100" },
 ] as const satisfies readonly CatalogResourceSizeOption<number>[];
 
-/** A page size the catalogs offer: 6, 25, 50, or 100 items. */
+/** A page size the catalogs offer: 6, 20, 50, or 100 items. */
 export type CatalogResourceSize =
   (typeof CATALOG_RESOURCE_SIZE_OPTIONS)[number]["value"];
 
