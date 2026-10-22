@@ -18,6 +18,7 @@ import { clsx } from "clsx";
 import React, { useMemo, useState } from "react";
 
 import { PageShell } from "./PageShell";
+import { useCatalogPageFocus } from "./useCatalogPageFocus";
 import { CatalogSortControl, CATALOG_SORT_OPTIONS } from "./CatalogSortControl";
 import {
   CatalogResourceSizeControl,
@@ -111,6 +112,7 @@ export function SkillsCatalog({
     DEFAULT_CATALOG_RESOURCE_SIZE,
   );
   const [currentPage, setCurrentPage] = useState(1);
+  const focusCatalogPage = useCatalogPageFocus();
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
   const [expandedGroups, setExpandedGroups] = useState<
@@ -190,7 +192,7 @@ export function SkillsCatalog({
       contributorsTotal={contributorsTotal}
       searchAriaLabel="Search skills"
     >
-      <Box className={styles.hero}>
+      <Box className={clsx(styles.hero, "heading-texture")}>
         <div className={styles.heroInner}>
           <span className={styles.heroIcon} aria-hidden="true">
             <SkillsIcon size={36} />
@@ -205,12 +207,7 @@ export function SkillsCatalog({
         </div>
       </Box>
 
-      <Section
-        id="catalog"
-        tabIndex={-1}
-        paddingBlockStart="none"
-        paddingBlockEnd="none"
-      >
+      <Section id="catalog" tabIndex={-1} paddingBlockStart="none" paddingBlockEnd="none">
         <Box className={styles.catalog}>
           <aside className={styles.filterNav} aria-label="Filter skills">
             <button
@@ -403,7 +400,7 @@ export function SkillsCatalog({
               e.preventDefault();
               if (n === page) return;
               setCurrentPage(n);
-              scrollToCatalogStart();
+              focusCatalogPage();
             }}
           />
         </Stack>

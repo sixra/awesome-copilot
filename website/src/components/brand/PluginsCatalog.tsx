@@ -32,6 +32,7 @@ import { pageHref } from "./pageHref";
 import type { SearchItem } from "./searchIndex";
 import styles from "./styles/plugins.module.css";
 import { scrollToCatalogStart } from "./scrollBehavior";
+import { useCatalogPageFocus } from "./useCatalogPageFocus";
 
 const CONTRIBUTE_URL =
   "https://github.com/github/awesome-copilot/blob/main/docs/README.plugins.md#how-to-contribute";
@@ -135,6 +136,7 @@ export function PluginsCatalog({
     DEFAULT_CATALOG_RESOURCE_SIZE,
   );
   const [currentPage, setCurrentPage] = useState(1);
+  const focusCatalogPage = useCatalogPageFocus();
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
@@ -214,7 +216,7 @@ export function PluginsCatalog({
       contributorsTotal={contributorsTotal}
       searchAriaLabel="Search plugins"
     >
-      <Box className={styles.hero}>
+      <Box className={clsx(styles.hero, "heading-texture")}>
         <div className={styles.heroInner}>
           <span className={styles.heroIcon} aria-hidden="true">
             <PluginsIcon size={36} />
@@ -422,7 +424,7 @@ export function PluginsCatalog({
               e.preventDefault();
               if (n === page) return;
               setCurrentPage(n);
-              scrollToCatalogStart();
+              focusCatalogPage();
             }}
           />
         </Stack>

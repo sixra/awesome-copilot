@@ -32,6 +32,7 @@ import {
 import { DuckIcon } from "./DuckIcon";
 import { LearningHubIcon } from "./LearningHubIcon";
 import { PageShell } from "./PageShell";
+import { useCatalogPageFocus } from "./useCatalogPageFocus";
 import { ScrambleText } from "./ScrambleText";
 import { pageHref } from "./pageHref";
 import { scrollToCatalogStart } from "./scrollBehavior";
@@ -243,6 +244,7 @@ function LearningHubIndexBody({
 }) {
   const { colorMode } = useTheme();
   const [currentPage, setCurrentPage] = useState(1);
+  const focusCatalogPage = useCatalogPageFocus();
   const [searchTerm, setSearchTerm] = useState("");
   const [heroSearchFocused, setHeroSearchFocused] = useState(false);
   const [heroActiveIndex, setHeroActiveIndex] = useState(-1);
@@ -433,7 +435,7 @@ function LearningHubIndexBody({
 
   return (
     <>
-      <Box className={styles.hero}>
+      <Box className={clsx(styles.hero, "heading-texture")}>
         <div className={styles.heroInner}>
           <div className={styles.heroTop}>
             <span className={styles.heroIcon} aria-hidden="true">
@@ -876,7 +878,7 @@ function LearningHubIndexBody({
               e.preventDefault();
               if (n === page) return;
               setCurrentPage(n);
-              scrollToCatalogStart();
+              focusCatalogPage();
             }}
           />
         </Stack>
