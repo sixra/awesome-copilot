@@ -475,14 +475,16 @@ async function launchDeskConsole(
     }
     if (process.platform === "darwin") {
         const osascript = "/usr/bin/osascript";
-        if (!isExecutableFile(osascript)) return false;
+        const shell = "/bin/sh";
+        if (!isExecutableFile(osascript) || !isExecutableFile(shell)) return false;
         // macOS: `open` can't inject a command, so drive Terminal via AppleScript
         // to cd into the desk and exec the agent. Each argv element is POSIX
         // single-quoted so the shell can't reinterpret it, and osascript itself
         // is spawned via argv (no shell).
-        const envPrefix = posixLocalDelegationEnvPrefix(effective);
-        const line = "cd " + shSingleQuote(deskPath) + " && " + envPrefix + "exec " +
+        const command = posixLocalDelegationEnvPrefix(effective) + "exec " +
             run.map(shSingleQuote).join(" ");
+        const line = "cd " + shSingleQuote(deskPath) + " && exec " +
+            [shell, "-c", command].map(shSingleQuote).join(" ");
         const script = 'tell application "Terminal"\n' +
             "  activate\n" +
             "  do script " + osaStringLiteral(line) + "\n" +
@@ -491,8 +493,9 @@ async function launchDeskConsole(
     }
     // Clear state inside the terminal too: an existing terminal server may
     // contribute an environment different from the sanitized spawn environment.
-    const shell = resolveOnPath("sh", { excludedRoot: workshopDir });
-    if (!shell) return false;
+    // Preserve the invocation name: /bin/sh may be a BusyBox applet symlink.
+    const shell = "/bin/sh";
+    if (!isExecutableFile(shell)) return false;
     const linuxRun = [shell, "-c", posixLocalDelegationEnvPrefix(effective)
         + "exec " + run.map(shSingleQuote).join(" ")];
     const linuxTerms = [
@@ -1548,7 +1551,12 @@ const session = await joinSession({
                         const profileInput = ctx.input.profile || DEFAULT_DESK_PROFILE;
                         if (!isDeskProfile(profileInput)) return { error: "Invalid desk profile" };
                         const profile = normalizeDeskProfile(profileInput);
-                        const launchPreferences = resolveDeskLaunchPreferences(ctx.input, entry.launchPreferences);
+                        let launchPreferences;
+                        try {
+                            launchPreferences = resolveDeskLaunchPreferences(ctx.input, entry.launchPreferences);
+                        } catch (error) {
+                            return { error: error.message };
+                        }
                         const preferenceInput = ctx.input.localDelegation
                             ?? await readLocalDelegationPreference(entry.workshopDir);
                         const preference = normalizeLocalDelegationPreference(preferenceInput, "off");

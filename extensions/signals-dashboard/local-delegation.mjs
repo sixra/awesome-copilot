@@ -137,7 +137,16 @@ export function windowsLocalDelegationCmdPrefix(localDelegationEffective = false
 }
 
 export function posixLocalDelegationEnvPrefix(localDelegationEffective = false) {
-    return `unset ${PARENT_SESSION_ENV_VARS.join(" ")} ${LOCAL_DELEGATION_ENV}; `
+    const names = [...PARENT_SESSION_ENV_VARS, LOCAL_DELEGATION_ENV]
+        .map((name) => name.replace(/[A-Z]/g, (letter) => `[${letter}${letter.toLowerCase()}]`))
+        .join("|");
+    // Read POSIX export output without evaluating values. A here-document keeps
+    // unsets in this shell, not a pipeline subshell, and avoids word splitting.
+    return "while IFS='=' read -r _workshop_env_name _workshop_env_value; do "
+        + `case "\${_workshop_env_name#export }" in ${names}) `
+        + 'unset "${_workshop_env_name#export }";; esac; done <<WORKSHOP_DESK_ENV\n'
+        + "$(export -p)\nWORKSHOP_DESK_ENV\n"
+        + "unset _workshop_env_name _workshop_env_value; "
         + (localDelegationEffective ? `export ${LOCAL_DELEGATION_ENV}=enabled; ` : "");
 }
 

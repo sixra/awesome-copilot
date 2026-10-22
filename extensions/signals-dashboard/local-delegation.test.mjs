@@ -202,7 +202,7 @@ test("launch env removes parent session state case-insensitively without mutatin
     assert.equal(base.workshop_local_delegation, "enabled");
 });
 
-test("terminal commands clear inherited session state even when the terminal supplies a stale env", (t) => {
+test("terminal commands launch from clean and mixed-case stale environments", (t) => {
     const root = mkdtempSync(join(tmpdir(), "workshop session (probe)-"));
     t.after(() => rmSync(root, { recursive: true, force: true }));
     const probe = join(root, "probe.mjs");
@@ -216,34 +216,38 @@ test("terminal commands clear inherited session state even when the terminal sup
             Object.entries(process.env).filter(([key]) => names.includes(key.toLowerCase()))
         )));
     `);
-    const env = { ...process.env };
-    const tainted = Object.fromEntries(Object.entries({
+    const cleanEnv = buildLocalDelegationLaunchEnv(process.env);
+    const tainted = {
+        AGENCY_SESSION_ID: "parent-uppercase",
         Agency_Session_Id: "parent",
         AGENCY_LOG_SESSION_DIR: "parent-logs",
+        agency_log_session_dir: "parent-logs",
         agency_session_subprocess: "1",
         Copilot_Agent_Session_Id: "parent",
         WORKSHOP_LOCAL_DELEGATION: "stale",
-    }).map(([key, value]) => [process.platform === "win32" ? key : key.toUpperCase(), value]));
-    for (const key of Object.keys(env)) {
-        if (Object.keys(tainted).some((name) => name.toLowerCase() === key.toLowerCase())) delete env[key];
-    }
-    Object.assign(env, tainted);
-    for (const effective of [false, true]) {
-        const command = process.platform === "win32"
-            ? windowsLocalDelegationCmdPrefix(effective)
-                + [process.execPath, probe].map(quoteWindowsCmdArgument).join(" ")
-            : posixLocalDelegationEnvPrefix(effective)
-                + [process.execPath, probe].map((arg) => `'${arg.replaceAll("'", "'\\''")}'`).join(" ");
-        const shell = process.platform === "win32"
-            ? join(process.env.SystemRoot, "System32", "cmd.exe") : "/bin/sh";
-        const args = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command];
-        const result = spawnSync(shell, args, {
-            env, encoding: "utf8", windowsHide: true,
-            windowsVerbatimArguments: process.platform === "win32", timeout: 10000,
-        });
-        assert.equal(result.error, undefined);
-        assert.equal(result.status, 0, result.stderr);
-        assert.deepEqual(JSON.parse(result.stdout), effective ? { WORKSHOP_LOCAL_DELEGATION: "enabled" } : {});
+        workshop_local_delegation: "stale",
+    };
+    for (const stale of [false, true]) {
+        for (const effective of [false, true]) {
+            const command = process.platform === "win32"
+                ? windowsLocalDelegationCmdPrefix(effective)
+                    + [process.execPath, probe].map(quoteWindowsCmdArgument).join(" ")
+                : posixLocalDelegationEnvPrefix(effective)
+                    + [process.execPath, probe].map((arg) => `'${arg.replaceAll("'", "'\\''")}'`).join(" ");
+            const shell = process.platform === "win32"
+                ? join(process.env.SystemRoot, "System32", "cmd.exe") : "/bin/sh";
+            const args = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command];
+            const result = spawnSync(shell, args, {
+                env: { ...cleanEnv, ...(stale ? tainted : {}) },
+                encoding: "utf8", windowsHide: true,
+                windowsVerbatimArguments: process.platform === "win32", timeout: 10000,
+            });
+            const label = `stale=${stale}, localDelegation=${effective}`;
+            assert.equal(result.error, undefined, label);
+            assert.equal(result.status, 0, `${label}: ${result.stderr}`);
+            assert.deepEqual(JSON.parse(result.stdout),
+                effective ? { WORKSHOP_LOCAL_DELEGATION: "enabled" } : {}, label);
+        }
     }
 });
 
