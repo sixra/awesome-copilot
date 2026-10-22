@@ -535,7 +535,12 @@ def _extract_frontmatter(markdown_text: str) -> tuple[str | None, str]:
     if closing_index is None:
         return None, markdown_text
 
-    frontmatter = "\n".join(lines[1:closing_index])
+    metadata_lines = lines[1:closing_index]
+    first_metadata_line = next((line.strip() for line in metadata_lines if line.strip()), "")
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_-]*\s*:", first_metadata_line):
+        return None, markdown_text
+
+    frontmatter = "\n".join(metadata_lines)
     title_match = re.search(r"(?m)^title:\s*(.*?)\s*$", frontmatter)
     title = title_match.group(1).strip("\"'") if title_match else None
     body = "\n".join(lines[closing_index + 1 :])

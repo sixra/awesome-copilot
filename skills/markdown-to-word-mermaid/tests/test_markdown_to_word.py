@@ -42,6 +42,17 @@ def png_data() -> bytes:
 
 
 class MarkdownToWordTests(unittest.TestCase):
+    def test_thematic_breaks_do_not_strip_document_content(self) -> None:
+        markdown = (
+            "---\n# Design\n\n```mermaid\nflowchart LR\nA --> B\n```\n\n"
+            "---\nRemaining text\n"
+        )
+
+        title, body = markdown_to_word._extract_frontmatter(markdown)
+
+        self.assertIsNone(title)
+        self.assertEqual(body, markdown)
+
     def test_custom_font_and_multiple_svg_relationships(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
