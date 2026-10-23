@@ -40,8 +40,27 @@ async function startReview(number, id, instanceId, guidance = "") {
     }
 }
 
+const resourceCache = new Map();
+const MAX_RESOURCE_CHARS = 200_000;
+
+async function readResource({ number, id, path: file }) {
+    const item = store.item(number, id);
+    if (!item.resources.some((resource) => resource.path === file)) throw new Error("That file is not part of this duplicate group.");
+    const cached = resourceCache.get(file);
+    if (cached && Date.now() - cached.at < 10 * 60_000) return cached.value;
+    const content = await github.content(file);
+    const value = {
+        path: file, ref: "main",
+        content: content.slice(0, MAX_RESOURCE_CHARS),
+        truncated: content.length > MAX_RESOURCE_CHARS,
+    };
+    resourceCache.set(file, { at: Date.now(), value });
+    return value;
+}
+
 const operations = {
     reports: () => github.list(),
+    resource: readResource,
     import: async ({ number }) => store.import(await github.get(number)),
     select: ({ number }) => store.select(number),
     update: ({ number, id, ...changes }) => store.update(number, id, changes),
@@ -75,11 +94,14 @@ session = await joinSession({
             action("get_board", "Read local reports, groups, decisions, AI reviews, and publication receipts.", object(), () => store.snapshot()),
             action("list_reports", "List duplicate-review report issues without importing or changing them.", object(), operations.reports),
             action("import_report", "Read a report from GitHub; preserve unchanged local decisions and flag changed groups.", object({ number: identity.number }, ["number"]), operations.import),
+            action("read_resource", "Read a resource file in a group from the main branch, without changing GitHub or local state.", object({
+                ...identity, path: { type: "string", minLength: 1, maxLength: 300 },
+            }, ["number", "id", "path"]), operations.resource),
             action("select_report", "Switch to a previously imported local report, without accessing GitHub.", object({ number: identity.number }, ["number"]), operations.select),
             action("update_group", "Save a local decision, note, and tracking-issue draft. Never writes to GitHub.", object({
                 ...identity, column: { type: "string", enum: COLUMNS.map((column) => column.id) },
-                note: { type: "string", maxLength: 8000 }, draft,
-            }, ["number", "id", "column", "note", "draft"]), operations.update),
+                note: { type: "string", maxLength: 8000 }, draft, expectedRevision: { type: "string", minLength: 1 },
+            }, ["number", "id", "column", "note", "draft", "expectedRevision"]), operations.update),
             action("start_review", "Dispatch a read-only comparison through a background agent only; never review in the foreground.", object({
                 ...identity, guidance: { type: "string", maxLength: 4000 },
             }, ["number", "id"]), (input, ctx) => startReview(input.number, input.id, ctx.instanceId, input.guidance)),

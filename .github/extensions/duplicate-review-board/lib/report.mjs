@@ -3,7 +3,62 @@ import { createHash } from "node:crypto";
 export const digest = (text) => createHash("sha256").update(text).digest("hex");
 
 export function resourcePath(value) {
-    return /^(?:agents\/[a-z0-9.-]+\.agent\.md|instructions\/[a-z0-9.-]+\.instructions\.md|skills\/[a-z0-9-]+(?:\/SKILL\.md)?)$/.test(value);
+    return /^(?:agents\/[A-Za-z0-9._-]+\.agent\.md|instructions\/[a-z0-9.-]+\.instructions\.md|skills\/[a-z0-9-]+(?:\/SKILL\.md)?)$/.test(value);
+}
+
+function splitTableRow(line) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return null;
+    const cells = [];
+    let cell = "";
+    for (let index = 1; index < trimmed.length - 1; index++) {
+        const character = trimmed[index];
+        if (character === "|") {
+            let slashes = 0;
+            for (let previous = index - 1; previous >= 0 && trimmed[previous] === "\\"; previous--) slashes++;
+            if (slashes % 2 === 0) {
+                cells.push(cell.trim());
+                cell = "";
+                continue;
+            }
+        }
+        cell += character;
+    }
+    cells.push(cell.trim());
+    return cells;
+}
+
+function resourceTable(section, groupNumber) {
+    const lines = section.split(/\r?\n/);
+    const headers = lines.flatMap((line, index) => {
+        const cells = splitTableRow(line);
+        return cells?.length === 3 && cells[0].toLowerCase() === "resource" &&
+            cells[1].toLowerCase() === "type" && cells[2].toLowerCase() === "description" ? [index] : [];
+    });
+    if (headers.length !== 1) {
+        throw new Error(`Group ${groupNumber} must have exactly one resource table. Nothing was imported.`);
+    }
+    const headerIndex = headers[0];
+    const separator = splitTableRow(lines[headerIndex + 1] ?? "");
+    if (!separator || separator.length !== 3 || separator.some((cell) => !/^:?-{3,}:?$/.test(cell))) {
+        throw new Error(`Group ${groupNumber} has a malformed resource table. Nothing was imported.`);
+    }
+
+    const resources = [];
+    for (let index = headerIndex + 2; index < lines.length; index++) {
+        const line = lines[index];
+        if (!line.trim().startsWith("|")) break;
+        const cells = splitTableRow(line);
+        if (!cells || cells.length !== 3) {
+            throw new Error(`Group ${groupNumber} has an unsupported resource table. Nothing was imported.`);
+        }
+        const path = /^`([^`]+)`$/.exec(cells[0])?.[1];
+        if (!path || !cells[1]) {
+            throw new Error(`Group ${groupNumber} has an unsupported resource table. Nothing was imported.`);
+        }
+        resources.push({ path, type: cells[1], description: cells[2] });
+    }
+    return resources;
 }
 
 /** Parse only the detector's group sections; never infer groups from prose. */
@@ -16,8 +71,7 @@ export function parseReport(body) {
         const start = heading.index;
         const end = headings[index + 1]?.index ?? body.length;
         const section = body.slice(start, end);
-        const resources = [...section.matchAll(/^\|[ \t]*`([^`]+)`[ \t]*\|[ \t]*([^|\r\n]+)\|[ \t]*([^\r\n]*)\|[ \t]*\r?$/gm)]
-            .map((match) => ({ path: match[1], type: match[2].trim(), description: match[3].trim() }));
+        const resources = resourceTable(section, heading[1]);
         if (resources.length < 2 || resources.some((resource) => !resourcePath(resource.path))) {
             throw new Error(`Group ${heading[1]} has an unsupported resource table. Nothing was imported.`);
         }

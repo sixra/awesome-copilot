@@ -1,6 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { acceptGroup, digest, parseReport } from "./report.mjs";
 
+function adoptAcceptance(report, body, sourceHash) {
+    if (report.sourceHash !== sourceHash) return;
+    const groups = parseReport(body);
+    report.body = body;
+    report.sourceHash = digest(body);
+    for (const item of report.items) {
+        const group = groups.find((entry) => entry.id === item.id);
+        if (group && item.accepted !== group.accepted) {
+            item.accepted = group.accepted;
+            item.revision = randomUUID();
+        }
+    }
+}
+
 export class Publisher {
     constructor(store, github) {
         this.store = store;
@@ -12,8 +26,12 @@ export class Publisher {
     preview(number, id) {
         const report = this.store.report(number);
         const item = this.store.item(number, id);
+        if (item.removed) throw new Error("This group was removed from the report; reconcile its publication instead.");
         if (item.publication || item.queueId) throw new Error("Resolve the pending review or publication first.");
         if (!["separate", "consolidate"].includes(item.column)) throw new Error("Choose Keep separate or Consolidate first.");
+        if (item.column === "consolidate" && this.store.consolidationPublication(id)) {
+            throw new Error("A recorded or unresolved publication exists for this group in an imported report. Reconcile instead.");
+        }
         if (item.accepted && item.column === "separate") throw new Error("This group is already accepted on GitHub.");
         const preview = {
             token: randomUUID(), number, id, revision: item.revision, sourceHash: report.sourceHash,
@@ -45,10 +63,14 @@ export class Publisher {
             await this.store.mutate((state) => {
                 const item = this.store.item(number, id, state);
                 const report = this.store.report(number, state);
-                if (item.revision !== preview.revision || report.sourceHash !== preview.sourceHash || item.publication || item.queueId) {
+                if (kind === "consolidate" && this.store.consolidationPublication(id, state)) {
+                    throw new Error("A recorded or unresolved publication exists for this group in an imported report. Reconcile instead.");
+                }
+                if (item.revision !== preview.revision || report.sourceHash !== preview.sourceHash || item.publication || item.queueId || item.removed) {
                     throw new Error("Local triage changed. Preview the action again.");
                 }
                 item.publication = { kind, status: "unconfirmed", at: new Date().toISOString(), marker };
+                item.revision = randomUUID();
             });
             // Persist the intent before any write: a lost response must never trigger a blind retry.
             try {
@@ -62,6 +84,8 @@ export class Publisher {
                 await this.store.mutate((state) => {
                     const item = this.store.item(number, id, state);
                     item.publication = { ...item.publication, status: "published", url: result.html_url };
+                    item.revision = randomUUID();
+                    if (kind === "separate") adoptAcceptance(this.store.report(number, state), result.body, preview.sourceHash);
                 });
             } catch (error) {
                 throw new Error(`Publication not confirmed: ${error.message}. Reconcile with GitHub before any further action.`);
@@ -76,14 +100,18 @@ export class Publisher {
         if (this.busy) throw new Error("Wait for the current publication to finish.");
         const item = this.store.item(number, id);
         const intent = item.publication;
+        const revision = item.revision;
+        const sourceHash = this.store.report(number).sourceHash;
         const kind = intent?.kind ?? item.column;
         let url;
+        let acceptedBody;
         if (kind === "separate") {
             const issue = await this.github.get(number);
             if (!parseReport(issue.body).find((group) => group.id === id)?.accepted) {
                 throw new Error("GitHub does not show this group as accepted. No local receipt was changed; inspect GitHub manually.");
             }
             url = issue.html_url;
+            acceptedBody = issue.body;
         } else if (kind === "consolidate") {
             const matches = await this.github.find(`<!-- duplicate-review-board:${id} -->`);
             if (matches.length !== 1) throw new Error(`Found ${matches.length} matching tracking issues. Inspect GitHub manually; no retry was made.`);
@@ -91,8 +119,12 @@ export class Publisher {
         } else throw new Error("No publishable decision to reconcile.");
         return this.store.mutate((state) => {
             const current = this.store.item(number, id, state);
-            if (JSON.stringify(current.publication) !== JSON.stringify(intent)) throw new Error("Publication changed. Reconcile again.");
+            if (current.revision !== revision || JSON.stringify(current.publication) !== JSON.stringify(intent)) {
+                throw new Error("Publication or local triage changed. Reconcile again.");
+            }
             current.publication = { kind, status: "published", url, at: intent?.at ?? new Date().toISOString() };
+            current.revision = randomUUID();
+            if (kind === "separate") adoptAcceptance(this.store.report(number, state), acceptedBody, sourceHash);
         });
     }
 }

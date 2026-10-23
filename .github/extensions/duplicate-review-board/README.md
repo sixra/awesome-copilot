@@ -12,7 +12,8 @@ reports into actionable, local triage. It is not an installable marketplace plug
    does not fetch reports or change GitHub.
 2. Search groups and resources; drag cards or use their accessible decision
    selector to choose **Unreviewed**, **Keep separate**, **Consolidate**, or
-   **Needs insight**. Open a card for resource links, detector evidence, private
+   **Needs insight**. Open a card to read each resource's contents from `main`
+   directly in the canvas (tabbed or side by side), plus detector evidence, private
    notes, and an editable consolidation-issue draft. Save edits locally.
 3. **Compare in background** starts a native background agent using
    `session.rpc.tasks.startAgent`, never `session.send` or a foreground review.
@@ -48,13 +49,17 @@ Reports are keyed by issue number; groups by a hash of their sorted resource
 paths, not display numbers or panel IDs. Renumbering a group preserves its local
 state. Changed titles, descriptions, or similarity evidence invalidate reviews
 and decisions while preserving notes and publication receipts. Removed groups
-disappear from that report when it is imported again. Other imported reports
+with publication records remain accessible for recovery; other removed groups
+disappear when the report is imported again. Other imported reports
 remain available. A report format the parser cannot safely understand is rejected
 explicitly, without changing the saved state.
 
 Saving or moving a queued group cancels its local token. Failed background
 dispatch clears the queue and records the error. Failed or cancelled comparisons
 can be requested again.
+
+Edits carry the group's loaded revision. A concurrent edit or changed report
+rejects a stale save instead of overwriting newer triage.
 
 ## Remote safeguards and recovery
 
@@ -68,7 +73,9 @@ GitHub issue-body updates do not provide transactional compare-and-swap; avoid
 simultaneous manual editing while publishing an acceptance.
 
 A publication intent is persisted **before** the remote write. Published and
-unconfirmed groups are locked against editing and repeat publication. Network
+unconfirmed groups are locked against editing and repeat publication. Consolidation
+records lock the same resource group across every imported report, including
+removed recovery entries. Network
 failures or a lost response never trigger an automatic retry. **Reconcile with
 GitHub** verifies the acceptance checkbox or searches all repository issues for
 the stable consolidation marker, then saves a local receipt without writing to
@@ -84,7 +91,8 @@ inspect GitHub and the saved state manually rather than retrying blindly.
 | `list_reports` | Discover report issues, read-only. |
 | `import_report` | Import or refresh a report from GitHub. |
 | `select_report` | Switch between imported local reports. |
-| `update_group` | Save a local decision, note, and issue draft. |
+| `read_resource` | Read a listed resource from `main` inside the canvas. |
+| `update_group` | Save a local decision, note, and issue draft with `expectedRevision`. |
 | `start_review` | Dispatch one native background comparison. |
 | `record_review` | Record a result matching the current queue token. |
 | `fail_review` | Record a failure matching the current queue token. |
@@ -100,7 +108,7 @@ rendered as text, not executable HTML.
 From the repository root:
 
 ```sh
-node --experimental-vm-modules --test eng/duplicate-review-board.test.mjs
+node --experimental-vm-modules --test eng/duplicate-review-board*.test.mjs
 ```
 
 Tests use fake GitHub clients and SDK modules; they never write to GitHub or start

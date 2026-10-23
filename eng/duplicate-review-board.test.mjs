@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parseReport, acceptGroup } from "../.github/extensions/duplicate-review-board/lib/report.mjs";
+import { parseReport, acceptGroup, digest } from "../.github/extensions/duplicate-review-board/lib/report.mjs";
 import { BoardStore } from "../.github/extensions/duplicate-review-board/lib/state.mjs";
 import { Publisher } from "../.github/extensions/duplicate-review-board/lib/publish.mjs";
 import { createGitHub } from "../.github/extensions/duplicate-review-board/lib/github.mjs";
@@ -20,7 +19,7 @@ const body = `### Summary\n\n### Potential Duplicates\n\n${group()}\n${group(2, 
 const issue = { number: 12, title: "Duplicate Resource Review", html_url: "https://github.com/github/awesome-copilot/issues/12", state: "open", body };
 
 async function fixture(t) {
-    const root = await mkdtemp(path.join(os.tmpdir(), "duplicate-review-board-"));
+    const root = await mkdtemp(path.resolve(".duplicate-review-board-test-"));
     t.after(() => rm(root, { recursive: true, force: true }));
     const file = path.join(root, "board.json");
     const store = await new BoardStore(file).load();
@@ -29,7 +28,7 @@ async function fixture(t) {
 }
 async function decide(store, id, column = "separate") {
     const item = store.item(12, id);
-    return store.update(12, id, { column, note: "Maintainer-only note", draft: item.draft });
+    return store.update(12, id, { column, note: "Maintainer-only note", draft: item.draft, expectedRevision: item.revision });
 }
 function fakeGitHub() {
     let current = structuredClone(issue);
@@ -185,8 +184,8 @@ test("consolidation publishes the exact draft with a stable cross-report marker;
     assert.ok(!gh.created[0].body.includes("Maintainer-only note"));
     await store.import({ ...issue, number: 13 });
     const item = store.item(13, id);
-    await store.update(13, id, { ...item, column: "consolidate" });
-    await assert.rejects(publisher.publish(publisher.preview(13, id).token), /already exists/);
+    await store.update(13, id, { ...item, column: "consolidate", expectedRevision: item.revision });
+    assert.throws(() => publisher.preview(13, id), /publication exists.*Reconcile/);
     await publisher.reconcile(13, id);
     assert.equal(store.item(13, id).publication.url, gh.created[0].html_url);
     assert.equal(gh.created.length, 1);
@@ -229,6 +228,160 @@ test("concurrent confirmations cannot create duplicate tracking issues", async (
     assert.equal(gh.created.length, 1);
 });
 
+test("updates require the current revision atomically and reject stale evidence and checkbox edits", async (t) => {
+    const { store, id } = await fixture(t);
+    const initial = structuredClone(store.item(12, id));
+    const changes = { column: "consolidate", note: "Current note", draft: initial.draft, expectedRevision: initial.revision };
+    await assert.rejects(store.update(12, id, { ...changes, expectedRevision: undefined }), /Local triage changed/);
+    const saves = await Promise.allSettled([store.update(12, id, changes), store.update(12, id, { ...changes, note: "Stale note" })]);
+    assert.deepEqual(saves.map((result) => result.status), ["fulfilled", "rejected"]);
+    assert.equal(store.item(12, id).note, "Current note");
+    const saved = structuredClone(store.item(12, id));
+    await store.import({ ...issue, body: body.replace("Same test scope.", "New evidence.") });
+    await assert.rejects(store.update(12, id, { ...changes, expectedRevision: saved.revision }), /Local triage changed/);
+    assert.equal(store.item(12, id).column, "unreviewed");
+    const changed = structuredClone(store.item(12, id));
+    await store.import({ ...issue, body: acceptGroup(store.report(12).body, id) });
+    await assert.rejects(store.update(12, id, { ...changes, expectedRevision: changed.revision }), /Local triage changed/);
+    assert.equal(store.item(12, id).accepted, true);
+});
+
+test("removed publication recovery entries survive reload and keep locks when the group reappears", async (t) => {
+    const { store, file, id } = await fixture(t);
+    await decide(store, id, "consolidate");
+    const gh = fakeGitHub();
+    gh.create = async () => { throw new Error("lost response"); };
+    const publisher = new Publisher(store, gh);
+    await assert.rejects(publisher.publish(publisher.preview(12, id).token), /not confirmed/);
+    const intent = structuredClone(store.item(12, id).publication);
+    await store.import({ ...issue, body: group(2, "Other", "x", "skills/other") });
+    const loaded = await new BoardStore(file).load();
+    assert.equal(loaded.snapshot().items.find((item) => item.id === id).removed, true);
+    assert.deepEqual(loaded.item(12, id).publication, intent);
+    assert.throws(() => new Publisher(loaded, gh).preview(12, id), /removed/);
+    await assert.rejects(loaded.queue(12, id), /removed/);
+    await assert.rejects(new Publisher(loaded, gh).reconcile(12, id), /Found 0/);
+    assert.deepEqual(loaded.item(12, id).publication, intent);
+    gh.find = async () => [{ html_url: "https://github.com/github/awesome-copilot/issues/99" }];
+    await new Publisher(loaded, gh).reconcile(12, id);
+    assert.equal(loaded.item(12, id).publication.status, "published");
+    const published = await new BoardStore(file).load();
+    assert.equal(published.item(12, id).removed, true);
+    assert.equal(published.item(12, id).publication.status, "published");
+    await published.import(issue);
+    assert.equal(published.item(12, id).removed, false);
+    assert.equal(published.item(12, id).publication.status, "published");
+    assert.throws(() => new Publisher(published, gh).preview(12, id), /pending/);
+});
+
+test("lost consolidation responses lock the stable group across reports even when search finds nothing", async (t) => {
+    const { store, file, id } = await fixture(t);
+    await decide(store, id, "consolidate");
+    const gh = fakeGitHub();
+    const create = gh.create;
+    gh.create = async (...args) => { await create(...args); throw new Error("lost response"); };
+    gh.find = async () => [];
+    const publisher = new Publisher(store, gh);
+    await assert.rejects(publisher.publish(publisher.preview(12, id).token), /not confirmed/);
+    await store.import({ ...issue, number: 13 });
+    const item = store.item(13, id);
+    await store.update(13, id, { ...item, column: "consolidate", expectedRevision: item.revision });
+    const loaded = await new BoardStore(file).load();
+    const recovered = new Publisher(loaded, gh);
+    assert.throws(() => recovered.preview(13, id), /publication exists.*Reconcile/);
+    await assert.rejects(recovered.reconcile(13, id), /Found 0/);
+    assert.throws(() => recovered.preview(13, id), /publication exists.*Reconcile/);
+    assert.equal(gh.created.length, 1);
+});
+
+test("cross-report intents are checked atomically even with previews and publishers created before either write", async (t) => {
+    const { store, id } = await fixture(t);
+    await decide(store, id, "consolidate");
+    await store.import({ ...issue, number: 13 });
+    const item = store.item(13, id);
+    await store.update(13, id, { ...item, column: "consolidate", expectedRevision: item.revision });
+    const gh = fakeGitHub();
+    let searches = 0, release;
+    const bothSearched = new Promise((resolve) => { release = resolve; });
+    gh.find = async () => {
+        if (++searches === 2) release();
+        await bothSearched;
+        return [];
+    };
+    const a = new Publisher(store, gh), b = new Publisher(store, gh);
+    const first = a.preview(12, id), second = b.preview(13, id);
+    const results = await Promise.allSettled([a.publish(first.token), b.publish(second.token)]);
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    assert.match(results.find((result) => result.status === "rejected").reason.message, /publication exists.*Reconcile/);
+    assert.equal(gh.created.length, 1);
+});
+
+test("two acceptances publish sequentially without reimporting and adopt verified source state", async (t) => {
+    const { store, file, id } = await fixture(t);
+    const unchecked = body.replace("- [x] Reviewed", "- [ ] Reviewed");
+    await store.import({ ...issue, body: unchecked });
+    const gh = fakeGitHub();
+    gh.setBody(unchecked);
+    const publisher = new Publisher(store, gh);
+    await decide(store, id);
+    await publisher.publish(publisher.preview(12, id).token);
+    assert.equal(store.item(12, id).accepted, true);
+    assert.equal(store.report(12).sourceHash, digest(gh.writes[0].body));
+    const second = store.snapshot().items[1];
+    await decide(store, second.id);
+    await publisher.publish(publisher.preview(12, second.id).token);
+    const loaded = await new BoardStore(file).load();
+    assert.equal(gh.writes.length, 2);
+    assert.equal(loaded.report(12).body, gh.writes[1].body);
+    assert.equal(loaded.report(12).sourceHash, digest(gh.writes[1].body));
+    assert.ok(loaded.snapshot().items.every((item) => item.accepted && item.publication.status === "published"));
+});
+
+test("acceptance receipt does not overwrite a newer import while the GitHub write is in flight", async (t) => {
+    const { store, id } = await fixture(t);
+    await decide(store, id);
+    const gh = fakeGitHub();
+    let started, finish;
+    const writing = new Promise((resolve) => { started = resolve; });
+    const response = new Promise((resolve) => { finish = resolve; });
+    gh.patch = async (_number, text) => { started(text); return response; };
+    const publisher = new Publisher(store, gh);
+    const publication = publisher.publish(publisher.preview(12, id).token);
+    const publishedBody = await writing;
+    const newerBody = body.replace("Same test scope.", "Newer evidence.");
+    await store.import({ ...issue, body: newerBody });
+    const newerRevision = store.item(12, id).revision;
+    finish({ ...issue, body: publishedBody });
+    await publication;
+    assert.equal(store.report(12).body, newerBody);
+    assert.equal(store.report(12).sourceHash, digest(newerBody));
+    assert.equal(store.item(12, id).accepted, false);
+    assert.equal(store.item(12, id).column, "unreviewed");
+    assert.equal(store.item(12, id).publication.status, "published");
+    assert.notEqual(store.item(12, id).revision, newerRevision);
+});
+
+test("reconciliation without an intent rejects edits and imports made during its remote read", async (t) => {
+    for (const [kind, change] of [["separate", "edit"], ["separate", "import"], ["consolidate", "edit"], ["consolidate", "import"]]) {
+        const { store, id } = await fixture(t);
+        await decide(store, id, kind);
+        const gh = fakeGitHub();
+        let started, finish;
+        const reading = new Promise((resolve) => { started = resolve; });
+        const response = new Promise((resolve) => { finish = resolve; });
+        gh[kind === "separate" ? "get" : "find"] = async () => { started(); return response; };
+        const reconciliation = new Publisher(store, gh).reconcile(12, id);
+        await reading;
+        const changedColumn = kind === "separate" ? "consolidate" : "separate";
+        if (change === "edit") await decide(store, id, changedColumn);
+        else await store.import({ ...issue, body: body.replace("Same test scope.", "Changed evidence.") });
+        finish(kind === "separate" ? { ...issue, body: acceptGroup(body, id) } : [{ html_url: issue.html_url }]);
+        await assert.rejects(reconciliation, /changed.*Reconcile again/);
+        assert.equal(store.item(12, id).publication, null);
+        assert.equal(store.item(12, id).column, change === "edit" ? changedColumn : "unreviewed");
+    }
+});
+
 test("GitHub adapter uses fixed-repository REST writes and rejects non-report imports", async () => {
     const calls = [];
     const gh = createGitHub(async (args, input) => {
@@ -242,6 +395,32 @@ test("GitHub adapter uses fixed-repository REST writes and rejects non-report im
     const invalid = createGitHub(async () => JSON.stringify({ ...issue, labels: [] }));
     await assert.rejects(invalid.get(12), /labelled duplicate-review/);
     await assert.rejects(gh.get("../other"), /Invalid/);
+    await gh.content("skills/foo/SKILL.md");
+    assert.deepEqual(calls.at(-1).args, ["api", "repos/github/awesome-copilot/contents/skills/foo/SKILL.md?ref=main", "-H", "Accept: application/vnd.github.raw"]);
+});
+
+test("resource viewer reads only files listed in the opened group", async (t) => {
+    const { act } = await loadExtension(t);
+    await act("import_report", { number: 12 });
+    const item = (await act("get_board")).items[0];
+    const file = item.resources[0].path;
+    const result = await act("read_resource", { number: 12, id: item.id, path: file });
+    assert.deepEqual({ ...result }, { path: file, ref: "main", content: `contents of ${file}`, truncated: false });
+    await assert.rejects(act("read_resource", { number: 12, id: item.id, path: "agents/../../secret.md" }), /not part of this duplicate group/);
+});
+
+test("canvas updates require an expected revision in the schema and reject stale saves", async (t) => {
+    const { canvas, act } = await loadExtension(t);
+    const schema = canvas.actions.find((action) => action.name === "update_group").inputSchema;
+    assert.ok(schema.required.includes("expectedRevision"));
+    assert.equal(schema.properties.expectedRevision.type, "string");
+    await act("import_report", { number: 12 });
+    const item = (await act("get_board")).items[0];
+    const changes = { number: 12, id: item.id, column: "consolidate", note: "Saved", draft: item.draft };
+    await assert.rejects(act("update_group", changes), /Local triage changed/);
+    await act("update_group", { ...changes, expectedRevision: item.revision });
+    await assert.rejects(act("update_group", { ...changes, note: "Stale", expectedRevision: item.revision }), /Local triage changed/);
+    assert.equal((await act("get_board")).items[0].note, "Saved");
 });
 
 async function loadExtension(t, { supported = true } = {}) {
@@ -267,7 +446,7 @@ async function loadExtension(t, { supported = true } = {}) {
     });
     await module.link(async (specifier) => {
         const exports = specifier === "@github/copilot-sdk/extension" ? sdk :
-            specifier === "./lib/github.mjs" ? { createGitHub: () => ({ get: async () => structuredClone(issue) }) } :
+            specifier === "./lib/github.mjs" ? { createGitHub: () => ({ get: async () => structuredClone(issue), content: async (file) => `contents of ${file}` }) } :
             await import(specifier.startsWith(".") ? pathToFileURL(path.resolve(directory, specifier)).href : specifier);
         return new vm.SyntheticModule(Object.keys(exports), function () {
             for (const [name, value] of Object.entries(exports)) this.setExport(name, value);

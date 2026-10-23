@@ -68,6 +68,11 @@ export class BoardStore {
         return item;
     }
 
+    consolidationPublication(id, state = this.state) {
+        return Object.values(state.reports).flatMap((report) => report.items)
+            .find((item) => item.id === id && item.publication?.kind === "consolidate")?.publication;
+    }
+
     snapshot() {
         const report = this.state.reports[this.state.selected];
         return structuredClone({
@@ -86,9 +91,11 @@ export class BoardStore {
             const items = parsed.map((group) => {
                 const previous = old?.items.find((item) => item.id === group.id);
                 const same = previous?.fingerprint === group.fingerprint;
+                const unchanged = same && previous.accepted === group.accepted && !previous.removed;
                 const { checkboxOffset, ...source } = group;
                 return {
                     ...source,
+                    removed: false,
                     column: same && !(group.accepted && !previous.accepted) ? previous.column : group.accepted ? "separate" : "unreviewed",
                     note: previous?.note ?? "",
                     review: same ? previous.review : null,
@@ -96,7 +103,7 @@ export class BoardStore {
                     agentId: same ? previous.agentId : null,
                     reviewError: same ? previous.reviewError : null,
                     changed: Boolean(previous && !same),
-                    revision: same ? previous.revision : randomUUID(),
+                    revision: unchanged ? previous.revision : randomUUID(),
                     publication: previous?.publication ?? null,
                     draft: same ? previous.draft : {
                         title: `Consolidate duplicate resources: ${group.title}`.slice(0, 256),
@@ -104,6 +111,11 @@ export class BoardStore {
                     },
                 };
             });
+            for (const previous of old?.items ?? []) {
+                if (previous.publication && !items.some((item) => item.id === previous.id)) {
+                    items.push({ ...previous, removed: true, queueId: null, revision: previous.removed ? previous.revision : randomUUID() });
+                }
+            }
             state.reports[issue.number] = {
                 number: issue.number, title: issue.title, url: issue.html_url, state: issue.state,
                 body: issue.body, sourceHash: digest(issue.body), importedAt: new Date().toISOString(), items,
@@ -119,6 +131,10 @@ export class BoardStore {
     update(number, id, changes) {
         return this.mutate((state) => {
             const item = this.item(number, id, state);
+            if (typeof changes.expectedRevision !== "string" || changes.expectedRevision !== item.revision) {
+                throw new Error("Local triage changed. Refresh the group before saving again.");
+            }
+            if (item.removed) throw new Error("This group was removed from the report; only publication recovery is available.");
             if (item.publication) throw new Error("This group has a recorded or unresolved publication.");
             if (!COLUMNS.some((column) => column.id === changes.column)) throw new Error("Unknown triage column.");
             if (typeof changes.note !== "string" || changes.note.length > 8000 ||
@@ -133,6 +149,7 @@ export class BoardStore {
     queue(number, id) {
         return this.mutate((state) => {
             const item = this.item(number, id, state);
+            if (item.removed) throw new Error("This group was removed from the report; only publication recovery is available.");
             if (item.publication || item.queueId) throw new Error("This group is already queued or published.");
             item.queueId = randomUUID();
             item.agentId = null;

@@ -27,6 +27,12 @@
       <a id="source" target="_blank" rel="noopener noreferrer">Open source report</a>
       <p id="flags"></p>
       <h3>Resources</h3><ul id="resources"></ul>
+      <section id="viewer" aria-labelledby="viewer-title">
+        <div class="dialog-heading"><h3 id="viewer-title">Resource contents (main)</h3>
+          <label class="inline"><input id="side-by-side" type="checkbox"> Side by side</label></div>
+        <div id="viewer-tabs" role="tablist" aria-label="Resources in this group"></div>
+        <div id="viewer-panes"></div>
+      </section>
       <h3>Why flagged</h3><p id="reason"></p>
       <h3>Background comparison</h3><p id="review-result" class="prewrap"></p>
       <label>Optional review focus <textarea id="guidance" maxlength="4000" rows="2"></textarea></label>
@@ -37,6 +43,10 @@
         <label>Title <input id="draft-title" maxlength="256" required></label>
         <label>Body <textarea id="draft-body" rows="8" maxlength="24000"></textarea></label>
       </fieldset>
+      <section id="edit-conflict" role="alert" hidden>
+        <p id="conflict-message">This group changed elsewhere. Your unsaved edits are preserved.</p>
+        <div class="buttons"><button type="button" id="reload-latest">Discard my edits and load latest</button><button type="button" id="keep-mine">Keep my edits and resolve conflict</button></div>
+      </section>
       <p id="receipt" class="prewrap"></p>
       <div class="buttons"><button type="submit" id="save">Save locally</button><button type="button" id="preview">Preview GitHub action</button><button type="button" id="reconcile">Reconcile with GitHub</button></div>
       <p id="detail-message" role="status" aria-live="polite"></p>

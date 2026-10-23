@@ -35,6 +35,10 @@ export function createGitHub(run = runGh) {
             }
             return issue;
         },
+        content: (file) => run([
+            "api", `repos/${REPO}/contents/${file.split("/").map(encodeURIComponent).join("/")}?ref=main`,
+            "-H", "Accept: application/vnd.github.raw",
+        ]),
         patch: (number, body) => api(`issues/${number}`, "PATCH", { body }),
         create: (title, body) => api("issues", "POST", { title, body }),
         async find(marker) {
