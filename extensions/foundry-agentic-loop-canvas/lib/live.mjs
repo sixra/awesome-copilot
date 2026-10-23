@@ -27,6 +27,12 @@ export const APPROVALS = Object.freeze({
 });
 // A phase that cannot pass its gate pauses at blocked-<phase>-r<round>; resuming retries that phase as the next round.
 const BLOCKED = /^blocked-(specify|implement|verify|deploy)-r([1-9]\d{0,2})$/;
+// A spec or plan changed after its approval: Implement round n or Deploy round n (attempt k) waits for approval again.
+const REAPPROVE = /^approve-(?:spec-r([1-9]\d{0,2})|deploy-r([1-9]\d{0,2})(?:-a[1-9]\d{0,2})?)-v1$/;
+// The flight record could not be written; the run waits until the cause is fixed.
+const RECORD = /^blocked-record-.+$/;
+const NEEDS = /^Needs you: /;
+const CHANGED = /these changed: (.*?)\. Review /;
 const GATE = /^(Specify|Implement|Verify|Deploy) gate: (passed|failed|blocked)(?: [—-] (.*))?$/;
 const BRIEF = /^Brief: (.+)$/;
 
@@ -104,7 +110,18 @@ export function checkpointInfo(key) {
     if (Object.hasOwn(APPROVALS, key)) return { key, kind: "approve", phase: APPROVALS[key], round: 1 };
     const match = BLOCKED.exec(key);
     if (match) return { key, kind: "blocked", phase: match[1][0].toUpperCase() + match[1].slice(1), round: Number(match[2]) };
+    const again = REAPPROVE.exec(key);
+    if (again) return { key, kind: "approve", phase: again[1] ? "Specify" : "Deploy", round: Number(again[1] ?? again[2]), again: true };
+    if (RECORD.test(key)) return { key, kind: "record", phase: null, round: null };
     return { key, kind: "other", phase: null, round: null };
+}
+
+// The latest "Needs you:" line, and what changed since an approval. Change items can contain commas, so the list stays one string.
+export function needsOf(records = []) {
+    const text = records.findLast(record => record?.kind === "log" && NEEDS.test(String(record.text ?? "").trim()))?.text;
+    if (!text) return { needs: null, changes: null };
+    const needs = String(text).trim();
+    return { needs: needs.slice(0, 600), changes: CHANGED.exec(needs)?.[1] ?? null };
 }
 
 export function shapeSummary(run) {
@@ -165,6 +182,7 @@ export function shapeRun(detail, existing = new Set(), records = detail.progress
         outcome: detail.status === "completed" ? outcomeOf(record) : null,
         plan: planOf(record),
         blocker: blockerOf(record, summary.pause),
+        ...(summary.pause ? needsOf(records) : { needs: null, changes: null }),
         loop: existing.has(LESSONS),
     };
 }

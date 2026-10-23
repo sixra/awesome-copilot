@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { AGENTS, ARTIFACT_PATHS, Live, OPENABLE, PHASES, WORKFLOW, blockerOf, briefOf, checkpointInfo, checkpointOf, flightRecordPath, lockMessage, outcomeOf, parseGates, parseLock, planOf, runFile, shapeRun, shapeSummary } from "../lib/live.mjs";
+import { AGENTS, ARTIFACT_PATHS, Live, OPENABLE, PHASES, WORKFLOW, blockerOf, briefOf, checkpointInfo, needsOf, checkpointOf, flightRecordPath, lockMessage, outcomeOf, parseGates, parseLock, planOf, runFile, shapeRun, shapeSummary } from "../lib/live.mjs";
 
 const log = (seq, text) => ({ seq, kind: "log", text, recordedAt: seq * 1000 });
 const summary = (runId, overrides = {}) => ({
@@ -85,10 +85,27 @@ test("checkpoints surface only for paused checkpoint runs", () => {
     assert.equal(checkpointOf({ status: "running", terminal: { pauseInfo: { type: "checkpoint", key: "approve-spec-v1" } } }), null);
 });
 
+test("needsOf reads the latest Needs-you line and what changed, keeping commas inside items", () => {
+    assert.deepEqual(needsOf([]), { needs: null, changes: null });
+    const records = [
+        { kind: "log", text: "Needs you: approve the spec." },
+        { kind: "log", text: "Spec approved." },
+        { kind: "log", text: "Needs you: approve deployment again. Since you approved it, these changed: docs/verify.md (missing: add it, then approve again), azd environment. Review docs/verify.md and .azure/deployment-plan.md, then resume." },
+        { kind: "agent", text: "Needs you: not a log line" },
+    ];
+    assert.deepEqual(needsOf(records), { needs: records[2].text, changes: "docs/verify.md (missing: add it, then approve again), azd environment" });
+    assert.equal(needsOf([{ kind: "log", text: "Needs you: approve deployment again. Since you approved it, these changed: docs/verify.md…" }]).changes, null, "a truncated line shows no partial list");
+});
+
 test("checkpoint keys normalize to kind, phase and round", () => {
     assert.deepEqual(checkpointInfo("approve-spec-v1"), { key: "approve-spec-v1", kind: "approve", phase: "Specify", round: 1 });
     assert.deepEqual(checkpointInfo("approve-deploy-v1"), { key: "approve-deploy-v1", kind: "approve", phase: "Deploy", round: 1 });
     assert.deepEqual(checkpointInfo("blocked-verify-r3"), { key: "blocked-verify-r3", kind: "blocked", phase: "Verify", round: 3 });
+    assert.deepEqual(checkpointInfo("approve-spec-r2-v1"), { key: "approve-spec-r2-v1", kind: "approve", phase: "Specify", round: 2, again: true });
+    assert.deepEqual(checkpointInfo("approve-deploy-r1-v1"), { key: "approve-deploy-r1-v1", kind: "approve", phase: "Deploy", round: 1, again: true });
+    assert.deepEqual(checkpointInfo("approve-deploy-r2-a3-v1"), { key: "approve-deploy-r2-a3-v1", kind: "approve", phase: "Deploy", round: 2, again: true });
+    assert.deepEqual(checkpointInfo("blocked-record-resume-approve-spec-v1"), { key: "blocked-record-resume-approve-spec-v1", kind: "record", phase: null, round: null });
+    for (const key of ["approve-spec-r0-v1", "approve-spec-r1-a1-v1", "approve-deploy-r1-a0-v1", "approve-verify-r1-v1", "blocked-record-"]) assert.equal(checkpointInfo(key).kind, "other", key);
     assert.equal(checkpointInfo("blocked-plan-r1").kind, "other");
     assert.equal(checkpointInfo("blocked-verify-r0").kind, "other");
     assert.equal(checkpointInfo("toString").kind, "other");

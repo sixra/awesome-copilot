@@ -18,6 +18,9 @@ const CANVAS = {
     blocked: /^blocked-(specify|implement|verify|deploy)-r([1-9]\d{0,2})$/,
     brief: /^Brief: (.+)$/,
     approvals: ["approve-spec-v1", "approve-deploy-v1"],
+    // A spec or plan changed after its approval: the canvas shows the matching approval again, with what changed.
+    reapprovals: { "approve-spec-r2-v1": "Specify", "approve-deploy-r1-v1": "Deploy", "approve-deploy-r2-a3-v1": "Deploy" },
+    record: "blocked-record-resume-approve-spec-v1",
 };
 
 
@@ -785,6 +788,16 @@ test("canvas contract pin: foundry-agentic-loop-canvas reads what the workflow w
     for (const key of [...CANVAS.approvals, "blocked-verify-r1", ...PHASES.map(phase => `blocked-${phase.toLowerCase()}-r${MAX_ROUNDS}`), "blocked-verify-r0", "blocked-Verify-r1", "blocked-verify-r1000", "pause-v1"]) {
         assert.equal(live.checkpointInfo(key).kind === "blocked", CANVAS.blocked.test(key), `blocked checkpoint ${key}`);
     }
+    const changes = ["docs/spec.md", "docs/verify.md (missing: add it, then approve again)", ".azure/deployment-plan.md (cannot be read: fix it, then approve again)"];
+    for (const [key, phase] of Object.entries(CANVAS.reapprovals)) {
+        const info = live.checkpointInfo(key);
+        assert.deepEqual([info.kind, info.phase, info.again], ["approve", phase, true], `the canvas reads re-approval ${key}`);
+        const { wait } = checkpointLines(key, { changes });
+        assert.match(wait, /^Needs you: approve /);
+        assert.deepEqual(live.needsOf([{ kind: "log", text: wait }]), { needs: wait, changes: changes.join(", ") }, `the canvas recovers what changed for ${key}`);
+        assert.match(model.promptFor("changes", { runId: "run-1", checkpoint: key, text: "x" }), phase === "Specify" ? /docs\/spec\.md/ : /Do not deploy anything/);
+    }
+    assert.deepEqual(live.checkpointInfo(CANVAS.record), { key: CANVAS.record, kind: "record", phase: null, round: null });
 
     const { cwd, home } = await workspace(t);
     const run = harness({

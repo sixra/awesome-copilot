@@ -41,9 +41,10 @@ export async function azdTarget(cwd) {
     return target;
 }
 
-// A file that cannot be hashed never matches, so approval stops until a real digest can be computed.
+// A missing file or one that cannot be hashed never matches, so approval stops until the file exists with a real digest.
 const fileChange = (rel, before, after) => {
-    if (typeof after === "string" && after.startsWith("unreadable")) return `${rel} (cannot be read: fix it, then approve again)`;
+    if (after == null) return `${rel} (missing: add it, then approve again)`;
+    if (after.startsWith("unreadable")) return `${rel} (cannot be read: fix it, then approve again)`;
     return before === after ? null : rel;
 };
 

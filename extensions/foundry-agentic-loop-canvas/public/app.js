@@ -1339,10 +1339,14 @@ function calloutHtml(run) {
             <p><strong>Next for you:</strong> ${escape(nextDecision(run, phase))}</p>
             <div class="actions"><button data-wf="pause" data-key="pause">Pause</button>${cancel}</div>`);
     }
-    if (run.status === "paused" && run.checkpoint === "approve-spec-v1") {
-        return box("warning", "Review the spec", `<p>The spec and deployment plan are ready. Approving starts Implement, which provisions the Foundry project and the resources in the plan. Ask for changes first if anything is off.</p>
+    const since = run.changes ? `<p><strong>Since you approved it, these changed:</strong> ${escape(run.changes)}</p>` : "";
+    if (run.status === "paused" && run.pause?.kind === "approve" && run.pause.phase === "Specify") {
+        const intro = run.pause.again
+            ? "The spec or deployment plan changed after you approved it. Implement does not continue on a changed spec until you approve it again."
+            : "The spec and deployment plan are ready. Approving starts Implement, which provisions the Foundry project and the resources in the plan. Ask for changes first if anything is off.";
+        return box("warning", run.pause.again ? "Approve the spec again" : "Review the spec", `<p>${intro}</p>${since}
             <div class="actions">${artifactButton(run, "docs/spec.md", "Open spec")}${artifactButton(run, ".azure/deployment-plan.md", "Open deployment plan")}</div>
-            <div class="actions"><button class="primary" data-wf="resume" data-key="approve">Approve spec and continue</button><button data-wf="changes-toggle" data-key="changes" aria-expanded="false" aria-controls="wf-changes">Request changes</button>${cancel}</div>
+            <div class="actions"><button class="primary" data-wf="resume" data-key="approve">${run.pause.again ? "Approve spec again" : "Approve spec and continue"}</button><button data-wf="changes-toggle" data-key="changes" aria-expanded="false" aria-controls="wf-changes">Request changes</button>${cancel}</div>
             ${feedbackBlock("What should change in the spec?", "For example: add an escalation agent for refunds over $500; keep the web UI read-only.", "Send changes to Chat")}`);
     }
     if (run.status === "paused" && run.pause?.kind === "blocked") {
@@ -1360,11 +1364,19 @@ function calloutHtml(run) {
             <div class="actions"><button class="primary" data-wf="fix" data-key="fix">Fix in Chat</button><button data-wf="resume" data-key="retry">Resume and retry ${escape(blocked)}</button>${cancel}</div>
             <p class="muted">Fixing in Chat leaves the run paused. Resume when Copilot reports the fix; ${escape(blocked)} then runs again as attempt ${round + 1}, and its review first confirms these issues are resolved.</p>`);
     }
-    if (run.status === "paused" && run.checkpoint === "approve-deploy-v1") {
-        return box("warning", "Approve deployment", `<p>Verify passed. Deploying runs azd up, which publishes the agents and apps and adds billable compute. Check the region, resources and cost estimate in the deployment plan first.</p>
+    if (run.status === "paused" && run.pause?.kind === "approve" && run.pause.phase === "Deploy") {
+        const intro = run.pause.again
+            ? "The deployment plan or verification report changed after you approved deployment. Deploy does not run on a changed plan until you approve it again."
+            : "Verify passed. Deploying runs azd up, which publishes the agents and apps and adds billable compute. Check the region, resources and cost estimate in the deployment plan first.";
+        return box("warning", run.pause.again ? "Approve deployment again" : "Approve deployment", `<p>${intro}</p>${since}
             <div class="actions">${artifactButton(run, ".azure/deployment-plan.md", "Open deployment plan")}${artifactButton(run, "docs/verify.md", "Open verification report")}</div>
-            <div class="actions"><button class="primary" data-wf="resume" data-key="approve">Approve deployment</button><button data-wf="changes-toggle" data-key="changes" aria-expanded="false" aria-controls="wf-changes">Request changes</button>${cancel}</div>
+            <div class="actions"><button class="primary" data-wf="resume" data-key="approve">${run.pause.again ? "Approve deployment again" : "Approve deployment"}</button><button data-wf="changes-toggle" data-key="changes" aria-expanded="false" aria-controls="wf-changes">Request changes</button>${cancel}</div>
             ${feedbackBlock("What should change before deployment?", "For example: deploy to Sweden Central; use the S0 tier for search.", "Send changes to Chat")}`);
+    }
+    if (run.status === "paused" && run.pause?.kind === "record") {
+        return box("warning", "The flight record could not be saved", `<p>${escape(run.needs || "Needs you: the flight record could not be written. Fix the cause (disk space, permissions or a link in .agentic-loop), then resume.")}</p>
+            <p class="muted">The run does not continue without its flight record. Resume after fixing the cause; the run picks up where it stopped.</p>
+            <div class="actions"><button class="primary" data-wf="resume" data-key="resume">Resume</button>${cancel}</div>`);
     }
     if (run.status === "paused") {
         return box("warning", `Paused during ${escape(phase)}`, run.canResume
@@ -1428,7 +1440,7 @@ function renderWorkflow(snap) {
     const prior = $("wf-changes");
     const draft = { key: `${run.runId}:${run.checkpoint}`, value: $("wf-feedback")?.value ?? "", open: prior ? !prior.hidden : false, details: document.querySelector("#wf-callout details")?.open ?? false };
     const deployed = Boolean(frontendState?.frontends.some(row => row.key === "deployed" && row.configured && !row.error));
-    const calloutKey = [run.runId, run.status, run.checkpoint, run.canResume, run.phase, run.metrics.liveAgents, run.outcome, run.plan, run.blocker, run.error, run.failure, run.reason, run.loop, deployed,
+    const calloutKey = [run.runId, run.status, run.checkpoint, run.canResume, run.phase, run.metrics.liveAgents, run.outcome, run.plan, run.blocker, run.needs, run.changes, run.error, run.failure, run.reason, run.loop, deployed,
         run.phases.map(row => [row.gate, row.artifacts])];
     if (region("callout", $("wf-callout"), calloutKey, () => calloutHtml(run)) && draft.key === regions.draftKey) {
         if ($("wf-feedback")) $("wf-feedback").value = draft.value;
@@ -1529,7 +1541,10 @@ const RESUMED = {
     "approve-spec-v1": "Spec approved. Implement is starting.",
     "approve-deploy-v1": "Deployment approved. azd up is deploying your solution.",
 };
-const resumedText = pause => RESUMED[pause?.key] ?? (pause?.kind === "blocked" ? `Resumed. ${pause.phase} runs again.` : "Resumed.");
+const resumedText = pause => RESUMED[pause?.key]
+    ?? (pause?.kind === "approve" && pause.again ? (pause.phase === "Specify" ? "Spec approved again. Implement continues." : "Deployment approved again. azd up is deploying your solution.")
+        : pause?.kind === "blocked" ? `Resumed. ${pause.phase} runs again.`
+            : pause?.kind === "record" ? "Resumed. The run retries saving its flight record." : "Resumed.");
 let cancelTimer;
 
 function workflowAction(button) {

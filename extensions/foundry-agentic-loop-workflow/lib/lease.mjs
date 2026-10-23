@@ -73,7 +73,10 @@ export class Lease {
 
     // Called with every flight record write and on a timer, so a long subagent step keeps the lease fresh.
     async refresh() {
+        if (this.released) return;
         await locked(this.cwd, async () => {
+            // A heartbeat already waiting for the lock when release() won it must not write the lease back.
+            if (this.released) return;
             const current = await readLease(this.cwd);
             if (current?.runId && current.runId !== this.lease.runId) {
                 throw Object.assign(new Error(`the workspace lease ${LEASE} is now held by run ${clean(current.runId, 120)}, so this run stopped writing to avoid two runs in one workspace`), { code: "LEASE_LOST" });
@@ -84,6 +87,7 @@ export class Lease {
     }
 
     async release() {
+        this.released = true;
         clearInterval(this.timer);
         try {
             await locked(this.cwd, async () => {

@@ -450,6 +450,10 @@ test("change requests target the paused checkpoint and never resume the run", ()
     assert(implement.includes("docs/implementation.md") && implement.includes("(round 2)") && implement.includes("Do not resume the run") && implement.includes("Use eastus2."));
     const deploy = promptFor("changes", { runId, checkpoint: "approve-deploy-v1", text: "Use swedencentral." });
     assert(deploy.includes("Do not deploy anything.") && deploy.includes("Use swedencentral."));
+    const again = promptFor("changes", { runId, checkpoint: "approve-deploy-r1-a2-v1", text: "Use swedencentral." });
+    assert(again.includes("Do not deploy anything.") && again.includes("Do not resume the run"));
+    assert(promptFor("changes", { runId, checkpoint: "approve-spec-r2-v1", text: "Add a Spanish locale." }).includes("Apply this feedback to docs/spec.md"));
+    assert.throws(() => promptFor("changes", { runId, checkpoint: "blocked-record-x", text: "x" }), /checkpoint/);
     const failed = promptFor("changes", { runId, checkpoint: "failed", text: "Try swedencentral." });
     assert(failed.includes("stopped before finishing") && failed.includes("docs/LOOP.md") && failed.includes("Do not resume or restart the run") && failed.includes("Try swedencentral."));
     assert(!promptFor("changes", { runId, checkpoint: "failed" }).includes("Guidance:"));

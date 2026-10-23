@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,8 +28,11 @@ export async function workspace(t) {
     t.after(() => rm(root, { recursive: true, force: true }));
     const cwd = path.join(root, "app");
     const home = path.join(root, "home");
-    await mkdir(cwd, { recursive: true });
+    await mkdir(path.join(cwd, "docs"), { recursive: true });
+    await mkdir(path.join(cwd, ".azure"), { recursive: true });
     await mkdir(home, { recursive: true });
+    // The approvals fingerprint these artifacts, which a real run writes in Specify and Verify.
+    for (const [rel, text] of [["docs/spec.md", "# Spec\n"], [".azure/deployment-plan.md", "# Plan\n"], ["docs/verify.md", "# Verify\n"]]) await writeFile(path.join(cwd, rel), text);
     return { root, cwd, home };
 }
 

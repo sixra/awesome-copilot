@@ -174,6 +174,22 @@ test("the workspace lease refuses a second active run, takes over a stale one an
     assert.equal(await exists(lease), false);
 });
 
+test("a heartbeat waiting on the lease lock never writes the lease back after release", async t => {
+    const { cwd } = await workspace(t);
+    const file = path.join(cwd, ...LEASE.split("/"));
+    const lock = path.join(cwd, ...LOCK.split("/"));
+    for (let trial = 1; trial <= 5; trial += 1) {
+        const lease = await acquireLease(cwd, `run-${trial}`, { now: () => new Date().toISOString(), log: () => {} });
+        await mkdir(lock);
+        const refresh = lease.refresh();
+        await new Promise(resolve => setTimeout(resolve, 10));
+        const release = lease.release();
+        await rm(lock, { recursive: true });
+        await Promise.all([refresh, release]);
+        assert.equal(await exists(file), false, `trial ${trial}: the released lease stays released`);
+    }
+});
+
 test("a run that loses its lease to another run stops writing", async t => {
     const { cwd, home } = await workspace(t);
     const lease = path.join(cwd, ...LEASE.split("/"));
@@ -254,7 +270,7 @@ test("approval fingerprints hash the reviewed files and the azd target without r
     const approved = await fingerprint(cwd, args);
     assert.deepEqual(Object.keys(approved.files), [...APPROVED_FILES]);
     assert.equal(approved.files[".azure/deployment-plan.md"], sha("# Plan v1\n"));
-    assert.equal(approved.files["docs/verify.md"], null);
+    assert.equal(approved.files["docs/verify.md"], sha("# Verify\n"));
     assert.deepEqual(approved.target, { environmentName: "claims-dev", subscriptionId: SUB, location: "eastus2", resourceGroup: "rg-claims-dev" });
     assert.doesNotMatch(JSON.stringify(approved), /s3cret/);
     assert.deepEqual(approvalChanges(approved, await fingerprint(cwd, args)), []);
@@ -264,6 +280,12 @@ test("approval fingerprints hash the reviewed files and the azd target without r
     const partial = { ...approved, target: { ...approved.target, resourceGroup: null } };
     assert.deepEqual(approvalChanges(partial, approved), ["AZURE_RESOURCE_GROUP (unset → rg-claims-dev)"], "a value set after approval was never reviewed");
     assert.deepEqual(approvalChanges(approved, partial), ["AZURE_RESOURCE_GROUP (rg-claims-dev → unset)"]);
+    await rm(path.join(cwd, "docs", "verify.md"));
+    const missing = await fingerprint(cwd, args);
+    assert.equal(missing.files["docs/verify.md"], null);
+    assert.ok(approvalChanges(approved, missing).includes("docs/verify.md (missing: add it, then approve again)"));
+    assert.ok(approvalChanges(missing, await fingerprint(cwd, args)).includes("docs/verify.md (missing: add it, then approve again)"), "an approval taken while a file was missing never passes");
+    await writeFile(path.join(cwd, "docs", "verify.md"), "# Verify\n");
     await writeFile(path.join(cwd, "notes.md"), "# Notes v1\n");
     await rm(path.join(cwd, "docs", "spec.md"));
     await symlink(path.join(cwd, "notes.md"), path.join(cwd, "docs", "spec.md"));
@@ -347,6 +369,8 @@ test("a rerun inherits a spec approval only while its fingerprint matches the sp
     assert.equal(changed.specApproved, false);
     assert.deepEqual(changed.specChanges, ["docs/spec.md"]);
     assert.equal(plan({ approvedAt: "t", files }, { ...files, "docs/spec.md": "unreadable: EACCES" }).specApproved, false);
+    const absent = { ...files, "docs/spec.md": null };
+    assert.deepEqual(plan({ approvedAt: "t", files: absent }, absent).specChanges, ["docs/spec.md (missing: add it, then approve again)"], "a spec approved while missing never counts");
 });
 
 // 7: only waivers a human records during a blocked checkpoint count.
