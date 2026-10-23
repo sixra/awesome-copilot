@@ -1360,8 +1360,11 @@
     var(--brand-color-border-muted);
 }
 
+/* Wraps so the sort and page-size menus drop to a second row at narrow tablet
+   widths instead of running into the right padding. */
 .catalogHeader {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--base-size-16);
