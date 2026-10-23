@@ -26,6 +26,11 @@ const ui = {
     rereviewGuidance: document.getElementById("rereview-guidance"),
     rereviewCancel: document.getElementById("rereview-cancel"),
     rereviewStart: document.getElementById("rereview-start"),
+    drawerComment: document.getElementById("drawer-comment"),
+    commentPanel: document.getElementById("comment-panel"),
+    freeformComment: document.getElementById("freeform-comment"),
+    commentCancel: document.getElementById("comment-cancel"),
+    commentPost: document.getElementById("comment-post"),
     drawerLink: document.getElementById("drawer-link"),
     drawerBody: document.getElementById("drawer-body"),
     drawerFooter: document.getElementById("drawer-footer"),
@@ -43,6 +48,7 @@ let selected = null;
 let activeTab = "review";
 const details = new Map();
 const pendingConfirm = { kind: null, timer: null };
+const commentConfirm = { armed: false, timer: null };
 const stagedComments = new Map();
 let bulkBusy = false;
 
@@ -379,6 +385,7 @@ function openDrawer(number) {
     selected = number;
     resetConfirm();
     hideRereview();
+    hideComment();
     const item = findItem(number);
     ui.comment.value = stagedComment(item);
     ui.drawer.classList.add("open");
@@ -394,6 +401,7 @@ function closeDrawer() {
     selected = null;
     resetConfirm();
     hideRereview();
+    hideComment();
     ui.drawer.classList.remove("open");
     ui.drawer.setAttribute("aria-hidden", "true");
     renderBoard();
@@ -718,6 +726,7 @@ ui.drawerRereview.addEventListener("click", () => {
         hideRereview();
         return;
     }
+    hideComment();
     ui.rereviewPanel.hidden = false;
     ui.drawerRereview.setAttribute("aria-expanded", "true");
     ui.rereviewGuidance.focus();
@@ -749,6 +758,91 @@ ui.rereviewPanel.addEventListener("submit", async (event) => {
         toast(error.message, { error: true });
     } finally {
         ui.rereviewStart.disabled = false;
+    }
+});
+
+// ---------- free-form comments ----------
+
+function freeformCommentError(text) {
+    if (!text) return "Write a comment before posting.";
+    if (text.startsWith("/")) {
+        return "Comments starting with “/” could trigger issue automation. Use Approve, Reject, or Re-review instead, or reword the comment.";
+    }
+    return null;
+}
+
+function resetCommentConfirm() {
+    clearTimeout(commentConfirm.timer);
+    commentConfirm.armed = false;
+    ui.commentPost.textContent = "Post comment";
+    ui.commentPost.classList.remove("confirming");
+}
+
+function hideComment() {
+    resetCommentConfirm();
+    ui.commentPanel.hidden = true;
+    ui.freeformComment.value = "";
+    ui.drawerComment.setAttribute("aria-expanded", "false");
+}
+
+ui.drawerComment.addEventListener("click", () => {
+    if (!ui.commentPanel.hidden) {
+        hideComment();
+        return;
+    }
+    hideRereview();
+    ui.commentPanel.hidden = false;
+    ui.drawerComment.setAttribute("aria-expanded", "true");
+    ui.freeformComment.focus();
+});
+ui.commentCancel.addEventListener("click", () => {
+    hideComment();
+    ui.drawerComment.focus();
+});
+ui.freeformComment.addEventListener("input", resetCommentConfirm);
+ui.freeformComment.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        ui.commentPanel.requestSubmit();
+    } else if (event.key === "Escape") {
+        event.stopPropagation();
+        hideComment();
+        ui.drawerComment.focus();
+    }
+});
+ui.commentPanel.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const number = selected;
+    if (number == null) return;
+    const text = ui.freeformComment.value.trim();
+    const problem = freeformCommentError(text);
+    if (problem) {
+        resetCommentConfirm();
+        toast(problem, { error: true });
+        return;
+    }
+    if (!commentConfirm.armed) {
+        commentConfirm.armed = true;
+        ui.commentPost.textContent = `Confirm post to #${number}`;
+        ui.commentPost.classList.add("confirming");
+        commentConfirm.timer = setTimeout(resetCommentConfirm, 6000);
+        return;
+    }
+    resetCommentConfirm();
+    ui.commentPost.disabled = true;
+    try {
+        const result = await api("POST", "/api/comment", { number, body: text });
+        toast(`Posted comment on #${number}`, { link: result.commentUrl });
+        if (selected === number) {
+            hideComment();
+            activeTab = "comments";
+            renderDrawer();
+        }
+        await loadDetail(number, { force: true });
+    } catch (error) {
+        toast(error.message, { error: true });
+    } finally {
+        ui.commentPost.disabled = false;
     }
 });
 

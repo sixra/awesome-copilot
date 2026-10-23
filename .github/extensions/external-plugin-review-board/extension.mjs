@@ -182,6 +182,20 @@ async function postDecisionCommand({ number, kind, comment }) {
     return { number, ...pendingDecision, pending: true };
 }
 
+async function postFreeformComment({ number, body }) {
+    const text = gh.normalizeFreeformComment(body);
+    store.getItem(number);
+    if (decisionsInFlight.has(number)) throw new Error(`#${number} already has a GitHub action in progress.`);
+    decisionsInFlight.add(number);
+    try {
+        const commentUrl = await gh.postComment(store.state.repo, number, text);
+        detailCache.delete(number);
+        return { number, commentUrl };
+    } finally {
+        decisionsInFlight.delete(number);
+    }
+}
+
 function boardSummary() {
     const snapshot = store.snapshot();
     return {
@@ -221,6 +235,7 @@ function routesFor(instanceId) {
         "POST /api/issue/:number": ({ number }) => getIssue(number, { force: true }),
         "POST /api/decision": ({ body }) =>
             postDecision({ number: Number(body.number), kind: body.kind, comment: body.comment }),
+        "POST /api/comment": ({ body }) => postFreeformComment({ number: Number(body.number), body: body.body }),
     };
     // Board errors are user-facing messages (e.g. "already actioned", gh failures); surface only the
     // message text, never the stack, and log the full error for debugging.

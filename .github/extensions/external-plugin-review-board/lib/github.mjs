@@ -98,6 +98,24 @@ export async function getIssueStatus(repo, number) {
     return { state: data.state, labels: (data.labels ?? []).map((label) => label.name) };
 }
 
+export const MAX_COMMENT_LENGTH = 60000;
+
+// Free-form comments must never be parsed as slash commands by the external plugin command router,
+// which matches on the comment body starting with `/<command>`.
+export function normalizeFreeformComment(body) {
+    const text = String(body ?? "").trim();
+    if (!text) throw new Error("Comment cannot be empty.");
+    if (text.length > MAX_COMMENT_LENGTH) {
+        throw new Error(`Comment is too long (${text.length} characters; maximum ${MAX_COMMENT_LENGTH}).`);
+    }
+    if (text.startsWith("/")) {
+        throw new Error(
+            "Comments starting with \"/\" could trigger issue automation. Use the Approve, Reject, or Re-review actions instead, or reword the comment.",
+        );
+    }
+    return text;
+}
+
 export async function postComment(repo, number, body) {
     const out = await runGh(["issue", "comment", String(number), "-R", repo, "--body-file", "-"], { input: body });
     return out.trim();

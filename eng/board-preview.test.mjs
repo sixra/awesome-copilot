@@ -183,3 +183,56 @@ test("open-pr-board: partial approval success closes the preview and keeps the w
     assert.equal(ui.selected(), null);
     assert.equal(ui.messages[0], "Auto-merge could not be enabled");
 });
+
+test("external-plugin-review-board: free-form comments confirm before posting and refresh the comments tab", async () => {
+    const calls = [];
+    const ui = await createUI("external-plugin-review-board", async (method, url, body) => {
+        calls.push({ method, url, body });
+        return url === "/api/comment" ? { number: 1, commentUrl: "https://example.test/c/1" } : { comments: [] };
+    });
+    const panel = ui.nodes.get("comment-panel");
+    const textarea = ui.nodes.get("freeform-comment");
+    const submit = () => panel.listeners.submit({ preventDefault() {} });
+
+    panel.hidden = true;
+    ui.nodes.get("drawer-comment").listeners.click();
+    assert.equal(panel.hidden, false);
+
+    textarea.value = "   ";
+    await submit();
+    textarea.value = "  /approve looks good";
+    await submit();
+    await submit();
+    assert.equal(calls.length, 0);
+    assert.equal(ui.messages.length, 3);
+
+    textarea.value = "  Could you document the required scopes?  ";
+    await submit();
+    assert.equal(calls.length, 0);
+    assert.match(ui.nodes.get("comment-post").textContent, /Confirm post to #1/);
+
+    await submit();
+    assert.deepEqual(JSON.parse(JSON.stringify(calls[0])), {
+        method: "POST", url: "/api/comment", body: { number: 1, body: "Could you document the required scopes?" },
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(calls[1])), { method: "POST", url: "/api/issue/1" });
+    assert.equal(ui.selected(), 1);
+    assert.equal(panel.hidden, true);
+    assert.equal(textarea.value, "");
+    assert.equal(vm.runInContext("activeTab", ui.context), "comments");
+    assert.equal(ui.messages.at(-1), "Posted comment on #1");
+});
+
+test("external-plugin-review-board: a failed free-form comment keeps the draft", async () => {
+    const ui = await createUI("external-plugin-review-board", async () => { throw new Error("Offline"); });
+    const panel = ui.nodes.get("comment-panel");
+    panel.hidden = true;
+    ui.nodes.get("drawer-comment").listeners.click();
+    ui.nodes.get("freeform-comment").value = "Question for the submitter";
+    await panel.listeners.submit({ preventDefault() {} });
+    await panel.listeners.submit({ preventDefault() {} });
+    assert.equal(ui.messages.at(-1), "Offline");
+    assert.equal(panel.hidden, false);
+    assert.equal(ui.nodes.get("freeform-comment").value, "Question for the submitter");
+    assert.equal(ui.selected(), 1);
+});

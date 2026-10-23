@@ -41,9 +41,25 @@
                     <select id="drawer-move"></select>
                 </label>
                 <button type="button" class="btn btn-small" id="drawer-rereview">Re-review</button>
+                <button type="button" class="btn btn-small" id="drawer-comment" aria-controls="comment-panel" aria-expanded="false">Comment</button>
                 <a class="btn btn-small" id="drawer-link" target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a>
             </div>
             <p id="drawer-blocked" class="blocked-notice" hidden></p>
+            <form class="rereview-panel" id="comment-panel" hidden>
+                <label for="freeform-comment" class="footer-label">Comment on the issue</label>
+                <textarea
+                    id="freeform-comment"
+                    rows="4"
+                    maxlength="60000"
+                    aria-describedby="freeform-comment-hint"
+                    placeholder="e.g. Thanks! Could you clarify whether the plugin needs a paid account to work?"
+                ></textarea>
+                <p class="meta" id="freeform-comment-hint">Posted to GitHub as-is. Comments can't start with “/” — use Approve, Reject, or Re-review for commands.</p>
+                <div class="footer-actions">
+                    <button type="button" class="btn btn-small" id="comment-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-small btn-primary" id="comment-post">Post comment</button>
+                </div>
+            </form>
             <form class="rereview-panel" id="rereview-panel" hidden>
                 <label for="rereview-guidance" class="footer-label">What should the re-review focus on? (optional)</label>
                 <textarea
