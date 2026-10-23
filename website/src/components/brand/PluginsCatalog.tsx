@@ -31,7 +31,6 @@ import { daysSince, toggleValue } from "./catalogFilters";
 import { pageHref } from "./pageHref";
 import type { SearchItem } from "./searchIndex";
 import styles from "./styles/plugins.module.css";
-import { scrollToCatalogStart } from "./scrollBehavior";
 import { useCatalogPageFocus } from "./useCatalogPageFocus";
 
 const CONTRIBUTE_URL =

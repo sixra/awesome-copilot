@@ -42,7 +42,6 @@ import {
 import { pageHref } from "./pageHref";
 import type { SearchItem } from "./searchIndex";
 import styles from "./styles/extensions.module.css";
-import { scrollToCatalogStart } from "./scrollBehavior";
 import { useCatalogPageFocus } from "./useCatalogPageFocus";
 
 const CONTRIBUTE_URL =

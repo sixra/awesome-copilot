@@ -35,7 +35,6 @@ import { PageShell } from "./PageShell";
 import { useCatalogPageFocus } from "./useCatalogPageFocus";
 import { ScrambleText } from "./ScrambleText";
 import { pageHref } from "./pageHref";
-import { scrollToCatalogStart } from "./scrollBehavior";
 import type { SearchItem } from "./searchIndex";
 import { contributorsTotal as siteContributorsTotal } from "../../lib/site-data";
 

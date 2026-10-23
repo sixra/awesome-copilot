@@ -37,7 +37,6 @@ import {
 } from "./catalogFilters";
 import { pageHref } from "./pageHref";
 import { downloadFile } from "./resourceActions";
-import { scrollToCatalogStart } from "./scrollBehavior";
 import type { SearchItem } from "./searchIndex";
 import styles from "./styles/skills.module.css";
 

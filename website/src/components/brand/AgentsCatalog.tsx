@@ -30,7 +30,6 @@ import {
 import { daysSince, toggleValue, updatedBuckets, updatedBucketOf } from "./catalogFilters";
 import { pageHref } from "./pageHref";
 import { downloadFile } from "./resourceActions";
-import { scrollToCatalogStart } from "./scrollBehavior";
 import { useCatalogPageFocus } from "./useCatalogPageFocus";
 import type { SearchItem } from "./searchIndex";
 import styles from "./styles/agents.module.css";
@@ -200,7 +199,7 @@ export function AgentsCatalog({
   const hasActiveFilters = activeFilterCount > 0;
   const pageCount = Math.max(1, Math.ceil(sortedAgents.length / pageSize));
   const page = Math.min(currentPage, pageCount);
-  const visibleAgents = sortedAgents.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const visibleAgents = sortedAgents.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <PageShell
