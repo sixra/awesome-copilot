@@ -41,11 +41,15 @@ Open it by asking Copilot to "open the plugin review board" (canvas id `external
   failed actions leave it open so you can correct or retry them.
 - **Quick actions** post `/approve` (with an optional note) or `/reject <reason>` straight to the issue
   after a confirm click. The reject reason is prefilled from the AI's suggested comment.
-- **Comment** (in the details panel) posts a free-form comment, for example a question for the
-  submitter, without changing the board state. The comment must be non-empty and needs a second
-  *Confirm post* click. Comments starting with `/` are rejected so they can't trigger the command
-  router; use the dedicated actions for commands. After posting, the panel stays open on the
-  *Comments* tab and reloads it from GitHub.
+- **Comment** (footer, next to Approve and Reject) posts the shared comment box as a free-form
+  comment, for example a question for the submitter, without changing the board state. The comment
+  must be non-empty and needs a second *Confirm comment* click. Comments starting with `/` are
+  rejected so they can't trigger the command router; use the dedicated actions for commands. After
+  posting, the panel stays open on the *Comments* tab and reloads it from GitHub.
+- **Request fixes** (footer) posts `/request-fixes <reason>` from the comment box after a confirm
+  click. The command router moves the issue to `requires-submitter-fixes` and lists the requested
+  fixes for the submitter. A reason is required, and the button is disabled once the issue already
+  awaits fixes.
 - **Column actions** approve, reject, or re-review every eligible item in a column, including
   cards hidden by search. Confirmation previews each staged comment; rejection requires a reason
   for every item. Drawer edits remain staged when switching cards in the current browser session.

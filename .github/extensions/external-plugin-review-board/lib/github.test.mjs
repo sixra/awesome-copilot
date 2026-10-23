@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { MAX_COMMENT_LENGTH, mapBoardIssues, normalizeFreeformComment } from "./github.mjs";
+import { MAX_COMMENT_LENGTH, buildRequestFixesCommand, mapBoardIssues, normalizeFreeformComment } from "./github.mjs";
+
+test("request fixes builds the router command and requires a reason", () => {
+    assert.equal(buildRequestFixesCommand("  Pin a commit SHA.\n- Add a LICENSE "), "/request-fixes Pin a commit SHA.\n- Add a LICENSE");
+    assert.equal(buildRequestFixesCommand("/request-fixes Add a README"), "/request-fixes Add a README");
+    for (const reason of ["", "   ", "/request-fixes", null]) {
+        assert.throws(() => buildRequestFixesCommand(reason), /needs a description/);
+    }
+});
 
 test("free-form comments are trimmed and posted as written", () => {
     assert.equal(normalizeFreeformComment("  Could you add a README?\n/approve is not needed  "),
