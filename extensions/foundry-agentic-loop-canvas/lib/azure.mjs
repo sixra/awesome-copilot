@@ -175,8 +175,8 @@ export class Azure {
                 const copies = extensions.filter(row => [row.id, row.name].some(value => String(value ?? "").split(":").pop() === name))
                     .sort((a, b) => extensionRank(a) - extensionRank(b));
                 const [found] = copies;
-                if (!found) return { status: "error", error: "Not installed. Install the foundry-agentic-loop plugin, or install_extension it, then reload." };
-                if (found.status === "disabled") return { status: "error", error: `Disabled (${found.source}). Re-enable it, then continue in a new session: running sessions keep it disabled.` };
+                if (!found) return { status: "error", error: "Not installed. Reinstall the foundry-agentic-loop plugin, then reload." };
+                if (found.status === "disabled") return { status: "error", error: `Disabled (${found.source}). Re-enable it in your extension settings, then continue in a new session: running sessions keep it disabled.` };
                 if (found.status === "failed") return { status: "error", error: `Failed (${found.source}). Check its log, reinstall it if needed, then reload.` };
                 // Two active copies register the same canvas and tool names, so open_canvas and tool calls become ambiguous.
                 const duplicates = copies.slice(1).filter(row => extensionRank(row) < 2).map(row => row.source);

@@ -73,8 +73,10 @@ Each build records verified lessons in `docs/LOOP.md`, and each SDD run leaves a
 
 Both modes create billable Azure resources, such as model deployments, hosted agents, Container Apps and monitoring, plus Azure AI Search when grounding needs it. Copilot confirms billable changes before making them. To remove an SDD environment, ask Copilot to tear it down. After you approve, it runs `azd down --purge` and deletes the Entra app registrations the build created, which live outside the resource group.
 
-If the canvas or workflow is listed as disabled, re-enable it and continue in a new session: running sessions keep it disabled. The `foundry-agentic-loop` skill walks you through this.
+The skill never installs extensions from a URL or edits your Copilot settings. If the canvas or workflow is missing, it asks before reinstalling this plugin. If one is listed as disabled, re-enable it in your extension settings and continue in a new session: running sessions keep it disabled.
 
 ## Credits
 
 Builds on [aiappsgbb/agentic-loop](https://github.com/aiappsgbb/agentic-loop) (MIT, Copyright (c) 2026 aiappsgbb) and the lean spec2cloud skills in [Azure-Samples/Spec2Cloud](https://github.com/Azure-Samples/Spec2Cloud) (MIT, Copyright (c) Microsoft Corporation).
+
+Six industry runSkills in the skill catalog (`factory-operations-triage`, `production-flow-optimizer`, `care-gap-outreach-planner`, `post-discharge-care-coordinator`, `loan-file-readiness-reviewer` and `mortgage-underwriting-coordinator`) are pulled from [aiappsgbb/agentic-loop](https://github.com/aiappsgbb/agentic-loop) with `gh skill install` only when a build prompt names one; Copilot names the source repository before installing. Review them as you would any third-party skill.

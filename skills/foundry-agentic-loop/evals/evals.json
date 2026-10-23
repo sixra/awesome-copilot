@@ -543,11 +543,11 @@
       ],
       "risk": "low",
       "prompt": "Start an Agentic Loop session. extensions_manage list shows foundry-agentic-loop-canvas loaded from the foundry-agentic-loop plugin, but no foundry-agentic-loop-workflow.",
-      "expected_output": "Installs only the missing workflow extension once, reloads once and opens the canvas once.",
+      "expected_output": "Explains that the workflow is missing, asks before reinstalling the plugin, reloads once after approval and opens the canvas once.",
       "files": [],
       "expectations": [
         "Does not reinstall or duplicate foundry-agentic-loop-canvas.",
-        "Installs foundry-agentic-loop-workflow with install_extension from the awesome-copilot extensions folder at user scope, then calls extensions_reload once.",
+        "Tells the user foundry-agentic-loop-workflow is missing and asks before running copilot plugin install foundry-agentic-loop@awesome-copilot; never calls install_extension or edits Copilot settings files, and calls extensions_reload once only after approval.",
         "If installation fails, inspects the extension and reports its log instead of retrying blindly.",
         "Opens the canvas once with canvasId foundry-agentic-loop-canvas and instanceId foundry-agentic-loop.",
         "Ensures microsoft-foundry is available, asking before installing it."

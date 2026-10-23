@@ -24,7 +24,7 @@ This is a starter set of examples, not an exhaustive list.
 | `aiappsgbb/agentic-loop`  | `loan-file-readiness-reviewer`  | Review lending files for completeness, consistency, freshness, and traceable exceptions |
 | `aiappsgbb/agentic-loop`  | `mortgage-underwriting-coordinator` | Assemble evidence, conditions, and compliance checks for human mortgage underwriting |
 
-For cataloged skills that declare a repository, install with the same command used for build skills:
+For cataloged skills that declare a repository, name the source repository to the user, then install with the same command used for build skills:
 
 ```bash
 gh skill install <repository> <skill> --agent github-copilot --scope project
