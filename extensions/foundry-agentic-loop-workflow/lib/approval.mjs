@@ -41,6 +41,12 @@ export async function azdTarget(cwd) {
     return target;
 }
 
+// A file that cannot be hashed never matches, so approval stops until a real digest can be computed.
+const fileChange = (rel, before, after) => {
+    if (typeof after === "string" && after.startsWith("unreadable")) return `${rel} (cannot be read: fix it, then approve again)`;
+    return before === after ? null : rel;
+};
+
 export async function fingerprint(cwd, args) {
     const files = {};
     for (const rel of APPROVED_FILES) files[rel] = await hashFile(cwd, rel);
@@ -54,7 +60,10 @@ export async function fingerprint(cwd, args) {
 export function approvalChanges(approved, current) {
     if (!approved?.files || !approved?.target) return ["no approval fingerprint is recorded"];
     const changes = [];
-    for (const rel of APPROVED_FILES) if (approved.files[rel] !== current.files[rel]) changes.push(rel);
+    for (const rel of APPROVED_FILES) {
+        const change = fileChange(rel, approved.files[rel], current.files[rel]);
+        if (change) changes.push(change);
+    }
     // Unset → set is a change too: a target value first chosen after approval was never reviewed.
     for (const key of Object.keys(TARGET_KEYS)) {
         const before = approved.target[key] ?? null;
@@ -73,10 +82,9 @@ export async function specFingerprint(cwd) {
     return { files };
 }
 
-// An unreadable file never matches, so the approval is asked again rather than assumed.
 export function specChanges(approved, current) {
     if (!approved?.files) return ["no spec approval fingerprint is recorded"];
-    return SPEC_FILES.filter(rel => approved.files[rel] !== current?.files?.[rel] || String(current.files[rel]).startsWith("unreadable"));
+    return SPEC_FILES.map(rel => fileChange(rel, approved.files[rel], current?.files?.[rel])).filter(Boolean);
 }
 
 export function waiverFile(runId) {

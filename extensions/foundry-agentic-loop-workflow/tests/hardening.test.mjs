@@ -264,6 +264,12 @@ test("approval fingerprints hash the reviewed files and the azd target without r
     const partial = { ...approved, target: { ...approved.target, resourceGroup: null } };
     assert.deepEqual(approvalChanges(partial, approved), ["AZURE_RESOURCE_GROUP (unset → rg-claims-dev)"], "a value set after approval was never reviewed");
     assert.deepEqual(approvalChanges(approved, partial), ["AZURE_RESOURCE_GROUP (rg-claims-dev → unset)"]);
+    await writeFile(path.join(cwd, "notes.md"), "# Notes v1\n");
+    await rm(path.join(cwd, "docs", "spec.md"));
+    await symlink(path.join(cwd, "notes.md"), path.join(cwd, "docs", "spec.md"));
+    const linked = await fingerprint(cwd, args);
+    await writeFile(path.join(cwd, "notes.md"), "# Notes v2\n");
+    assert.deepEqual(approvalChanges(linked, await fingerprint(cwd, args)).filter(change => change.startsWith("docs/spec.md")), ["docs/spec.md (cannot be read: fix it, then approve again)"], "a file that cannot be hashed never counts as unchanged");
     const skills = { router: { name: SKILLS.router, dir: "/skills/router" } };
     const base = { runId: "run-1", cwd: "/work", record: recordFile("run-1"), skills, args };
     const prompt = buildPrompt({ base, phase: "Deploy", role: "lead", round: 2, task: "x", approval: { approvedAt: "2026-01-01T00:00:00.000Z", ...partial } });
@@ -543,6 +549,25 @@ test("from and to run a single phase, and to ends the run early without the spec
     assert.ok(!labels(changed.state).some(label => label.startsWith("Implement")), "nothing provisions on the changed spec");
     assert.equal((await changed.attempt()).status, "completed");
     assert.equal((await changed.record()).specApproval.files["docs/spec.md"], sha("# Spec v2: wider scope\n"));
+
+    let blockedOnce = false;
+    const responder = who => {
+        if (who === "Implement · review" && !blockedOnce) {
+            blockedOnce = true;
+            return failed(who, "provisioning quota");
+        }
+        return defaultResponder(who);
+    };
+    const resumed = harness({ cwd, home, runId: "run-7", clockStart: 500, responder, args: { brief: BRIEF, from: "Implement", to: "Implement", maxFixLoops: 0 } });
+    assert.deepEqual(await resumed.attempt(), { status: "paused", key: "blocked-implement-r1" }, "the inherited approval still matches, so round 1 runs");
+    await writeFile(path.join(cwd, "docs", "spec.md"), "# Spec v3: during the pause\n");
+    assert.deepEqual(await resumed.attempt(), { status: "paused", key: "approve-spec-r2-v1" }, "a resume re-checks the spec before more Implement work");
+    assert.match(resumed.state.logs.at(-1), /^Needs you: approve the spec again\. Since you approved it, these changed: docs\/spec\.md\./);
+    assert.ok(!labels(resumed.state).some(label => label.endsWith("· r2")), "round 2 waits for the approval");
+    assert.equal((await resumed.attempt()).status, "completed");
+    const record = await resumed.record();
+    assert.equal(record.specApproval.key, "approve-spec-r2-v1");
+    assert.equal(record.specApproval.files["docs/spec.md"], sha("# Spec v3: during the pause\n"));
 });
 
 // 13: ownership is checked against git after the workers, never trusted from their reports.

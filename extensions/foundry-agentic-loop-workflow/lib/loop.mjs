@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { lockWorkspace } from "./agents-md.mjs";
-import { approvalChanges, fingerprint, specFingerprint, takeWaivers, waiverFile } from "./approval.mjs";
+import { approvalChanges, fingerprint, specChanges, specFingerprint, takeWaivers, waiverFile } from "./approval.mjs";
 import { PHASES, validateArgs } from "./args.mjs";
 import { ContainmentError } from "./fsguard.mjs";
 import { acquireLease } from "./lease.mjs";
@@ -56,6 +56,12 @@ export function checkpointLines(key, { phase, round, status, issues = [], fixes 
         return {
             wait: clean(`Needs you: approve the spec. ${since}`, 300) + ' Review docs/spec.md and .azure/deployment-plan.md, then choose "Approve spec and continue" in the Foundry Agentic Loop canvas (Build tab) or tell Copilot "approve the spec". Nothing is provisioned until you approve.',
             resume: "Spec approved. Continuing with Implement.",
+        };
+    }
+    if (/^approve-spec-r\d+-v1$/.test(key)) {
+        return {
+            wait: clean(`Needs you: approve the spec again. Since you approved it, these changed: ${changes.join(", ") || "the approved spec"}. Review docs/spec.md and .azure/deployment-plan.md, then resume the run from the Foundry Agentic Loop canvas (Build tab) or tell Copilot "approve the spec". Implement does not continue on a changed spec without your approval.`, 600),
+            resume: "Spec approved again. Continuing Implement.",
         };
     }
     if (key === "approve-deploy-v1") {
@@ -186,6 +192,17 @@ class Run {
     // The spec fingerprint binds the approval to the reviewed spec and plan; a later rerun inherits it only while they match.
     approveSpec = async () => ({ specFingerprint: await specFingerprint(this.cwd) });
 
+    // Checked live before each gated Implement round, so a resume never provisions on a spec or plan changed since approval.
+    async confirmSpec(round) {
+        const { changes } = await this.ctx.step(`spec-check-implement-r${round}-v1`, async () => {
+            const inherited = this.record.phases.find(entry => entry.phase === "Specify" && entry.inheritedFrom)?.specApproval;
+            const changes = specChanges(this.record.specApproval ?? inherited, await specFingerprint(this.cwd)).slice(0, MAX_ITEMS);
+            if (changes.length) this.ctx.log(clean(`Spec approval no longer matches: ${changes.join(", ")} changed since approval.`, 300));
+            return { changes };
+        });
+        if (changes.length) await this.checkpoint(`approve-spec-r${round}-v1`, "approve", { changes }, this.approveSpec);
+    }
+
     // Checked before each Deploy round and after each Deploy attempt, so no step deploys, and no gate passes, on changed approved inputs.
     async confirmApproval(round, attempt = 0) {
         const at = `r${round}${attempt ? `-a${attempt}` : ""}`;
@@ -250,6 +267,7 @@ class Run {
         let previous = null;
         for (let round = 1; round <= MAX_ROUNDS; round += 1) {
             if (phase === "Deploy") await this.confirmApproval(round);
+            if (phase === "Implement" && this.args.autonomy === "gated") await this.confirmSpec(round);
             const entry = await this.gate(phase, round, await this.round(phase, round, previous));
             if (entry.status === "passed") return entry;
             const fixes = entry.attempts.filter(attempt => attempt.role === "fix").length;

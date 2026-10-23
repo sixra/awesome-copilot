@@ -44,6 +44,7 @@ A pause posts a `Needs you:` line. Answer it in one message: what paused and why
 | Pause | Meaning | Chat action on request |
 | --- | --- | --- |
 | `approve-spec-v1` | Spec ready for review | Summarize scope, assumptions, region and cost drivers; apply requested edits to the artifacts |
+| `approve-spec-r<n>-v1` | The spec or plan changed since spec approval, before Implement round n | Summarize what changed; approving records the new fingerprint |
 | `approve-deploy-v1` | Verified and ready to deploy (always pauses) | Summarize resources, cost, security and region impact; apply requested edits without deploying |
 | `approve-deploy-r<n>-v1`, `approve-deploy-r<n>-a<k>-v1` | The deployment plan, spec, verify report or azd target changed since deploy approval, before round n or after its attempt k | Summarize what changed; approving records the new fingerprint |
 | `blocked-record-<step>` | The flight record could not be written | Fix the path or permission shown, then resume |
