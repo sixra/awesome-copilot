@@ -11,6 +11,7 @@ import { ContainmentError, contained } from "../lib/fsguard.mjs";
 import { LEASE, LOCK, acquireLease } from "../lib/lease.mjs";
 import { MAX_ROUNDS, checkpointLines } from "../lib/loop.mjs";
 import { owner, ownershipCheck } from "../lib/ownership.mjs";
+import { rerunPlan } from "../lib/rerun.mjs";
 import { buildPrompt } from "../lib/prompts.mjs";
 import { MAX_EVIDENCE, normalize, planWorkstreams, recordFile, runFile, writeRecord } from "../lib/record.mjs";
 import { SKILLS, skillDrift, skillProvenance } from "../lib/skills.mjs";
@@ -305,6 +306,43 @@ for (const changed of [false, true]) {
     });
 }
 
+test("a Deploy fix that changes the approved plan pauses for approval before review can pass the gate", async t => {
+    const { cwd, home } = await workspace(t);
+    await azure(cwd);
+    const responder = async who => {
+        if (who === "Deploy · lead") return failed(who, "azd up failed: SKU unavailable");
+        if (who === "Deploy · fix 1") {
+            await writeFile(path.join(cwd, ".azure", "deployment-plan.md"), "# Plan v2: other SKU\n");
+            return passed(who);
+        }
+        return defaultResponder(who);
+    };
+    const run = harness({ cwd, home, args: { ...AUTO, maxFixLoops: 1 }, responder });
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "approve-deploy-v1" });
+    assert.deepEqual(await run.attempt(), { status: "paused", key: "approve-deploy-r1-a2-v1" });
+    assert.match(promptOf(run, "Deploy · fix 1"), /make only that change, do not run azd up, provision or deploy, and return failed naming it/);
+    assert.deepEqual(labels(run.state, "Deploy"), ["Deploy · lead", "Deploy · fix 1"], "review waits for the new approval");
+    assert.match(run.state.logs.at(-1), /^Needs you: approve deployment again\. Since you approved it, these changed: \.azure\/deployment-plan\.md\./);
+    assert.equal((await run.attempt()).status, "completed");
+    const record = await run.record();
+    assert.equal(record.deployApproval.key, "approve-deploy-r1-a2-v1");
+    assert.equal(record.deployApproval.files[".azure/deployment-plan.md"], sha("# Plan v2: other SKU\n"));
+    assert.ok(labels(run.state, "Deploy").includes("Deploy · review 2"));
+});
+
+test("a rerun inherits a spec approval only while its fingerprint matches the spec and plan", () => {
+    const files = { ".azure/deployment-plan.md": sha("plan"), "docs/spec.md": sha("spec") };
+    const record = approval => ({ runId: "run-1", checkpoints: [{ key: "approve-spec-v1" }], specApproval: approval, phases: [{ phase: "Specify", status: "passed", summary: "ok", at: "t" }] });
+    const plan = (approval, current) => rerunPlan({ record: record(approval), file: "f" }, "Implement", { files: current });
+    assert.equal(plan(null, files).specApproved, false, "a checkpoint without a fingerprint does not count");
+    assert.equal(plan({ approvedAt: "t", files }, files).specApproved, true);
+    assert.deepEqual(plan({ approvedAt: "t", files }, files).phases[0].specApproval, { approvedAt: "t", files }, "the approval travels with the inherited spec");
+    const changed = plan({ approvedAt: "t", files }, { ...files, "docs/spec.md": sha("spec v2") });
+    assert.equal(changed.specApproved, false);
+    assert.deepEqual(changed.specChanges, ["docs/spec.md"]);
+    assert.equal(plan({ approvedAt: "t", files }, { ...files, "docs/spec.md": "unreadable: EACCES" }).specApproved, false);
+});
+
 // 7: only waivers a human records during a blocked checkpoint count.
 test("waivers count only when recorded during the blocked checkpoint for one of its issues", async t => {
     const { cwd, home } = await workspace(t);
@@ -496,6 +534,15 @@ test("from and to run a single phase, and to ends the run early without the spec
     const again = harness({ cwd, home, runId: "run-5", clockStart: 300, args: { brief: BRIEF, from: "Implement", to: "Implement" } });
     assert.equal((await again.attempt()).status, "completed", "an approved spec is not asked again");
     assert.ok(!again.journal.pauses.has("approve-spec-v1"));
+
+    await mkdir(path.join(cwd, "docs"), { recursive: true });
+    await writeFile(path.join(cwd, "docs", "spec.md"), "# Spec v2: wider scope\n");
+    const changed = harness({ cwd, home, runId: "run-6", clockStart: 400, args: { brief: BRIEF, from: "Implement", to: "Implement" } });
+    assert.deepEqual(await changed.attempt(), { status: "paused", key: "approve-spec-v1" }, "a changed spec needs a fresh approval");
+    assert.match(changed.state.logs.at(-1), /^Needs you: approve the spec\. Since the last spec approval, these changed: docs\/spec\.md\. Review/);
+    assert.ok(!labels(changed.state).some(label => label.startsWith("Implement")), "nothing provisions on the changed spec");
+    assert.equal((await changed.attempt()).status, "completed");
+    assert.equal((await changed.record()).specApproval.files["docs/spec.md"], sha("# Spec v2: wider scope\n"));
 });
 
 // 13: ownership is checked against git after the workers, never trusted from their reports.

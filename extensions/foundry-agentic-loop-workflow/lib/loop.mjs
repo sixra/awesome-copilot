@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { lockWorkspace } from "./agents-md.mjs";
-import { approvalChanges, fingerprint, takeWaivers, waiverFile } from "./approval.mjs";
+import { approvalChanges, fingerprint, specFingerprint, takeWaivers, waiverFile } from "./approval.mjs";
 import { PHASES, validateArgs } from "./args.mjs";
 import { ContainmentError } from "./fsguard.mjs";
 import { acquireLease } from "./lease.mjs";
@@ -52,8 +52,9 @@ export function nextStep({ role, report }, { onPass = "", fixes = 0, maxFixLoops
 // The final round's blocked checkpoint cannot retry, so it says so instead of promising another round.
 export function checkpointLines(key, { phase, round, status, issues = [], fixes = 0, changes = [], waivers = "" } = {}) {
     if (key === "approve-spec-v1") {
+        const since = changes.length ? `Since the last spec approval, these changed: ${changes.join(", ")}. ` : "";
         return {
-            wait: 'Needs you: approve the spec. Review docs/spec.md and .azure/deployment-plan.md, then choose "Approve spec and continue" in the Foundry Agentic Loop canvas (Build tab) or tell Copilot "approve the spec". Nothing is provisioned until you approve.',
+            wait: clean(`Needs you: approve the spec. ${since}`, 300) + ' Review docs/spec.md and .azure/deployment-plan.md, then choose "Approve spec and continue" in the Foundry Agentic Loop canvas (Build tab) or tell Copilot "approve the spec". Nothing is provisioned until you approve.',
             resume: "Spec approved. Continuing with Implement.",
         };
     }
@@ -63,7 +64,7 @@ export function checkpointLines(key, { phase, round, status, issues = [], fixes 
             resume: "Deployment approved. Running Deploy.",
         };
     }
-    if (/^approve-deploy-r\d+-v1$/.test(key)) {
+    if (/^approve-deploy-r\d+(?:-a\d+)?-v1$/.test(key)) {
         return {
             wait: clean(`Needs you: approve deployment again. Since you approved it, these changed: ${changes.join(", ") || "the approved plan"}. Review docs/verify.md and .azure/deployment-plan.md, then resume the run from the Foundry Agentic Loop canvas (Build tab) or tell Copilot "approve deployment". Deploy does not run on a changed plan without your approval.`, 600),
             resume: "Deployment approved again. Running Deploy.",
@@ -182,13 +183,18 @@ class Run {
         return { fingerprint: print };
     };
 
-    async confirmApproval(round) {
-        const { changes } = await this.ctx.step(`approval-check-deploy-r${round}-v1`, async () => {
+    // The spec fingerprint binds the approval to the reviewed spec and plan; a later rerun inherits it only while they match.
+    approveSpec = async () => ({ specFingerprint: await specFingerprint(this.cwd) });
+
+    // Checked before each Deploy round and after each Deploy attempt, so no step deploys, and no gate passes, on changed approved inputs.
+    async confirmApproval(round, attempt = 0) {
+        const at = `r${round}${attempt ? `-a${attempt}` : ""}`;
+        const { changes } = await this.ctx.step(`approval-check-deploy-${at}-v1`, async () => {
             const changes = approvalChanges(this.record.deployApproval, await fingerprint(this.cwd, this.args)).slice(0, MAX_ITEMS);
             if (changes.length) this.ctx.log(clean(`Deploy approval no longer matches: ${changes.join(", ")} changed since approval.`, 300));
             return { changes };
         });
-        if (changes.length) await this.checkpoint(`approve-deploy-r${round}-v1`, "approve", { changes }, this.approve);
+        if (changes.length) await this.checkpoint(`approve-deploy-${at}-v1`, "approve", { changes }, this.approve);
     }
 
     waive(key, issues) {
@@ -265,6 +271,7 @@ class Run {
                 this.ctx.log(noteLine(attempt, nextStep(attempt, { onPass, fixes, maxFixLoops })));
                 return true;
             });
+            if (phase === "Deploy") await this.confirmApproval(round, attempts.length);
             return attempt.report;
         };
         const tasks = TASKS[phase];
@@ -386,7 +393,7 @@ export async function runLoop(ctx, { extensionDir, home = os.homedir(), now = ()
             const startedAt = now();
             ctx.log(`Brief: ${args.brief.split(/\r?\n/).map(line => clean(line, 160)).find(Boolean) ?? ""}`);
             lease = await acquireLease(cwd, ctx.runId, { now, log });
-            const rerun = args.from === PHASES[0] ? null : rerunPlan(await latestRecord(cwd, ctx.runId), args.from);
+            const rerun = args.from === PHASES[0] ? null : rerunPlan(await latestRecord(cwd, ctx.runId), args.from, await specFingerprint(cwd));
             const absent = missingSkills(skills);
             if (absent.length) ctx.log(`Skills not found on disk, so subagents load them with the skill tool: ${absent.join(", ")}`);
             if (await lockWorkspace(cwd, skills.router.dir) === "written") ctx.log("AGENTS.md: added the Agentic Loop SDD section, which locks this workspace to SDD and routes commands such as deploy.");
@@ -408,11 +415,11 @@ export async function runLoop(ctx, { extensionDir, home = os.homedir(), now = ()
                 }
                 ctx.phase(phase);
                 if (phase === "Deploy") await run.checkpoint("approve-deploy-v1", "approve", {}, run.approve);
-                // Implement provisions, so a gated rerun that inherits an unapproved spec asks for the approval first.
-                if (phase === "Implement" && args.autonomy === "gated" && setup.rerun?.from === "Implement" && !setup.rerun.specApproved) await run.checkpoint("approve-spec-v1", "approve");
+                // Implement provisions, so a gated rerun asks for the spec approval first unless an approval still matches the spec and plan.
+                if (phase === "Implement" && args.autonomy === "gated" && setup.rerun?.from === "Implement" && !setup.rerun.specApproved) await run.checkpoint("approve-spec-v1", "approve", { changes: setup.rerun.specChanges ?? [] }, run.approveSpec);
                 await run.phase(phase);
                 // The spec approval gates provisioning, so a run that ends at Specify does not pause for it.
-                if (phase === "Specify" && args.autonomy === "gated" && args.to !== "Specify") await run.checkpoint("approve-spec-v1", "approve");
+                if (phase === "Specify" && args.autonomy === "gated" && args.to !== "Specify") await run.checkpoint("approve-spec-v1", "approve", {}, run.approveSpec);
             }
             return await run.finish();
         } catch (error) {

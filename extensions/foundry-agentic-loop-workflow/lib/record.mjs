@@ -175,6 +175,7 @@ export function createRecord({ runId, args, setup }) {
         phases: [],
         checkpoints: [],
         waivers: [],
+        specApproval: null,
         deployApproval: null,
         ownership: [],
         endpoints: [],
@@ -201,9 +202,10 @@ export function reduce(record, event) {
         case "resumed":
             next.status = "running";
             next.pending = null;
-            next.checkpoints = [...record.checkpoints, { key: event.key, kind: event.kind, pausedAt: event.pausedAt, resumedAt: event.at, ...(event.fingerprint && { fingerprint: event.fingerprint }) }];
+            next.checkpoints = [...record.checkpoints, { key: event.key, kind: event.kind, pausedAt: event.pausedAt, resumedAt: event.at, ...(event.fingerprint && { fingerprint: event.fingerprint }), ...(event.specFingerprint && { specFingerprint: event.specFingerprint }) }];
             if (event.waivers?.length) next.waivers = [...(record.waivers ?? []), ...event.waivers].slice(-MAX_ITEMS);
             if (event.fingerprint) next.deployApproval = { key: event.key, approvedAt: event.at, ...event.fingerprint };
+            if (event.specFingerprint) next.specApproval = { key: event.key, approvedAt: event.at, ...event.specFingerprint };
             break;
         case "inherited":
             next.rerun = { from: event.rerun.from, runId: event.rerun.runId };

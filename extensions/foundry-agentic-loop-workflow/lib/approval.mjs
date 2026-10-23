@@ -64,6 +64,21 @@ export function approvalChanges(approved, current) {
     return changes;
 }
 
+// What the approve-spec checkpoint asks the human to review; a rerun inherits that approval only while both are unchanged.
+export const SPEC_FILES = Object.freeze([".azure/deployment-plan.md", "docs/spec.md"]);
+
+export async function specFingerprint(cwd) {
+    const files = {};
+    for (const rel of SPEC_FILES) files[rel] = await hashFile(cwd, rel);
+    return { files };
+}
+
+// An unreadable file never matches, so the approval is asked again rather than assumed.
+export function specChanges(approved, current) {
+    if (!approved?.files) return ["no spec approval fingerprint is recorded"];
+    return SPEC_FILES.filter(rel => approved.files[rel] !== current?.files?.[rel] || String(current.files[rel]).startsWith("unreadable"));
+}
+
 export function waiverFile(runId) {
     return `.agentic-loop/waivers/${runFile(runId)}`;
 }

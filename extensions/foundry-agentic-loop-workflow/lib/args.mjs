@@ -12,7 +12,7 @@ export const META = {
     description:
         "Agentic Loop spec-driven development for Microsoft Foundry, GitHub and Azure. Runs Specify, Implement, Verify and Deploy in sequence; "
         + "each phase follows its guide in the foundry-agentic-loop skill in fresh-context subagents and passes an independent evidence gate with bounded fix loops. "
-        + "Pauses at approve-spec-v1 (unless autonomy is auto; before Implement when a run starts there on an unapproved spec), approve-deploy-v1 (always) and blocked-<phase>-r<n>. "
+        + "Pauses at approve-spec-v1 (unless autonomy is auto; before Implement when a run starts there on an unapproved or changed spec), approve-deploy-v1 (always) and blocked-<phase>-r<n>. "
         + `Writes docs/*.md, including lessons in ${LESSONS}, and .agentic-loop/runs/<runId>.json. `
         + "Adds the Agentic Loop SDD section to AGENTS.md when absent and refuses a workspace that AGENTS.md locks to rapid prototyping. "
         + "args: { brief: string (required, self-contained), subscriptionId?: GUID, location?: Azure region or 'auto', "

@@ -115,8 +115,9 @@ function approved({ approvedAt, target: azure }) {
     const rows = all.filter(([, value]) => value);
     const unset = all.filter(([, value]) => !value).map(([key]) => key);
     return `Approved deployment (approved ${approvedAt}): ${rows.length ? rows.map(([key, value]) => `${key}=${value}`).join(", ") : "no target values were recorded"}. `
-        + (unset.length ? `Unset at approval: ${unset.join(", ")}; set them only to values .azure/deployment-plan.md names, and the next round asks for approval again. ` : "")
-        + "Before changing anything, confirm that azd env get-values and az account show report the approved values; if any differs, change nothing and return blocked naming the mismatch.";
+        + (unset.length ? `Unset at approval: ${unset.join(", ")}; set them only to values .azure/deployment-plan.md names; the workflow then asks for approval again. ` : "")
+        + "Before changing anything, confirm that azd env get-values and az account show report the approved values; if any differs, change nothing and return blocked naming the mismatch. "
+        + "If a fix needs a change to .azure/deployment-plan.md, docs/spec.md, docs/verify.md or the azd target, make only that change, do not run azd up, provision or deploy, and return failed naming it: the workflow asks the human to approve it before the next step deploys.";
 }
 
 function bullets(items) {

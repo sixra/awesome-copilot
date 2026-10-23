@@ -2,6 +2,7 @@ import { lstat, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { PHASES, WORKFLOW } from "./args.mjs";
 import { contained } from "./fsguard.mjs";
+import { SPEC_FILES, specChanges } from "./approval.mjs";
 import { clean } from "./record.mjs";
 
 const MAX_FILES = 500;
@@ -36,9 +37,19 @@ export async function latestRecord(cwd, excludeRunId) {
     return latest;
 }
 
+// The spec approval recorded in that run, or carried by the Specify phase it inherited; a record without a fingerprint has none.
+function specApprovalOf(record) {
+    const inherited = [...record.phases].reverse().find(entry => entry?.phase === "Specify" && entry.status === "passed")?.specApproval;
+    const approval = record.specApproval?.files ? record.specApproval : inherited?.files ? inherited : null;
+    if (!approval) return null;
+    const files = Object.fromEntries(SPEC_FILES.map(rel => [rel, typeof approval.files[rel] === "string" ? clean(approval.files[rel], 200) : null]));
+    return { approvedAt: clean(approval.approvedAt, 40), files };
+}
+
 // A rerun from a phase inherits the earlier phases only when the latest run passed every one of them.
-// specApproved says whether a human approved that spec, in the latest run or in the run it inherited Specify from; reviewer acceptance does not count.
-export function rerunPlan(latest, from) {
+// specApproved says whether a human approved this spec: an approval recorded in the latest run, or carried from the run it
+// inherited Specify from, whose fingerprint still matches docs/spec.md and .azure/deployment-plan.md. Reviewer acceptance does not count.
+export function rerunPlan(latest, from, current) {
     const index = PHASES.indexOf(from);
     if (index <= 0) return null;
     const earlier = PHASES.slice(0, index);
@@ -52,8 +63,9 @@ export function rerunPlan(latest, from) {
         if (!pass) throw refuse(`the latest run, ${runId}, has no passed ${phase} gate.`);
         phases.push({ phase, summary: clean(pass.summary, 300), at: clean(pass.at, 40), ...(pass.inheritedFrom && { originalRun: clean(pass.inheritedFrom, 120) }) });
     }
-    const specApproved = Boolean(record.checkpoints?.some?.(row => row?.key === "approve-spec-v1"))
-        || [...record.phases].reverse().find(entry => entry?.phase === "Specify" && entry.status === "passed")?.specApproved === true;
-    phases[0] = { ...phases[0], specApproved };
-    return { from, runId, file: latest.file, phases, specApproved };
+    const approval = specApprovalOf(record);
+    const changes = approval ? specChanges(approval, current) : [];
+    const specApproved = Boolean(approval) && !changes.length;
+    phases[0] = { ...phases[0], specApproved, ...(specApproved && { specApproval: approval }) };
+    return { from, runId, file: latest.file, phases, specApproved, ...(changes.length && { specChanges: changes }) };
 }
