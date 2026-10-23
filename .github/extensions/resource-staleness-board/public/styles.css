@@ -30,6 +30,12 @@ label { display: flex; flex-direction: column; gap: 6px; }
 .aging { color: var(--true-color-blue, #0969da); }
 main { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(300px, 1.4fr); gap: 24px; }
 #resources { display: grid; gap: 9px; max-height: 70vh; overflow: auto; padding: 4px; }
+.batch-review { margin: 16px 0 24px; padding: 16px; border: 1px solid var(--border-color-default, #d1d9e0); border-radius: 7px; }
+.batch-review h2 { margin-top: 0; }
+.batch-review .actions { align-items: end; }
+.batch-review input[type="number"] { width: 100px; }
+.resource-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.resource-row input[type="checkbox"] { flex-shrink: 0; width: 18px; height: 18px; cursor: pointer; }
 .resource { display: block; width: 100%; text-align: left; overflow-wrap: anywhere; }
 .resource strong, .resource small { display: block; }
 .resource small { margin-top: 4px; }

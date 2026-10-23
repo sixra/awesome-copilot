@@ -9,7 +9,7 @@ import vm from "node:vm";
 import { test } from "node:test";
 import { BoardStore } from "../.github/extensions/resource-staleness-board/lib/state.mjs";
 import { body, classify, fingerprint, git, groupResources, lastMeaningfulChange, scanInventory } from "../.github/extensions/resource-staleness-board/lib/inventory.mjs";
-import { buildWorkPrompt, childName } from "../.github/extensions/resource-staleness-board/lib/work.mjs";
+import { buildBatchReviewPrompt, buildWorkPrompt, childName } from "../.github/extensions/resource-staleness-board/lib/work.mjs";
 import { MAX_PREVIEW_BYTES, readResourceFile } from "../.github/extensions/resource-staleness-board/lib/preview.mjs";
 
 const exec = promisify(execFile);
@@ -22,6 +22,7 @@ const review = {
     recommendation: "refresh", rationale: "Old tool names need replacing.",
     improvements: "Replace the named deprecated tool and validate its current schema.",
     capabilityEvidence: "Native planning exists, but this resource still adds repository-specific constraints.",
+    stalenessAssessment: "100 days since meaningful change. Deprecated tool names make this materially outdated.",
 };
 const diffHash = "d".repeat(64);
 const baseSha = "b".repeat(40);
@@ -102,6 +103,8 @@ test("meaningful history ignores metadata, whitespace, renames and bulk changes,
     await f.commit("2025-03-01T00:00:00Z", "Formatting");
     await f.write(original, "---\ndescription: changed\nname: example\n---\nSubstantive   guidance. \n");
     await f.commit("2025-04-01T00:00:00Z", "Update metadata");
+    await f.write(original, "---\ndescription: changed\nname: example\n---\nBulk updated guidance.\n");
+    await f.commit("2025-04-15T00:00:00Z", "bulk updating resources");
     await git(f.root, ["mv", original, resource.id]);
     await f.commit("2025-05-01T00:00:00Z", "Rename file");
     await f.write(resource.id, "---\ndescription: changed\nname: example\n---\nBulk generated content.\n");
@@ -188,10 +191,21 @@ test("publication requires a child, prepared exact diff and explicit boolean con
     const prepare = await queue(store, "prepare-refresh");
     await assert.rejects(store.result({ ...prepare, summary: "Updated the tool name" }), /SHA-256/);
     await store.result({ ...prepare, summary: "Updated only the tool name", diffHash, baseSha });
+    const rereview = await queue(store, "review");
+    await store.result({ ...rereview, review });
+    assert.equal(store.item(resource.id).prepared.diffHash, diffHash, "reviewing the source baseline must not discard prepared edits");
+    const followup = await queue(store, "prepare-refresh");
+    await store.cancel(followup.id, followup.token);
     await assert.rejects(store.queue(resource.id, "publish", "true", diffHash), /Publishing requires/);
     await assert.rejects(store.queue(resource.id, "publish", true, "a".repeat(64)), /Publishing requires/);
     const publication = await queue(store, "publish", true, diffHash);
-    await assert.rejects(store.result({ ...publication, url: "javascript:alert(1)" }), /HTTPS/);
+    for (const url of [
+        "javascript:alert(1)", "https://example.com/github/awesome-copilot/pull/123",
+        "https://github.com/other/repo/pull/123", "https://github.com/github/awesome-copilot/pull/123?tab=files",
+        "https://github.com/github/awesome-copilot/pull/0",
+    ]) {
+        await assert.rejects(store.result({ ...publication, url }), /canonical HTTPS GitHub pull request URL/);
+    }
     await store.result({ ...publication, url: "https://github.com/github/awesome-copilot/pull/123" });
     assert.match(store.item(resource.id).publication.url, /\/pull\/123$/);
     await assert.rejects(store.queue(resource.id, "publish", true, diffHash), /Publishing requires/);
@@ -203,6 +217,82 @@ test("independent writers serialize and reload state instead of overwriting each
     const outcomes = await Promise.allSettled([first.queue(resource.id, "review"), second.queue(resource.id, "review")]);
     assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1);
     assert.match(outcomes.find((outcome) => outcome.status === "rejected").reason.message, /pending work/);
+});
+
+test("locked queue and result reject fingerprints observed before another provider's state update", async (t) => {
+    const staleQueue = await storeFixture(t);
+    const scanner = await new BoardStore(staleQueue.file, staleQueue.root).load();
+    await scanner.sync({ items: [{ ...resource, fingerprint: "revision-b" }], warning: null });
+    await assert.rejects(
+        staleQueue.queue(resource.id, "review", undefined, undefined, resource.fingerprint),
+        /changed since it was observed/,
+    );
+
+    const staleResult = await storeFixture(t);
+    const first = await queue(staleResult);
+    const competing = await new BoardStore(staleResult.file, staleResult.root).load();
+    await competing.sync({ items: [{ ...resource, fingerprint: "revision-b" }], warning: null });
+    const replacement = await competing.queue(resource.id, "review", undefined, undefined, "revision-b");
+    await assert.rejects(
+        staleResult.result({ id: resource.id, token: replacement.pending.token, review }, resource.fingerprint),
+        /changed since it was observed/,
+    );
+    assert.equal((await competing.load()).item(resource.id).pending.token, replacement.pending.token);
+    assert.notEqual(first.token, replacement.pending.token);
+});
+
+test("batch reviews queue atomically, retain children, and reject overlapping requests", async (t) => {
+    const store = await storeFixture(t);
+    const second = { ...resource, id: "agents/second.agent.md" };
+    await store.sync({ items: [resource, second], warning: null });
+    const firstRequest = await queue(store);
+    await store.result({ ...firstRequest, review });
+    for (const ids of [[], [resource.id, resource.id], [resource.id, ""], [42]]) {
+        await assert.rejects(store.queueReviews(ids), /unique resource IDs/);
+    }
+    await assert.rejects(store.queueReviews([resource.id, "agents/missing.agent.md"]), /not on this board/);
+    assert.equal(store.item(resource.id).pending, null, "a late invalid ID cannot leave earlier items queued");
+
+    const competing = await new BoardStore(store.file, store.root).load();
+    const results = await Promise.allSettled([
+        store.queueReviews([resource.id, second.id]), competing.queueReviews([second.id, resource.id]),
+    ]);
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    assert.match(results.find((result) => result.status === "rejected").reason.message, /pending work/);
+    const requests = results.find((result) => result.status === "fulfilled").value;
+    assert.equal(new Set(requests.map((item) => item.pending.token)).size, 2);
+    await store.load();
+    assert.equal(store.item(resource.id).childSessionId, "child-1");
+    assert.equal(store.item(resource.id).review.recommendation, "refresh", "keep prior evidence while a new review runs");
+    const pending = new Map(requests.map((item) => [item.id, item.pending.token]));
+    await assert.rejects(store.result({
+        id: resource.id, token: pending.get(resource.id), review: { ...review, stalenessAssessment: "" },
+    }), /staleness assessment/);
+    await store.result({ id: resource.id, token: pending.get(resource.id), review });
+    await store.recordSession(second.id, pending.get(second.id), "child-2");
+    await store.cancel(second.id, pending.get(second.id));
+    const newer = await store.queue(second.id, "review");
+    await store.cancelReviews(requests, "Batch dispatch was uncertain.");
+    assert.equal(store.item(resource.id).error, null, "do not overwrite completed results");
+    assert.equal(store.item(second.id).pending.token, newer.pending.token, "do not cancel a replacement token");
+    await store.cancelReviews([newer], "Batch dispatch was uncertain.");
+    assert.equal(store.item(second.id).pending, null);
+    assert.match(store.item(second.id).error, /uncertain/);
+});
+
+test("batch review fingerprint checks are atomic against reloaded state", async (t) => {
+    const store = await storeFixture(t);
+    const second = { ...resource, id: "agents/second.agent.md" };
+    await store.sync({ items: [resource, second], warning: null });
+    const competing = await new BoardStore(store.file, store.root).load();
+    await competing.sync({ items: [{ ...resource, fingerprint: "revision-b" }, second], warning: null });
+    await assert.rejects(
+        store.queueReviews([resource.id, second.id], new Map([[resource.id, resource.fingerprint], [second.id, second.fingerprint]])),
+        /changed since it was observed/,
+    );
+    await competing.load();
+    assert.equal(competing.item(resource.id).pending, null);
+    assert.equal(competing.item(second.id).pending, null);
 });
 
 test("corrupt state is surfaced and failed writes do not report success", async (t) => {
@@ -219,15 +309,23 @@ test("work instructions require child reuse, concrete improvements and capabilit
     const prompt = buildWorkPrompt({ item, instanceId: "panel-1", root: "fixture" });
     assert.match(prompt, /list_sessions_and_chats/);
     assert.match(prompt, /create_session/);
-    assert.match(prompt, /mode: "interactive"/);
+    assert.match(prompt, /mode: "autopilot"/);
+    assert.match(prompt, /stalenessAssessment: string/);
+    assert.match(prompt, /time since the last meaningful update/);
     assert.match(prompt, /Do not set base_branch/);
     assert.match(prompt, /record_session/);
     assert.match(prompt, /Age or a claim that models are smarter is NOT evidence/);
     assert.match(prompt, /improvements: string, capabilityEvidence/);
     assert.match(prompt, /No external requests or remote Git operations are authorized/);
+    const assignment = prompt.split("CHILD ASSIGNMENT (")[1].split("END CHILD ASSIGNMENT")[0];
+    assert.match(assignment, /verify this child's resource content matches the supplied fingerprint/);
+    assert.match(assignment, /enumerate the child's tracked files.*set to equal the supplied files list/s);
+    assert.match(assignment, /raw file bytes.*must equal the supplied fingerprint/s);
     assert.ok(childName(resource.id).length <= 40);
     const repeat = buildWorkPrompt({ item: { ...item, childSessionId: "existing-child" }, instanceId: "panel-1", root: "fixture" });
     assert.match(repeat, /Reuse child session "existing-child"/);
+    assert.match(repeat, /mode: "autopilot" and delivery_mode: "immediate"/);
+    assert.match(repeat, /without navigating to the child or waiting/);
     assert.doesNotMatch(repeat, /call create_session/);
     const publish = buildWorkPrompt({
         item: { ...item, childSessionId: "existing-child", prepared: { diffHash, baseSha }, pending: { kind: "publish", token: "token-2" } },
@@ -236,6 +334,43 @@ test("work instructions require child reuse, concrete improvements and capabilit
     assert.match(publish, /HEAD to equal prepared.baseSha/);
     assert.match(publish, /git diff --cached --binary/);
     assert.match(publish, /Do not merge it/);
+    assert.doesNotMatch(publish, /mode: "autopilot"/);
+    const publishAssignment = publish.split("CHILD ASSIGNMENT (")[1].split("END CHILD ASSIGNMENT")[0];
+    assert.match(publishAssignment, /For publication, require git rev-parse HEAD/);
+    assert.doesNotMatch(publishAssignment, /original source file set at prepared\.baseSha/);
+    const preparedWork = buildWorkPrompt({
+        item: { ...item, childSessionId: "existing-child", prepared: { diffHash, baseSha }, pending: { kind: "prepare-refresh", token: "token-4" } },
+        instanceId: "panel-1", root: "fixture",
+    });
+    const preparedAssignment = preparedWork.split("CHILD ASSIGNMENT (")[1].split("END CHILD ASSIGNMENT")[0];
+    assert.match(preparedAssignment, /git rev-parse HEAD to equal b{40}/);
+    assert.match(preparedAssignment, /git diff --cached --binary to equal d{64}/);
+    assert.match(preparedAssignment, /leave all prepared edits\s+untouched/);
+    assert.match(preparedWork, /Read the recorded review below/);
+    const prepare = buildWorkPrompt({
+        item: { ...item, pending: { kind: "prepare-refresh", token: "token-3" } },
+        instanceId: "panel-1", root: "fixture",
+    });
+    assert.match(prepare, /mode: "interactive"/);
+});
+
+test("batch prompts route independent background children and require all three review dimensions", () => {
+    const items = [
+        { ...resource, pending: { kind: "review", token: "first-token" }, childSessionId: "retained" },
+        { ...resource, id: "agents/second.agent.md", pending: { kind: "review", token: "second-token" } },
+    ];
+    const prompt = buildBatchReviewPrompt({ items, instanceId: "panel-1", root: "fixture" });
+    assert.match(prompt, /exactly 2 resources/);
+    assert.match(prompt, /Start all requested reviews without waiting/);
+    assert.match(prompt, /continue routing the remaining items/);
+    assert.match(prompt, /Reuse child session "retained"/);
+    assert.match(prompt, /time since meaningful update, usefulness beyond current model capabilities/);
+    assert.match(prompt, /recommended course of action/);
+    assert.match(prompt, /separate work token and retained child/);
+    for (const item of items) {
+        assert.ok(prompt.includes(item.id));
+        assert.ok(prompt.includes(item.pending.token));
+    }
 });
 
 async function loadCanvas(t, f, { send } = {}) {
@@ -296,14 +431,26 @@ test("canvas routes use local history, protected loopback HTTP and reusable pers
     assert.notEqual(token, "__BOARD_TOKEN__");
     assert.equal((await fetch(`${opened.url}api/get_board`)).status, 403);
     const headers = { "X-Board-Token": token, "Content-Type": "application/json" };
-    assert.equal((await fetch(`${opened.url}api/scan`, { method: "POST", headers, body: "{}" })).status, 200);
+    const scanResponse = await fetch(`${opened.url}api/scan`, { method: "POST", headers, body: "{}" });
+    assert.equal(scanResponse.status, 200);
+    assert.ok(Array.isArray((await scanResponse.json()).items), "HTTP renderer route retains the full snapshot");
     assert.equal(prompts.length, 0);
     assert.equal((await action("get_board")).items.length, 1);
+    const compactScan = await action("scan");
+    assert.equal(compactScan.total, 1);
+    assert.ok(compactScan.counts);
+    assert.equal(compactScan.items, undefined);
     const queued = await action("request_work", { id: resource.id, kind: "review" });
+    assert.deepEqual(canvas.actions.find((entry) => entry.name === "request_work").inputSchema.properties.kind.enum,
+        ["review", "prepare-refresh", "prepare-removal"]);
     assert.match(queued.instructions, /create_session/);
     assert.equal(prompts.length, 0, "RPC returns instructions without sending duplicate work");
-    await action("record_session", { id: resource.id, token: queued.token, childSessionId: "retained-child" });
-    await action("record_result", { id: resource.id, token: queued.token, review });
+    const sessionSaved = await action("record_session", { id: resource.id, token: queued.token, childSessionId: "retained-child" });
+    assert.equal(sessionSaved.item.childSessionId, "retained-child");
+    assert.equal(sessionSaved.items, undefined);
+    const reviewSaved = await action("record_result", { id: resource.id, token: queued.token, review });
+    assert.equal(reviewSaved.item.review.recommendation, "refresh");
+    assert.equal(reviewSaved.items, undefined);
     const response = await fetch(`${opened.url}api/request_work`, {
         method: "POST", headers, body: JSON.stringify({ id: resource.id, kind: "prepare-refresh" }),
     });
@@ -320,6 +467,16 @@ test("canvas routes use local history, protected loopback HTTP and reusable pers
     });
     assert.equal(denied.status, 400);
     assert.equal(prompts.length, 1);
+    await assert.rejects(action("request_work", {
+        id: resource.id, kind: "publish", confirmed: true, diffHash,
+    }), /only through the UI after confirming/);
+    assert.equal(prompts.length, 1, "canvas RPC cannot queue publication using a supplied confirmation boolean");
+    const confirmed = await fetch(`${opened.url}api/request_work`, {
+        method: "POST", headers, body: JSON.stringify({ id: resource.id, kind: "publish", confirmed: true, diffHash }),
+    });
+    assert.equal(confirmed.status, 200);
+    assert.equal(prompts.length, 2);
+    assert.match(prompts[1], /The user explicitly confirmed "Publish PR"/);
     await f.write(resource.id, "Changed after scanning.\n");
     await assert.rejects(action("request_work", { id: resource.id, kind: "review" }), /resource changed/);
     const reloaded = await loadCanvas(t, f);
@@ -342,6 +499,19 @@ test("changed folder membership and content reject results before they can be pe
     await assert.rejects(action("record_result", { id, token, review }), /resource changed/);
     await action("scan");
     await assert.rejects(action("record_result", { id, token, review }), /Stale work token/);
+});
+
+test("canvas cancellation returns only counts and the affected item", async (t) => {
+    const f = await fixture(t);
+    await f.write(resource.id, "Example.\n");
+    await f.commit("2025-01-01T00:00:00Z", "Add resource");
+    const { action } = await loadCanvas(t, f);
+    await action("scan");
+    const queued = await action("request_work", { id: resource.id, kind: "review" });
+    const cancelled = await action("cancel_work", { id: resource.id, token: queued.token });
+    assert.ok(cancelled.counts);
+    assert.equal(cancelled.item.pending, null);
+    assert.equal(cancelled.items, undefined);
 });
 
 test("dispatch failures are explicit, release the local queue and never retry automatically", async (t) => {
@@ -367,7 +537,78 @@ test("dispatch failures are explicit, release the local queue and never retry au
     assert.equal(prompts.length, 1);
 });
 
-test("renderer confirmation sends the exact prepared hash and renders untrusted evidence as text", async () => {
+test("batch HTTP and RPC routes queue once, retain per-item results, and reject stale input before queuing", async (t) => {
+    const f = await fixture(t);
+    const second = "agents/second.agent.md";
+    await f.write(resource.id, "First resource.\n");
+    await f.write(second, "Second resource.\n");
+    await f.commit("2025-01-01T00:00:00Z", "Add resources");
+    const { canvas, action, prompts } = await loadCanvas(t, f);
+    await action("scan");
+    const ids = [resource.id, second];
+    for (const invalid of [[], [resource.id, resource.id], [resource.id, 1]]) {
+        await assert.rejects(action("request_reviews", { ids: invalid }), /unique resource IDs/);
+    }
+    const queued = await action("request_reviews", { ids });
+    assert.equal(queued.requests.length, 2);
+    assert.equal(prompts.length, 0, "RPC returns instructions without dispatching duplicate work");
+    for (const [index, request] of queued.requests.entries()) {
+        await action("record_session", { ...request, childSessionId: `child-${index}` });
+        await action("record_result", { ...request, review });
+    }
+    const opened = await canvas.open({ instanceId: "test-panel", input: {} });
+    assert.equal((await fetch(`${opened.url}api/request_reviews`, { method: "POST", body: "{}" })).status, 403);
+    const html = await (await fetch(opened.url)).text();
+    const token = html.match(/name="board-token" content="([^"]+)"/)[1];
+    const response = await fetch(`${opened.url}api/request_reviews`, {
+        method: "POST", headers: { "X-Board-Token": token, "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(prompts.length, 1, "one coordinator dispatch for the batch");
+    assert.match(prompts[0], /Reuse child session "child-0"/);
+    assert.match(prompts[0], /Reuse child session "child-1"/);
+    const requests = (await response.json()).requests;
+    await action("record_result", { ...requests[0], review });
+    await action("record_result", { ...requests[1], error: "Child busy with unrelated work." });
+    assert.equal((await action("get_board")).items.filter((item) => item.pending).length, 0);
+    assert.match((await action("get_board")).items.find((item) => item.id === second).error, /unrelated work/);
+
+    await f.write(second, "Changed after scanning.\n");
+    await assert.rejects(action("request_reviews", { ids }), /resource changed/);
+    assert.equal((await action("get_board")).items.filter((item) => item.pending).length, 0);
+    assert.equal(prompts.length, 1);
+});
+
+test("failed batch dispatch releases every current token without automatic retry", async (t) => {
+    const f = await fixture(t);
+    const second = "agents/second.agent.md";
+    await f.write(resource.id, "First.\n");
+    await f.write(second, "Second.\n");
+    await f.commit("2025-01-01T00:00:00Z", "Add resources");
+    const { canvas, action, prompts } = await loadCanvas(t, f, {
+        send: async () => { throw new Error("Connection lost"); },
+    });
+    await action("scan");
+    const opened = await canvas.open({ instanceId: "test-panel", input: {} });
+    const token = (await (await fetch(opened.url)).text()).match(/name="board-token" content="([^"]+)"/)[1];
+    const response = await fetch(`${opened.url}api/request_reviews`, {
+        method: "POST", headers: { "X-Board-Token": token, "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [resource.id, second] }),
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /Connection lost/);
+    for (const item of (await action("get_board")).items) {
+        assert.equal(item.pending, null);
+        assert.match(item.error, /receipt is uncertain/);
+    }
+    assert.equal(prompts.length, 1);
+});
+
+async function rendererFixture(items = [{
+    ...resource, review: { ...review, improvements: "<img src=x onerror=alert(1)>" },
+    childSessionId: "child-1", prepared: { summary: "Focused change", diffHash, baseSha },
+}]) {
     class Node {
         constructor(tag = "div") {
             this.tag = tag; this.children = []; this.handlers = {}; this.value = ""; this.hidden = false;
@@ -383,7 +624,7 @@ test("renderer confirmation sends the exact prepared hash and renders untrusted 
         addEventListener(name, handler) { this.handlers[name] = handler; }
         showModal() { this.open = true; }
         close() { this.open = false; }
-        click() { return this.handlers.click?.(); }
+        click() { if (!this.disabled) return this.handlers.click?.(); }
     }
     const nodes = new Map();
     const node = (id) => {
@@ -393,25 +634,36 @@ test("renderer confirmation sends the exact prepared hash and renders untrusted 
     node("age").value = "all";
     node("type").value = "all";
     node("recommendation").value = "all";
+    node("oldest-count").value = "10";
     const state = {
-        items: [{ ...resource, review: { ...review, improvements: "<img src=x onerror=alert(1)>" },
-            childSessionId: "child-1", prepared: { summary: "Focused change", diffHash, baseSha } }],
+        items,
         counts: { stale: 1 }, updatedAt: "2026-10-22T00:00:00Z",
     };
     const requests = [];
+    const events = {};
     const context = vm.createContext({
         URL,
         document: { querySelector: () => new Node(), getElementById: node, createElement: (tag) => new Node(tag) },
-        EventSource: class { addEventListener() {} },
+        EventSource: class { addEventListener(name, handler) { events[name] = handler; } },
         fetch: async (url, options) => {
             requests.push({ url, options });
+            if (url.endsWith("request_reviews")) {
+                for (const id of JSON.parse(options.body).ids) {
+                    state.items.find((item) => item.id === id).pending = { kind: "review", at: "now" };
+                }
+            }
             const preview = { id: resource.id, file: resource.id, size: 9, binary: false, truncated: false, content: "<script>" };
             return { ok: true, json: async () => url.endsWith("read_file") ? preview : state };
         },
     });
     vm.runInContext(await readFile(path.join(extensionDir, "public", "app.js"), "utf8"), context);
     await new Promise((resolve) => setImmediate(resolve));
-    node("resources").children[0].click();
+    return { node, requests, state, emit: () => events.board({ data: JSON.stringify(state) }) };
+}
+
+test("renderer confirmation sends the exact prepared hash and renders untrusted evidence as text", async () => {
+    const { node, requests } = await rendererFixture();
+    node("resources").children[0].children[1].click();
     const evidence = node("detail").children.find((entry) => entry.textContent.includes("<img"));
     assert.equal(evidence.tag, "p");
     assert.equal(evidence.children.length, 0);
@@ -432,6 +684,75 @@ test("renderer confirmation sends the exact prepared hash and renders untrusted 
         id: resource.id, kind: "publish", confirmed: true, diffHash,
     });
     assert.equal(node("confirm").open, false);
+});
+
+test("oldest batch uses matching unreviewed known ages, skips pending work, and reports live progress", async () => {
+    const items = [
+        { ...resource, id: "agents/younger.agent.md", age: 20 },
+        { ...resource, id: "agents/oldest.agent.md", age: 80 },
+        { ...resource, id: "agents/next.agent.md", age: 60 },
+        { ...resource, id: "agents/unknown.agent.md", age: null, ageBand: "unknown" },
+        { ...resource, id: "agents/reviewed.agent.md", age: 90, review },
+        { ...resource, id: "agents/pending.agent.md", age: 100, pending: { kind: "review", at: "now" } },
+        { ...resource, id: "skills/filtered", type: "skills", age: 200 },
+    ];
+    const { node, requests, state, emit } = await rendererFixture(items);
+    node("type").value = "agents";
+    node("type").handlers.input();
+    for (const invalid of ["0", "-1", "1.5", ""]) {
+        node("oldest-count").value = invalid;
+        node("oldest-count").handlers.input();
+        assert.equal(node("review-oldest").disabled, true);
+    }
+    node("oldest-count").value = "2";
+    node("oldest-count").handlers.input();
+    assert.equal(node("review-oldest").textContent, "Review 2 oldest");
+    await node("review-oldest").click();
+    const batch = requests.filter((request) => request.url.endsWith("request_reviews"));
+    assert.equal(batch.length, 1);
+    assert.deepEqual(JSON.parse(batch[0].options.body).ids, [items[1].id, items[2].id]);
+    assert.match(node("review-progress").textContent, /3 background reviews queued or running/);
+    state.items[1].pending = null;
+    state.items[1].review = review;
+    state.items[2].pending = null;
+    state.items[2].error = "Child unavailable";
+    emit();
+    assert.match(node("review-progress").textContent, /2 with saved reviews \| 1 background reviews queued or running \| 1 items needing attention/);
+    assert.equal(requests.filter((request) => request.url.endsWith("request_reviews")).length, 1, "SSE updates do not retry work");
+    node("oldest-count").value = "10";
+    node("oldest-count").handlers.input();
+    assert.equal(node("review-oldest").textContent, "Review 2 oldest", "cap to available candidates, excluding unknown ages");
+});
+
+test("checkbox batch selection survives filters, includes unknown history, and never selects pending work", async () => {
+    const items = [
+        { ...resource, age: null, ageBand: "unknown" },
+        { ...resource, id: "skills/example", type: "skills" },
+        { ...resource, id: "agents/pending.agent.md", pending: { kind: "review", at: "now" } },
+    ];
+    const { node, requests, state, emit } = await rendererFixture(items);
+    node("select-matching").click();
+    assert.equal(node("review-selected").textContent, "Review selected (2)");
+    assert.equal(node("resources").children[2].children[0].disabled, true);
+    node("clear-selection").click();
+    assert.equal(node("review-selected").disabled, true);
+    for (const row of node("resources").children.slice(0, 2)) {
+        row.children[0].checked = true;
+        row.children[0].handlers.change();
+    }
+    node("type").value = "agents";
+    node("type").handlers.input();
+    assert.match(node("batch-selection").textContent, /2 selected \(1 hidden by filters\)/);
+    await node("review-selected").click();
+    const batch = requests.find((request) => request.url.endsWith("request_reviews"));
+    assert.deepEqual(JSON.parse(batch.options.body).ids, [items[0].id, items[1].id]);
+    assert.equal(node("review-selected").disabled, true);
+    state.items[0].pending = null;
+    state.items[0].review = review;
+    emit();
+    node("resources").children[0].children[1].click();
+    assert.ok(node("detail").children.some((entry) => entry.textContent === "Staleness assessment"));
+    assert.ok(node("detail").children.some((entry) => entry.textContent === review.stalenessAssessment));
 });
 
 test("file preview reads only listed working-tree files, caps size, and flags binaries", async (t) => {

@@ -4,6 +4,7 @@ let board = { items: [], counts: {} };
 let selected = null;
 let busy = false;
 let confirmation = null;
+const reviewSelection = new Set();
 const fileChoice = new Map();
 const previews = new Map();
 
@@ -118,6 +119,54 @@ function work(item, kind, confirmed = false) {
     }));
 }
 
+function matchingItems() {
+    const search = $("search").value.toLowerCase();
+    const age = $("age").value;
+    const type = $("type").value;
+    const recommendation = $("recommendation").value;
+    return board.items.filter((item) => {
+        const ageMatch = age === "all" || (age === "attention" ? item.ageBand !== "fresh" : item.ageBand === age);
+        return ageMatch && (type === "all" || type === item.type) &&
+            (recommendation === "all" || recommendation === (item.review?.recommendation ?? "unreviewed")) &&
+            `${item.id} ${item.review?.rationale ?? ""} ${item.review?.improvements ?? ""}`.toLowerCase().includes(search);
+    });
+}
+
+function oldestUnreviewed() {
+    return matchingItems().filter((item) => !item.pending && !item.review && Number.isFinite(item.age))
+        .sort((a, b) => b.age - a.age || a.id.localeCompare(b.id));
+}
+
+function renderBatch(items) {
+    const available = new Set(board.items.filter((item) => !item.pending).map((item) => item.id));
+    for (const id of reviewSelection) if (!available.has(id)) reviewSelection.delete(id);
+    const visible = new Set(items.map((item) => item.id));
+    const hidden = [...reviewSelection].filter((id) => !visible.has(id)).length;
+    $("batch-selection").textContent = `${reviewSelection.size} selected${hidden ? ` (${hidden} hidden by filters)` : ""}. Selection is retained when filters change.`;
+    $("review-selected").textContent = `Review selected (${reviewSelection.size})`;
+    $("review-selected").disabled = busy || Boolean(board.progress) || !reviewSelection.size;
+    $("clear-selection").disabled = busy || !reviewSelection.size;
+    $("select-matching").disabled = busy || Boolean(board.progress) || !items.some((item) => !item.pending && !reviewSelection.has(item.id));
+    const count = Number($("oldest-count").value);
+    const valid = Number.isSafeInteger(count) && count > 0;
+    const eligible = oldestUnreviewed().length;
+    $("review-oldest").textContent = valid ? `Review ${Math.min(count, eligible)} oldest` : "Review oldest";
+    $("review-oldest").disabled = busy || Boolean(board.progress) || !valid || !eligible;
+    $("oldest-count").disabled = busy;
+    const pending = board.items.filter((item) => item.pending?.kind === "review").length;
+    const reviewed = board.items.filter((item) => item.review).length;
+    const blocked = board.items.filter((item) => item.error).length;
+    $("review-progress").textContent = `${reviewed} with saved reviews | ${pending} background reviews queued or running | ${blocked} items needing attention.`;
+}
+
+function reviewItems(ids) {
+    return run(async () => {
+        if (!ids.length) throw new Error("Select resources or choose a positive oldest count with eligible items.");
+        await api("request_reviews", { ids });
+        for (const id of ids) reviewSelection.delete(id);
+    });
+}
+
 function section(title, text) {
     $("detail").append(element("h3", title), element("p", text, "evidence"));
 }
@@ -148,6 +197,7 @@ function renderDetailContent(detail) {
     if (item.childSessionId) section("Retained child session", item.childSessionId);
     if (item.review) {
         section(`Recommendation: ${item.review.recommendation}`, item.review.rationale);
+        if (item.review.stalenessAssessment) section("Staleness assessment", item.review.stalenessAssessment);
         section("Concrete ways to freshen it", item.review.improvements);
         section("Native capability comparison and uncertainty", item.review.capabilityEvidence);
     } else {
@@ -194,19 +244,23 @@ function render() {
         : `${board.updatedAt ? `Last scan ${new Date(board.updatedAt).toLocaleString()}.` : "Scan to build the inventory."} No network reads or writes during scanning or review.${board.warning ? ` ${board.warning}` : ""}`;
     $("counts").replaceChildren(...["stale", "aging", "fresh", "unknown"].map((key) =>
         element("span", `${board.counts[key] ?? 0} ${key}`, `count ${key}`)));
-    const search = $("search").value.toLowerCase();
-    const age = $("age").value;
-    const type = $("type").value;
-    const recommendation = $("recommendation").value;
-    const items = board.items.filter((item) => {
-        const ageMatch = age === "all" || (age === "attention" ? item.ageBand !== "fresh" : item.ageBand === age);
-        return ageMatch && (type === "all" || type === item.type) &&
-            (recommendation === "all" || recommendation === (item.review?.recommendation ?? "unreviewed")) &&
-            `${item.id} ${item.review?.rationale ?? ""} ${item.review?.improvements ?? ""}`.toLowerCase().includes(search);
-    });
+    const items = matchingItems();
+    renderBatch(items);
     $("matching").textContent = `${items.length} matching resources, oldest first. The first 10 stale items are the workflow's deep-review candidates.`;
     const oldest = new Set(board.items.filter((item) => item.ageBand === "stale").slice(0, 10).map((item) => item.id));
     $("resources").replaceChildren(...items.map((item) => {
+        const row = element("div", "", "resource-row");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = reviewSelection.has(item.id);
+        checkbox.disabled = busy || Boolean(board.progress) || Boolean(item.pending);
+        checkbox.setAttribute("aria-label", `Select ${item.id} for AI review`);
+        checkbox.setAttribute("data-focus-key", `select-${encodeURIComponent(item.id)}`);
+        checkbox.addEventListener("change", () => {
+            if (checkbox.checked) reviewSelection.add(item.id);
+            else reviewSelection.delete(item.id);
+            render();
+        });
         const button = element("button", "", "resource");
         button.setAttribute("data-focus-key", `resource-${encodeURIComponent(item.id)}`);
         button.setAttribute("aria-current", String(item.id === selected));
@@ -214,7 +268,8 @@ function render() {
         button.append(element("small", `${item.age ?? "?"} days | ${item.ageBand}${oldest.has(item.id) ? " | oldest 10" : ""}`, item.ageBand));
         button.append(element("small", item.pending ? `In child: ${item.pending.kind}` : item.review?.recommendation ?? "Not reviewed"));
         button.addEventListener("click", () => { selected = item.id; render(); });
-        return button;
+        row.append(checkbox, button);
+        return row;
     }));
     if (!items.length) $("resources").append(element("p", board.updatedAt ? "No resources match these filters." : "No scan yet."));
     renderDetail();
@@ -222,6 +277,17 @@ function render() {
 }
 
 $("scan").addEventListener("click", () => run(() => api("scan", {})));
+$("select-matching").addEventListener("click", () => {
+    for (const item of matchingItems()) if (!item.pending) reviewSelection.add(item.id);
+    render();
+});
+$("clear-selection").addEventListener("click", () => { reviewSelection.clear(); render(); });
+$("review-selected").addEventListener("click", () => reviewItems([...reviewSelection]));
+$("oldest-count").addEventListener("input", () => renderBatch(matchingItems()));
+$("review-oldest").addEventListener("click", () => {
+    const count = Number($("oldest-count").value);
+    return reviewItems(Number.isSafeInteger(count) && count > 0 ? oldestUnreviewed().slice(0, count).map((item) => item.id) : []);
+});
 for (const id of ["search", "age", "type", "recommendation"]) $(id).addEventListener("input", render);
 $("dismiss").addEventListener("click", () => $("confirm").close());
 $("publish-confirm").addEventListener("click", () => {

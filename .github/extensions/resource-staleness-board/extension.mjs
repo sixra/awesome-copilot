@@ -7,7 +7,7 @@ import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/exte
 import { startBoardServer, expectedError } from "../open-pr-board/lib/server.mjs";
 import { BoardStore, WORK_KINDS, RECOMMENDATIONS } from "./lib/state.mjs";
 import { scanInventory, fingerprint, git, groupResources } from "./lib/inventory.mjs";
-import { buildWorkPrompt } from "./lib/work.mjs";
+import { buildBatchReviewPrompt, buildWorkPrompt } from "./lib/work.mjs";
 
 const ID = "resource-staleness-board";
 const extensionDir = path.dirname(fileURLToPath(import.meta.url));
@@ -62,14 +62,19 @@ async function checkContent(id) {
     const item = store.item(id);
     const tracked = (await git(root, ["ls-files", "-z", "--", id])).split("\0").filter(Boolean);
     const current = groupResources(tracked).find((entry) => entry.id === id);
-    if (!current || await fingerprint(root, current.files) !== item.fingerprint) {
+    const observedFingerprint = current ? await fingerprint(root, current.files) : null;
+    if (!current || observedFingerprint !== item.fingerprint) {
         throw new Error("The resource changed since the scan. Scan again before requesting or recording work.");
     }
+    return observedFingerprint;
 }
 
 async function requestWork(input, instanceId, send) {
-    await checkContent(input.id);
-    const item = await store.queue(input.id, input.kind, input.confirmed, input.diffHash);
+    if (input.kind === "publish" && !send) {
+        throw new Error("Publishing is available only through the UI after confirming Publish PR.");
+    }
+    const observedFingerprint = await checkContent(input.id);
+    const item = await store.queue(input.id, input.kind, input.confirmed, input.diffHash, observedFingerprint);
     const instructions = buildWorkPrompt({ item, instanceId, root });
     if (send) {
         try {
@@ -83,35 +88,80 @@ async function requestWork(input, instanceId, send) {
     return { token: item.pending.token, instructions, childSessionId: item.childSessionId };
 }
 
+async function requestReviews(input, instanceId, send) {
+    if (!Array.isArray(input.ids) || !input.ids.length || input.ids.some((id) => typeof id !== "string" || !id.trim()) ||
+        new Set(input.ids).size !== input.ids.length) {
+        throw new Error("Choose one or more unique resource IDs for batch review.");
+    }
+    await store.load();
+    const observedFingerprints = new Map();
+    for (const id of input.ids) observedFingerprints.set(id, await checkContent(id));
+    const items = await store.queueReviews(input.ids, observedFingerprints);
+    const instructions = buildBatchReviewPrompt({ items, instanceId, root });
+    if (send) {
+        try {
+            await session.send({ prompt: instructions });
+        } catch (error) {
+            await store.cancelReviews(items,
+                `Batch dispatch failed or receipt is uncertain: ${error.message}. Inspect retained children before retrying.`);
+            throw error;
+        }
+    }
+    return {
+        requests: items.map((item) => ({ id: item.id, token: item.pending.token, childSessionId: item.childSessionId })),
+        instructions,
+    };
+}
+
 async function dispatch(action, input = {}, instanceId, send = false) {
     await initialize();
     if (action === "get_board") { await store.load(); return store.snapshot(); }
-    if (action === "scan") return scan();
-    if (action === "request_work") return requestWork(input, instanceId, send);
-    if (action === "record_session") return store.recordSession(input.id, input.token, input.childSessionId);
-    if (action === "record_result") {
-        if (!input.error) await checkContent(input.id);
-        return store.result(input);
+    if (action === "scan") {
+        const snapshot = await scan();
+        return send ? snapshot : compactSnapshot(snapshot);
     }
-    if (action === "cancel_work") return store.cancel(input.id, input.token);
+    if (action === "request_work") return requestWork(input, instanceId, send);
+    if (action === "request_reviews") return requestReviews(input, instanceId, send);
+    if (action === "record_session") {
+        const snapshot = await store.recordSession(input.id, input.token, input.childSessionId);
+        return send ? snapshot : compactSnapshot(snapshot, input.id);
+    }
+    if (action === "record_result") {
+        const observedFingerprint = input.error ? null : await checkContent(input.id);
+        const snapshot = await store.result(input, observedFingerprint);
+        return send ? snapshot : compactSnapshot(snapshot, input.id);
+    }
+    if (action === "cancel_work") {
+        const snapshot = await store.cancel(input.id, input.token);
+        return send ? snapshot : compactSnapshot(snapshot, input.id);
+    }
     throw new Error("Unknown board action.");
+}
+
+function compactSnapshot(snapshot, id) {
+    const result = { counts: snapshot.counts, total: snapshot.items.length, updatedAt: snapshot.updatedAt };
+    if (snapshot.warning) result.warning = snapshot.warning;
+    if (id) result.item = snapshot.items.find((item) => item.id === id) ?? null;
+    return result;
 }
 
 const text = { type: "string", minLength: 1 };
 const identity = { id: text, token: text };
 const review = {
     type: "object", additionalProperties: false,
-    required: ["recommendation", "rationale", "improvements", "capabilityEvidence"],
+    required: ["recommendation", "rationale", "improvements", "capabilityEvidence", "stalenessAssessment"],
     properties: {
         recommendation: { type: "string", enum: RECOMMENDATIONS },
-        rationale: text, improvements: text, capabilityEvidence: text,
+        rationale: text, improvements: text, capabilityEvidence: text, stalenessAssessment: text,
     },
 };
 const schemas = {
     get_board: {}, scan: {},
+    request_reviews: { required: ["ids"], properties: {
+        ids: { type: "array", minItems: 1, uniqueItems: true, items: text },
+    } },
     request_work: { required: ["id", "kind"], properties: {
-        id: text, kind: { type: "string", enum: WORK_KINDS }, confirmed: { type: "boolean" },
-        diffHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        id: text, kind: { type: "string", enum: WORK_KINDS.filter((kind) => kind !== "publish") },
     } },
     record_session: { required: ["id", "token", "childSessionId"], properties: { ...identity, childSessionId: text } },
     record_result: { required: ["id", "token"], properties: {
@@ -123,7 +173,8 @@ const schemas = {
 const descriptions = {
     get_board: "Read the local inventory, recommendations, pending work, and retained child-session links.",
     scan: "Scan local tracked resources and meaningful Git history. Never fetches or writes to GitHub.",
-    request_work: "Queue one item in a reusable child session; return coordinator instructions. Publish requires explicit user confirmation.",
+    request_work: "Queue review or local preparation in a reusable child session. Publication is available only through the UI after explicit confirmation.",
+    request_reviews: "Queue read-only background reviews for selected resource IDs atomically; return routing instructions for reusable child sessions.",
     record_session: "Persist the actual child-session ID for a queued resource; never replace an existing child's context.",
     record_result: "Record one child result using its current work token; reject cancelled or changed-content results.",
     cancel_work: "Invalidate a queued result locally. Does not stop the child or undo any remote action.",
@@ -150,7 +201,7 @@ session = await joinSession({
             await initialize();
             let server = servers.get(ctx.instanceId);
             if (!server) {
-                const routes = Object.fromEntries(["get_board", "scan", "request_work", "cancel_work"].map((action) => [
+                const routes = Object.fromEntries(["get_board", "scan", "request_work", "request_reviews", "cancel_work"].map((action) => [
                     `${action === "get_board" ? "GET" : "POST"} /api/${action}`,
                     async ({ body }) => {
                         try {

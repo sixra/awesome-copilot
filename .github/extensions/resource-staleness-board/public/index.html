@@ -22,6 +22,20 @@
         <label>Type <select id="type"><option value="all">All types</option><option>agents</option><option>prompts</option><option>instructions</option><option>hooks</option><option>skills</option></select></label>
         <label>Recommendation <select id="recommendation"><option value="all">All recommendations</option><option value="unreviewed">Unreviewed</option><option value="keep">Keep</option><option value="refresh">Refresh</option><option value="remove">Consider removal</option></select></label>
     </div>
+    <section aria-label="Batch AI review" class="batch-review">
+        <h2>Batch AI review</h2>
+        <p>Assess staleness, usefulness beyond current models, and the recommended action in background child sessions. No files are changed.</p>
+        <div class="actions">
+            <button id="select-matching">Select matching</button>
+            <button id="clear-selection">Clear selection</button>
+            <button id="review-selected">Review selected (0)</button>
+            <label>Oldest unreviewed count <input id="oldest-count" type="number" min="1" step="1" value="10"></label>
+            <button id="review-oldest">Review oldest</button>
+        </div>
+        <p id="batch-selection" role="status" aria-live="polite"></p>
+        <p id="review-progress" role="status" aria-live="polite"></p>
+        <p>Oldest uses the current filters, skipping reviewed items, pending work, and unknown history. Select individual items to re-review them or review unknown history.</p>
+    </section>
     <main>
         <section aria-label="Resources sorted oldest first"><p id="matching"></p><div id="resources"></div></section>
         <section id="detail" aria-label="Selected resource"><p>Select a resource to review its evidence and next action.</p></section>

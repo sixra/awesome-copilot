@@ -1,16 +1,24 @@
 import path from "node:path";
-import { lstat, open } from "node:fs/promises";
+import { lstat, open, realpath } from "node:fs/promises";
 
 export const MAX_PREVIEW_BYTES = 512 * 1024;
 
 export async function readResourceFile(root, item, file) {
     if (typeof file !== "string" || !item.files.includes(file)) throw new Error("File is not part of this resource.");
-    const full = path.resolve(root, file);
-    const relative = path.relative(root, full);
-    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("File is outside the checkout.");
+    const checkout = path.resolve(root);
+    const full = path.resolve(checkout, file);
+    const relative = path.relative(checkout, full);
+    if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        throw new Error("File is outside the checkout.");
+    }
     const stats = await lstat(full);
     if (!stats.isFile()) throw new Error("Not a regular file in the working tree.");
-    const handle = await open(full, "r");
+    const [realCheckout, realFile] = await Promise.all([realpath(checkout), realpath(full)]);
+    const realRelative = path.relative(realCheckout, realFile);
+    if (!realRelative || realRelative === ".." || realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) {
+        throw new Error("File is outside the checkout.");
+    }
+    const handle = await open(realFile, "r");
     try {
         const length = Math.min(stats.size, MAX_PREVIEW_BYTES);
         const buffer = Buffer.alloc(length);

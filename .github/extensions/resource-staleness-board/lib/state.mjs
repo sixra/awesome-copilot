@@ -5,6 +5,13 @@ import path from "node:path";
 export const RECOMMENDATIONS = ["keep", "refresh", "remove"];
 export const WORK_KINDS = ["review", "prepare-refresh", "prepare-removal", "publish"];
 
+function startWork(item, kind) {
+    if (item.pending) throw new Error(`Resource ${item.id} already has pending work. Cancel it before retrying.`);
+    item.pending = { token: randomUUID(), kind, fingerprint: item.fingerprint, at: new Date().toISOString() };
+    item.error = null;
+    return structuredClone(item);
+}
+
 export class BoardStore {
     constructor(file, root) {
         this.file = file;
@@ -112,19 +119,48 @@ export class BoardStore {
         return this.snapshot();
     }
 
-    async queue(id, kind, confirmed, diffHash) {
+    async queue(id, kind, confirmed, diffHash, observedFingerprint) {
         return this.transaction((state) => {
             if (!WORK_KINDS.includes(kind)) throw new Error("Unknown work kind.");
             const item = this.item(id, state);
-            if (item.pending) throw new Error("This resource already has pending work. Cancel it before retrying.");
+            if (observedFingerprint !== undefined &&
+                (item.fingerprint !== observedFingerprint || (item.pending && item.pending.fingerprint !== observedFingerprint))) {
+                throw new Error("The resource changed since it was observed. Scan again before requesting work.");
+            }
             if (kind.startsWith("prepare-") && !item.review) throw new Error("Review this resource before preparing changes.");
             if (kind === "publish" && (confirmed !== true || !item.prepared || !item.childSessionId ||
                 item.publication || item.prepared.diffHash !== diffHash)) {
                 throw new Error("Publishing requires explicit confirmation, a child session, and unpublished prepared changes.");
             }
-            item.pending = { token: randomUUID(), kind, fingerprint: item.fingerprint, at: new Date().toISOString() };
-            item.error = null;
-            return structuredClone(item);
+            return startWork(item, kind);
+        });
+    }
+
+    async queueReviews(ids, observedFingerprints) {
+        if (!Array.isArray(ids) || !ids.length || ids.some((id) => typeof id !== "string" || !id.trim()) ||
+            new Set(ids).size !== ids.length) {
+            throw new Error("Choose one or more unique resource IDs for batch review.");
+        }
+        return this.transaction((state) => ids.map((id) => {
+            const item = this.item(id, state);
+            const observed = observedFingerprints?.get?.(id);
+            if (observed !== undefined &&
+                (item.fingerprint !== observed || (item.pending && item.pending.fingerprint !== observed))) {
+                throw new Error(`Resource changed since it was observed: ${id}. Scan again before requesting work.`);
+            }
+            return startWork(item, "review");
+        }));
+    }
+
+    async cancelReviews(items, message) {
+        await this.transaction((state) => {
+            for (const request of items) {
+                const item = state.items.find((entry) => entry.id === request.id);
+                if (item?.pending?.token === request.pending.token) {
+                    item.pending = null;
+                    item.error = message;
+                }
+            }
         });
     }
 
@@ -148,8 +184,14 @@ export class BoardStore {
         return this.snapshot();
     }
 
-    async result(input) {
+    async result(input, observedFingerprint) {
         await this.transaction((state) => {
+            const current = this.item(input.id, state);
+            if (observedFingerprint !== undefined && observedFingerprint !== null &&
+                (current.fingerprint !== observedFingerprint ||
+                    (current.pending && current.pending.fingerprint !== observedFingerprint))) {
+                throw new Error("The resource changed since it was observed. Scan again before recording work.");
+            }
             const item = this.check(input.id, input.token, state);
             if (input.error) {
                 item.error = input.error;
@@ -160,14 +202,21 @@ export class BoardStore {
             if (item.pending.kind === "review") {
                 const review = input.review;
                 if (!review || !RECOMMENDATIONS.includes(review.recommendation) || !review.rationale?.trim() ||
-                    !review.improvements?.trim() || !review.capabilityEvidence?.trim()) {
-                    throw new Error("Review needs a recommendation, rationale, improvements, and capability evidence.");
+                    !review.improvements?.trim() || !review.capabilityEvidence?.trim() || !review.stalenessAssessment?.trim()) {
+                    throw new Error("Review needs a recommendation, rationale, improvements, capability evidence, and staleness assessment.");
                 }
                 item.review = { ...review, at: new Date().toISOString() };
-                item.prepared = null;
             } else if (item.pending.kind === "publish") {
-                const url = new URL(input.url);
-                if (url.protocol !== "https:" || !/\/pull\/\d+$/.test(url.pathname)) throw new Error("Expected a canonical HTTPS pull request URL.");
+                let url;
+                try {
+                    url = new URL(input.url);
+                } catch {
+                    throw new Error("Expected a canonical HTTPS GitHub pull request URL for github/awesome-copilot.");
+                }
+                if (url.origin !== "https://github.com" || url.username || url.password ||
+                    !/^\/github\/awesome-copilot\/pull\/[1-9]\d*$/.test(url.pathname) || url.search || url.hash) {
+                    throw new Error("Expected a canonical HTTPS GitHub pull request URL for github/awesome-copilot.");
+                }
                 item.publication = { url: url.href, at: new Date().toISOString() };
             } else {
                 if (!input.summary?.trim() || !/^[a-f0-9]{64}$/.test(input.diffHash ?? "") ||

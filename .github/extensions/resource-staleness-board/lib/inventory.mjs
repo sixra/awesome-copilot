@@ -6,7 +6,7 @@ import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 
 const exec = promisify(execFile);
-const BULK_CHANGE = /\b(fix(?:ing)? line endings|line-ending fixes|bulk (?:format\w*|renam\w*|updat\w*)|renam(?:e|ing) files|normaliz\w*|whitespace[- ]only)\b/i;
+const BULK_CHANGE = /\b(fix(?:ing)? line endings|line-ending fixes|bulk (?:format\w*|renam\w*|(?:update|updating)\w*)|renam(?:e|ing) files|normaliz\w*|whitespace[- ]only)\b/i;
 const FILE_TYPES = { agents: ".agent.md", prompts: ".prompt.md", instructions: ".instructions.md" };
 
 export async function git(root, args, encoding = "utf8") {
