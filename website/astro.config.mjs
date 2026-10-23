@@ -48,6 +48,23 @@ const githubAdmonitionMapping = {
 };
 
 const site = "https://awesome-copilot.github.com/";
+const workshopLessonRenames = {
+  "3-custom-instructions": "4-custom-instructions",
+  "4-build-filtering": "3-agent-modes",
+  "5-mcp-playwright": "6-mcp-playwright",
+  "6-agent-merge": "8-create-pull-request",
+  "7-canvases": "9-canvases",
+  "8-review": "10-review",
+};
+const workshopRedirects = Object.fromEntries(
+  ["", "es-es", "ja-jp", "ko-kr", "pt-br", "zh-cn"].flatMap((locale) => {
+    const prefix = `/${locale ? `${locale}/` : ""}learning-hub/copilot-workshops/app/`;
+    return Object.entries(workshopLessonRenames).map(([previous, current]) => [
+      `${prefix}${previous}/`,
+      `${prefix}${current}/`,
+    ]);
+  }),
+);
 
 // https://astro.build/config
 export default defineConfig({
@@ -80,27 +97,18 @@ export default defineConfig({
     },
   },
   // English is served at the site root (no locale prefix), preserving all
-  // existing URLs. Additional locales are served under a locale prefix
-  // (e.g. /es-es/…) and fall back to the English page when a translation does
-  // not yet exist. These keys match the locale directory names used by mirrored
-  // Learning Hub course content (website/src/content/docs/<locale>/…).
+  // existing URLs. Localized routes are generated explicitly from translated
+  // Learning Hub content; do not configure a global English fallback here.
   i18n: {
     defaultLocale: "en",
     locales: ["en", "es-es", "ja-jp", "ko-kr", "pt-br", "zh-cn"],
     routing: {
       prefixDefaultLocale: false,
-      fallbackType: "rewrite",
-    },
-    fallback: {
-      "es-es": "en",
-      "ja-jp": "en",
-      "ko-kr": "en",
-      "pt-br": "en",
-      "zh-cn": "en",
     },
   },
   integrations: [react(), sitemap(), pagefindResources()],
   redirects: {
+    ...workshopRedirects,
     "/samples/": "/learning-hub/cookbook/",
     "/hooks/": "https://github.com/github/awesome-copilot/tree/main/hooks",
     "/workflows/": "https://github.com/github/awesome-copilot/tree/main/workflows",

@@ -38,13 +38,14 @@ export function splitLocale(id: string): { locale?: Locale; path: string } {
 export { LOCALES };
 
 /**
- * Only the `copilot-workshops/app` track currently has mirrored translations
- * under `website/src/content/docs/<locale>/…`; every other Learning Hub article,
- * workshop track, and cookbook recipe is English-only. The language selector
- * is only useful (and only correct) on pages that actually have a translation
- * to switch to, so callers gate it on this check rather than showing it site-wide.
+ * The workshop landing page, real-world app track, and First Steps tracks have
+ * mirrored translations. The language selector is only useful on pages with
+ * an actual translation, so callers gate it rather than showing it site-wide.
  */
-const TRANSLATED_PREFIX = "learning-hub/copilot-workshops/app";
+const TRANSLATED_PREFIXES = [
+  "learning-hub/copilot-workshops/app",
+  "learning-hub/copilot-workshops/first-steps",
+];
 const TRANSLATED_WORKSHOP_LANDING = "learning-hub/copilot-workshops";
 
 /** Whether the (unprefixed, English) article id has mirrored translations. */
@@ -52,55 +53,20 @@ export function hasTranslations(englishId: string): boolean {
   const normalized = normalizeLearningHubPath(englishId);
   return (
     normalized === TRANSLATED_WORKSHOP_LANDING ||
-    normalized === TRANSLATED_PREFIX ||
-    normalized.startsWith(`${TRANSLATED_PREFIX}/`)
+    TRANSLATED_PREFIXES.some(
+      (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`),
+    )
   );
 }
 
 /**
- * Narrow Astro's `Astro.currentLocale` to a non-default site locale.
- *
- * Astro's i18n `fallback` map auto-generates the locale-prefixed variant of
- * every English page, so a single route file serves all locales. On those
- * generated pages `Astro.url.pathname` is the *rewritten* English path, so the
- * requested locale is only recoverable from `currentLocale`. The default
- * locale (`en`) maps to `undefined` because English content is unprefixed.
- */
-export function siteLocale(currentLocale: string | undefined): Locale | undefined {
-  return currentLocale && (LOCALES as readonly string[]).includes(currentLocale)
-    ? (currentLocale as Locale)
-    : undefined;
-}
-
-/**
- * Pick the entry to render for `locale`: the real translation when the docs
- * collection has one, otherwise the English entry (fallback).
- */
-export function localizedEntry<T extends { id: string }>(
-  entries: readonly T[],
-  englishId: string,
-  locale: Locale | undefined,
-): T {
-  const english = entries.find((entry) => entry.id === englishId);
-  if (!locale) return english as T;
-  const translated = entries.find((entry) => entry.id === `${locale}/${englishId}`);
-  return translated ?? (english as T);
-}
-
-/**
  * The locale of the *content actually rendered* for a page, as distinct from
- * the locale requested in the URL. Astro's i18n `fallback` config generates a
- * locale-prefixed variant of every English page (`/es-es/agents/`, etc.), so a
- * requested locale with no real translation still resolves to English
- * content. `<html lang>` must reflect what rendered, not what was requested,
- * or the page misdeclares its language to browsers/assistive tech/search
- * engines. Pass the result to `BaseLayout`'s `lang` prop.
+ * the URL. Only explicitly translated entries are served under locale
+ * prefixes, so `<html lang>` must reflect the entry's locale rather than
+ * relying on URL routing to imply it.
  *
  * `englishId` is only meaningful for Learning Hub articles, which are the only
  * content with real mirrored translations today (see `hasTranslations`).
- * Every other route (Home, catalogs, detail pages) has no translation at all,
- * so any locale prefix on those always falls back to English — pass no
- * `englishId` (or omit the call) and this returns `"en"`.
  */
 export function contentLocale(
   requestedLocale: Locale | undefined,
