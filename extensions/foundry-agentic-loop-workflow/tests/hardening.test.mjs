@@ -24,13 +24,13 @@ const exists = file => stat(file).then(() => true, () => false);
 const AUTO = { brief: BRIEF, autonomy: "auto", maxFixLoops: 0 };
 const SUB = "0000aaaa-bbbb-4ccc-8ddd-eeeeffff0000";
 
-async function azure(cwd, { plan = "# Plan v1\n", location = "eastus2" } = {}) {
+async function azure(cwd, { plan = "# Plan v1\n", location = "eastus2", foundry = "" } = {}) {
     await mkdir(path.join(cwd, ".azure", "claims-dev"), { recursive: true });
     await mkdir(path.join(cwd, "docs"), { recursive: true });
     await writeFile(path.join(cwd, ".azure", "deployment-plan.md"), plan);
     await writeFile(path.join(cwd, "docs", "spec.md"), "# Spec\n");
     await writeFile(path.join(cwd, ".azure", "config.json"), JSON.stringify({ version: 1, defaultEnvironment: "claims-dev" }));
-    await writeFile(path.join(cwd, ".azure", "claims-dev", ".env"), `AZURE_ENV_NAME="claims-dev"\nAZURE_SUBSCRIPTION_ID="${SUB}"\nAZURE_LOCATION="${location}"\nAZURE_RESOURCE_GROUP="rg-claims-dev"\nAZURE_OPENAI_KEY="s3cret"\n`);
+    await writeFile(path.join(cwd, ".azure", "claims-dev", ".env"), `AZURE_ENV_NAME="claims-dev"\nAZURE_SUBSCRIPTION_ID="${SUB}"\nAZURE_LOCATION="${location}"\nAZURE_RESOURCE_GROUP="rg-claims-dev"\n${foundry}AZURE_OPENAI_KEY="s3cret"\n`);
 }
 
 async function routerSkill(dir, text = "# Router\n") {
@@ -271,7 +271,7 @@ test("approval fingerprints hash the reviewed files and the azd target without r
     assert.deepEqual(Object.keys(approved.files), [...APPROVED_FILES]);
     assert.equal(approved.files[".azure/deployment-plan.md"], sha("# Plan v1\n"));
     assert.equal(approved.files["docs/verify.md"], sha("# Verify\n"));
-    assert.deepEqual(approved.target, { environmentName: "claims-dev", subscriptionId: SUB, location: "eastus2", resourceGroup: "rg-claims-dev" });
+    assert.deepEqual(approved.target, { environmentName: "claims-dev", subscriptionId: SUB, location: "eastus2", resourceGroup: "rg-claims-dev", foundryResourceGroup: null, aiAccountName: null, aiProjectName: null });
     assert.doesNotMatch(JSON.stringify(approved), /s3cret/);
     assert.deepEqual(approvalChanges(approved, await fingerprint(cwd, args)), []);
     await azure(cwd, { plan: "# Plan v2\n", location: "westus3" });
@@ -280,6 +280,15 @@ test("approval fingerprints hash the reviewed files and the azd target without r
     const partial = { ...approved, target: { ...approved.target, resourceGroup: null } };
     assert.deepEqual(approvalChanges(partial, approved), ["AZURE_RESOURCE_GROUP (unset → rg-claims-dev)"], "a value set after approval was never reviewed");
     assert.deepEqual(approvalChanges(approved, partial), ["AZURE_RESOURCE_GROUP (rg-claims-dev → unset)"]);
+    const foundry = name => `AZURE_FOUNDRY_RESOURCE_GROUP="${name}"\nAZURE_AI_ACCOUNT_NAME="ai-claims"\nAZURE_AI_PROJECT_NAME="claims_proj"\n`;
+    await azure(cwd, { foundry: foundry("rg-claims-dev-foundry") });
+    const withFoundry = await fingerprint(cwd, args);
+    assert.deepEqual([withFoundry.target.foundryResourceGroup, withFoundry.target.aiAccountName, withFoundry.target.aiProjectName], ["rg-claims-dev-foundry", "ai-claims", "claims_proj"]);
+    assert.deepEqual(approvalChanges(approved, withFoundry).filter(change => !change.startsWith(".azure/deployment-plan.md")), ["AZURE_FOUNDRY_RESOURCE_GROUP (unset → rg-claims-dev-foundry)", "AZURE_AI_ACCOUNT_NAME (unset → ai-claims)", "AZURE_AI_PROJECT_NAME (unset → claims_proj)"]);
+    await azure(cwd, { foundry: foundry("rg-other-foundry") });
+    assert.deepEqual(approvalChanges(withFoundry, await fingerprint(cwd, args)), ["AZURE_FOUNDRY_RESOURCE_GROUP (rg-claims-dev-foundry → rg-other-foundry)"], "another Foundry project is never covered by the approval");
+    assert.match(buildPrompt({ base: { runId: "run-1", cwd: "/work", record: recordFile("run-1"), skills: { router: { name: SKILLS.router, dir: "/skills/router" } }, args }, phase: "Deploy", role: "lead", round: 1, task: "x", approval: { approvedAt: "t", ...withFoundry } }), /AZURE_FOUNDRY_RESOURCE_GROUP=rg-claims-dev-foundry, AZURE_AI_ACCOUNT_NAME=ai-claims, AZURE_AI_PROJECT_NAME=claims_proj\./);
+    await azure(cwd);
     await rm(path.join(cwd, "docs", "verify.md"));
     const missing = await fingerprint(cwd, args);
     assert.equal(missing.files["docs/verify.md"], null);
@@ -295,7 +304,7 @@ test("approval fingerprints hash the reviewed files and the azd target without r
     const skills = { router: { name: SKILLS.router, dir: "/skills/router" } };
     const base = { runId: "run-1", cwd: "/work", record: recordFile("run-1"), skills, args };
     const prompt = buildPrompt({ base, phase: "Deploy", role: "lead", round: 2, task: "x", approval: { approvedAt: "2026-01-01T00:00:00.000Z", ...partial } });
-    assert.match(prompt, /AZURE_LOCATION=eastus2\. Unset at approval: AZURE_RESOURCE_GROUP; set them only to values \.azure\/deployment-plan\.md names/);
+    assert.match(prompt, /AZURE_LOCATION=eastus2\. Unset at approval: AZURE_RESOURCE_GROUP, AZURE_FOUNDRY_RESOURCE_GROUP, AZURE_AI_ACCOUNT_NAME, AZURE_AI_PROJECT_NAME; set them only to values \.azure\/deployment-plan\.md names/);
 });
 
 for (const changed of [false, true]) {

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { LESSONS } from "./args.mjs";
+import { TARGET_KEYS } from "./approval.mjs";
 import { MAX_EVIDENCE, MAX_ITEMS, SHARED_PHRASE } from "./record.mjs";
 import { phaseGuide } from "./skills.mjs";
 
@@ -111,7 +112,7 @@ function target({ subscriptionId, location, environmentName }) {
 
 // The fingerprint was recorded when the human approved deployment; Deploy must act on exactly that target.
 function approved({ approvedAt, target: azure }) {
-    const all = [["AZURE_ENV_NAME", azure.environmentName], ["AZURE_SUBSCRIPTION_ID", azure.subscriptionId], ["AZURE_LOCATION", azure.location], ["AZURE_RESOURCE_GROUP", azure.resourceGroup]];
+    const all = Object.entries(TARGET_KEYS).map(([key, name]) => [name, azure[key]]);
     const rows = all.filter(([, value]) => value);
     const unset = all.filter(([, value]) => !value).map(([key]) => key);
     return `Approved deployment (approved ${approvedAt}): ${rows.length ? rows.map(([key, value]) => `${key}=${value}`).join(", ") : "no target values were recorded"}. `
