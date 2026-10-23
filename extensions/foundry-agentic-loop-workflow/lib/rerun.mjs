@@ -46,7 +46,15 @@ function specApprovalOf(record) {
     return { approvedAt: clean(approval.approvedAt, 40), files };
 }
 
-// A rerun from a phase inherits the earlier phases only when the latest run passed every one of them.
+// The spec and plan hashes a gate passed on; a gate without them never counts as covering the current spec.
+function inputsOf(pass) {
+    const files = pass?.inputs;
+    if (!files || typeof files !== "object") return null;
+    return Object.fromEntries(SPEC_FILES.map(rel => [rel, typeof files[rel] === "string" ? clean(files[rel], 200) : null]));
+}
+
+// A rerun from a phase inherits the earlier phases only when the latest run passed every one of them, and every inherited
+// Implement or Verify gate passed on the current spec and plan. A changed spec is re-approved before Implement instead.
 // specApproved says whether a human approved this spec: an approval recorded in the latest run, or carried from the run it
 // inherited Specify from, whose fingerprint still matches docs/spec.md and .azure/deployment-plan.md. Reviewer acceptance does not count.
 export function rerunPlan(latest, from, current) {
@@ -61,7 +69,12 @@ export function rerunPlan(latest, from, current) {
     for (const phase of earlier) {
         const pass = [...record.phases].reverse().find(entry => entry?.phase === phase && entry.status === "passed");
         if (!pass) throw refuse(`the latest run, ${runId}, has no passed ${phase} gate.`);
-        phases.push({ phase, summary: clean(pass.summary, 300), at: clean(pass.at, 40), ...(pass.inheritedFrom && { originalRun: clean(pass.inheritedFrom, 120) }) });
+        const inputs = inputsOf(pass);
+        if (phase !== PHASES[0]) {
+            const stale = inputs ? specChanges({ files: inputs }, current) : ["the spec and plan it passed on were not recorded"];
+            if (stale.length) throw new Error(`Cannot start at ${from}: the ${phase} gate of run ${runId} no longer covers the current spec and plan (${stale.join(", ")}). Start at ${phase} instead, or run the full loop.`);
+        }
+        phases.push({ phase, summary: clean(pass.summary, 300), at: clean(pass.at, 40), ...(inputs && { inputs }), ...(pass.inheritedFrom && { originalRun: clean(pass.inheritedFrom, 120) }) });
     }
     const approval = specApprovalOf(record);
     const changes = approval ? specChanges(approval, current) : [];

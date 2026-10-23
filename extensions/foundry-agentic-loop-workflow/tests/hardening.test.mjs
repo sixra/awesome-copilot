@@ -499,7 +499,7 @@ test("from reruns a phase only when the latest flight record passed every earlie
     assert.equal(await exists(path.join(cwd, ...recordFile("run-2").split("/"))), false, "a refused rerun writes no record");
 
     assert.equal((await first.attempt()).status, "completed");
-    const rerun = harness({ cwd, home, runId: "run-3", args: { ...AUTO, from: "Verify", skipDeploy: true } });
+    const rerun = harness({ cwd, home, runId: "run-3", clockStart: 100, args: { ...AUTO, from: "Verify", skipDeploy: true } });
     const outcome = await rerun.attempt();
     assert.equal(outcome.status, "completed");
     assert.deepEqual(rerun.state.phases, ["Verify"]);
@@ -509,6 +509,22 @@ test("from reruns a phase only when the latest flight record passed every earlie
     const record = await rerun.record();
     assert.deepEqual(record.rerun, { from: "Verify", runId: "run-1" });
     assert.deepEqual(record.phases.slice(0, 2).map(row => [row.phase, row.round, row.status, row.inheritedFrom]), [["Specify", 0, "passed", "run-1"], ["Implement", 0, "passed", "run-1"]]);
+    assert.deepEqual(record.phases[1].inputs, { ".azure/deployment-plan.md": sha("# Plan\n"), "docs/spec.md": sha("# Spec\n") }, "an inherited gate keeps the spec and plan it passed on");
+
+    // A requirement added after Implement and Verify passed is not covered by their gates, so they are not inherited.
+    await writeFile(path.join(cwd, "docs", "spec.md"), "# Spec\n- New requirement\n");
+    for (const [runId, from] of [["run-4", "Deploy"], ["run-5", "Verify"]]) {
+        const stale = await harness({ cwd, home, runId, clockStart: 200, args: { ...AUTO, from } }).attempt();
+        assert.equal(stale.status, "error");
+        assert.equal(stale.error.message, `Cannot start at ${from}: the Implement gate of run run-3 no longer covers the current spec and plan (docs/spec.md). Start at Implement instead, or run the full loop.`);
+        assert.equal(await exists(path.join(cwd, ...recordFile(runId).split("/"))), false);
+    }
+    const implement = harness({ cwd, home, runId: "run-6", clockStart: 300, args: { ...AUTO, from: "Implement", skipDeploy: true } });
+    assert.equal((await implement.attempt()).status, "completed", "Implement reruns on the changed spec");
+    assert.deepEqual(await harness({ cwd, home, runId: "run-7", clockStart: 400, args: { ...AUTO, from: "Deploy" } }).attempt(), { status: "paused", key: "approve-deploy-v1" }, "the new Implement and Verify gates cover the changed spec, so Deploy starts");
+
+    const legacy = { runId: "old", phases: ["Specify", "Implement"].map(phase => ({ phase, status: "passed", summary: "ok", at: "t" })) };
+    assert.throws(() => rerunPlan({ record: legacy, file: "f" }, "Verify", { files: {} }), /the Implement gate of run old no longer covers the current spec and plan \(the spec and plan it passed on were not recorded\)/);
 });
 
 test("from refuses to rerun when there are too many flight records to find the latest one", async t => {

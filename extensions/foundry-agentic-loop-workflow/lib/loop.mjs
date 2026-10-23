@@ -343,13 +343,15 @@ class Run {
 
     async gate(phase, round, { verdict, attempts }) {
         const reports = attempts.map(attempt => attempt.report);
-        const { entry } = await this.event(`gate-${phase.toLowerCase()}-r${round}-v1`, at => {
+        const { entry } = await this.event(`gate-${phase.toLowerCase()}-r${round}-v1`, async at => {
             const entry = {
                 phase,
                 round,
                 status: verdict.status,
                 summary: verdict.summary,
                 at,
+                // A rerun inherits this gate only while the spec and plan still match what it passed on.
+                inputs: (await specFingerprint(this.cwd)).files,
                 attempts: attempts.map(({ role, who, report, retried }) => ({ role, label: who, status: report.status, summary: report.summary, issues: report.issues, ...(retried && { retried }) })),
                 issues: verdict.issues,
                 evidence: verdict.evidence ?? [],
