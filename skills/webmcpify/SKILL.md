@@ -390,7 +390,18 @@ When the user asks to inspect or try tools visually, read
 `references/workbench.md` and launch the temporary Workbench yourself. Prefer its
 Playwright runner: it injects before application code, requires no extension,
 flag, command, or project edit from the user, and cleans up when the browser
-closes. The panel must visibly say `Native` or `Simulated`.
+closes. The panel must visibly say `Native` or `Simulated`. Obtain separate user
+approval before installing Playwright or downloading a browser (interactive default
+No; noninteractive flags and their exact scope are in `references/workbench.md`).
+Never install dependencies without approval.
+
+Workbench is read-only: only observed, non-excluded tools with approved manifest
+`mutating: false` may run, in either transport. Simulated transport calls real
+handlers and does not make them side-effect-free. Client/server/unknown mutations
+must use a supported host journal runner; Workbench has no mutation override.
+On Windows without `flock`/`lockf`, or any unsupported locking host, perform only
+read-only inventory/checks and report mutation checks not-run until a supported
+host runner is available. Never bypass locking or install dependencies to bypass it.
 
 Use the approved manifest as Expected evidence and the live page as Observed
 evidence. Simulated mode is useful for portable browser/device and responsive
@@ -478,7 +489,7 @@ scope collisions).
 - `references/inventory.md` — area mapping, naming/schema conventions, budgets/overlap
 - `references/integrate.md` — declarative + imperative patterns per stack
 - `references/runtime.md` — vendoring + wiring the `templates/` runtime
-- `references/workbench.md` — zero-setup visual inspection and evidence modes
+- `references/workbench.md` — read-only visual inspection, dependency consent, and evidence modes
 - `references/verify.md` — harness setup: flags, surfaces, Playwright/Puppeteer, evals
 - `references/heal.md` — failure taxonomy → fixes
 - `references/discovery.md` — optional off-page discovery (manifest, `rel="webmcp"`,

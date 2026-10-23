@@ -84,10 +84,11 @@ committing state. Cancellation/timeout leaves an unknown outcome when handlers o
 servers continue; inspect state before a manual retry. Registration disposal removes
 availability and is not an execution-cancellation mechanism.
 
-`tests/parity.test.mjs` compares JS and transpiled TS client runtime behavior;
-`tests/workbench.test.mjs` tests imperative simulation (default input, serialized
-returns and execution/registration separation). `tests/workbench-browser.mjs` tests
-the Workbench UI using simulation, not native API conformance. Mutation-journal
-checks in `tests/manifest-lock.test.mjs` cover host-side durable dispatch/settlement,
-locking and interrupted entries; neither journaling nor cancellation guarantees
-exactly-once effects. No continuation-token support is implemented here.
+`tests/workbench.test.mjs` exercises the read-only Workbench UI in JSDOM with
+modeled Native and real Simulated transports, imperative/declarative dispatch,
+forced-click/direct-dispatch attempts, exclusions and successful reads. It does
+not prove native API conformance. `tests/workbench-cli.test.mjs` exercises separate
+package/browser consent using isolated fake runtimes, without engine downloads.
+See `tests/README.md` for prerequisites and commands. The TS/JS mutation journal
+helpers remain host-side prerequisites for mutations; neither journaling nor
+cancellation guarantees exactly-once effects. No continuation-token support is implemented here.

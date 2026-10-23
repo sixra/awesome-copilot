@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createInterface } from 'node:readline/promises';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -9,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
 const playwrightVersion = '1.61.1';
-const usage = 'Usage: node workbench.mjs --url <dev-url> [--manifest <path>] [--browser chromium|firefox|webkit] [--native]';
+const usage = 'Usage: node workbench.mjs --url <dev-url> [--manifest <path>] [--browser chromium|firefox|webkit] [--native] [--allow-playwright-install] [--allow-browser-download]';
 const value = (flag, fallback) => {
   const index = argv.indexOf(flag);
   if (index === -1) return fallback;
@@ -42,6 +43,19 @@ function run(command, args, options = {}) {
   });
 }
 
+async function consent(flag, action) {
+  if (argv.includes(flag)) return;
+  const instruction = `${action} requires explicit approval. Re-run with ${flag} to approve only this action.`;
+  if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error(instruction);
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await prompt.question(`${action}? [y/N] `);
+    if (!/^y(es)?$/i.test(answer.trim())) throw new Error(instruction);
+  } finally {
+    prompt.close();
+  }
+}
+
 async function loadPlaywright() {
   const localRequire = createRequire(import.meta.url);
   try {
@@ -58,6 +72,7 @@ async function loadPlaywright() {
     if (error?.code !== 'MODULE_NOT_FOUND' || !String(error.message).includes("'playwright'")) throw error;
   }
 
+  await consent('--allow-playwright-install', `Install Playwright ${playwrightVersion} with npm into ${scratch} (no browser download)`);
   await mkdir(scratch, { recursive: true });
   console.error(`Preparing temporary Playwright ${playwrightVersion} runtime outside the target project…`);
   await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
@@ -84,6 +99,7 @@ try {
 } catch (error) {
   const missingBundledBrowser = !native && /Executable doesn't exist|browserType\.launch: Executable/.test(String(error));
   if (!missingBundledBrowser) throw error;
+  await consent('--allow-browser-download', `Download the Playwright ${browserName} browser into its browser cache`);
   console.error(`Downloading the temporary ${browserName} browser runtime…`);
   await run(process.execPath, [loaded.resolveModule('playwright/cli'), 'install', browserName]);
   browser = await browserType.launch(launchOptions);

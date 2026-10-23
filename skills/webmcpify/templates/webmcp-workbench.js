@@ -265,13 +265,11 @@
       list: $('.tool-list'), select: $('.tool-select'), title: $('.tool-title'), meta: $('.tool-meta'),
       schema: $('.schema'), expected: $('.expected'), fields: $('.fields'), raw: $('.raw-input'), run: $('.run'),
       result: $('.result'), resultMeta: $('.result-meta'), live: $('.live'),
-      confirm: $('.confirm'), confirmText: $('.confirm-text'), confirmRun: $('.confirm-run'),
       validExample: $('.valid-example'), invalidExample: $('.invalid-example'),
       history: $('.history-list'), historyEmpty: $('.history-empty'),
     };
     let tools = [];
     let selectedName = '';
-    let pendingRun = null;
     let toolFingerprint = '';
     let fieldSchema = null;
     const history = [];
@@ -284,6 +282,13 @@
     }
 
     function selected() { return tools.find((tool) => tool.name === selectedName); }
+
+    // The inspector has no durable host journal. Fail closed before any dispatch,
+    // including input-contract probes and simulated form input/change events.
+    function canRun(tool) {
+      return Boolean(tool && tool._observed !== false && !excludedByName.has(tool.name)
+        && expectedByName.get(tool.name)?.mutating === false);
+    }
 
     function mutationLabel(tool) {
       const expectedTool = expectedByName.get(tool.name);
@@ -406,10 +411,10 @@
       ui.validExample.hidden = !hasValid;
       ui.invalidExample.hidden = !hasInvalid;
       applyArguments(hasValid ? examples.valid : {});
-      ui.result.textContent = 'Run the tool to inspect its structured result.';
+      ui.result.textContent = canRun(tool) ? 'Run the tool to inspect its structured result.' : 'Blocked: Workbench runs only observed, approved manifest tools with mutating=false. Use the host journal runner for mutations.';
       ui.resultMeta.textContent = 'Not run';
       ui.run.textContent = `Run ${tool.name}`;
-      ui.run.disabled = tool._observed === false || excludedByName.has(tool.name);
+      ui.run.disabled = !canRun(tool);
     }
 
     function readArguments() {
@@ -424,7 +429,7 @@
 
     async function execute() {
       const tool = selected();
-      if (!tool || tool._observed === false || excludedByName.has(tool.name)) return;
+      if (!canRun(tool)) return;
       ui.run.disabled = true;
       ui.resultMeta.textContent = 'Running…';
       const started = performance.now();
@@ -448,17 +453,14 @@
         renderHistory({ name: tool.name, status: 'Failed', duration, args, result: error?.message ?? String(error) });
       } finally {
         const current = selected();
-        ui.run.disabled = !current || current._observed === false || excludedByName.has(current.name);
+        ui.run.disabled = !canRun(current);
       }
     }
 
     function requestRun() {
       const tool = selected();
-      if (!tool) return;
-      if (mutationLabel(tool) === 'Read only') return execute();
-      ui.confirmText.textContent = `${tool.name} may change application state. Run it once with the visible arguments?`;
-      pendingRun = execute;
-      ui.confirm.showModal();
+      if (!canRun(tool)) return;
+      return execute();
     }
 
     async function refresh() {
@@ -501,12 +503,10 @@
     ui.run.addEventListener('click', requestRun);
     ui.validExample.addEventListener('click', () => applyArguments(expectedByName.get(selectedName)?.examples?.valid));
     ui.invalidExample.addEventListener('click', () => applyArguments(expectedByName.get(selectedName)?.examples?.invalid));
-    ui.confirm.addEventListener('close', () => { pendingRun = null; });
-    ui.confirmRun.addEventListener('click', () => { const run = pendingRun; pendingRun = null; ui.confirm.close(); run?.(); });
     doc.addEventListener('toolchange', refresh);
     installed.context.addEventListener?.('toolchange', refresh);
     const refreshTimer = global.setInterval(() => { if (!ui.panel.hidden) refresh(); }, 1000);
-    const onKeydown = (event) => { if (event.key === 'Escape' && !ui.panel.hidden && !ui.confirm.open) setOpen(false); };
+    const onKeydown = (event) => { if (event.key === 'Escape' && !ui.panel.hidden) setOpen(false); };
     global.addEventListener('keydown', onKeydown);
 
     refresh();
@@ -564,7 +564,7 @@
     ));
     panel.append(make('div', {
       className: 'notice',
-      text: `${native ? 'Calls use this browser’s WebMCP implementation.' : 'Portable preview only — this is not native browser proof.'} ${secureContext ? 'Secure context.' : 'Not a secure context; native WebMCP cannot register here.'}`,
+      text: `Read-only inspector: only manifest mutating=false tools can run. Mutations require the host journal runner. Simulated transport still calls real handlers and does not make them side-effect-free. ${native ? 'Calls use this browser’s WebMCP implementation.' : 'Portable preview only — this is not native browser proof.'} ${secureContext ? 'Secure context.' : 'Not a secure context; native WebMCP cannot register here.'}`,
     }));
 
     const mobileSelect = make('select', { className: 'tool-select', id: 'wb-select' });
@@ -612,14 +612,6 @@
       button('run', 'Run tool'),
     ));
     panel.append(make('p', { className: 'live', attributes: { 'aria-live': 'polite' } }));
-    const confirmForm = make('form', { attributes: { method: 'dialog' } },
-      eyebrow('Confirm mutation'), make('h2', { id: 'wb-confirm-title', text: 'Run this tool?' }),
-      make('p', { className: 'confirm-text' }),
-      make('div', {}, button('', 'Cancel', { value: 'cancel', type: 'submit' }), button('confirm-run', 'Run once', { value: 'default' })),
-    );
-    panel.append(make('dialog', {
-      className: 'confirm', attributes: { 'aria-labelledby': 'wb-confirm-title' },
-    }, confirmForm));
     fragment.append(panel);
     return fragment;
   }
@@ -627,9 +619,9 @@
   function styles() {
     return `
       :host{--p:#5f3dc4;--p2:#4d31a5;--button-ink:#fff;--bg:#fff;--surface:#f7f5fb;--ink:#26232d;--muted:#6d6777;--line:#e7e2ed;--good:#16845b;all:initial;color-scheme:light dark;font-family:"Familjen Grotesk","Segoe UI",system-ui,sans-serif;color:var(--ink)}
-      *,*::before,*::after{box-sizing:border-box}button,input,select,textarea{font:inherit}button{cursor:pointer}.launcher{position:fixed;z-index:2147483646;right:max(18px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));width:48px;height:48px;border:0;border-radius:13px;background:var(--p);color:var(--button-ink);font:800 25px/1 ui-monospace,monospace;box-shadow:0 10px 28px #22163b3d}.launcher:focus-visible,.panel :focus-visible{outline:3px solid color-mix(in srgb,var(--p),white 35%);outline-offset:2px}.panel{position:fixed;z-index:2147483645;right:max(18px,env(safe-area-inset-right));bottom:max(78px,calc(env(safe-area-inset-bottom) + 70px));width:min(760px,calc(100vw - 36px));height:min(680px,calc(100dvh - 110px));background:var(--bg);border:0;border-radius:16px;box-shadow:0 24px 70px #22163b33;overflow:hidden}.panel[hidden]{display:none}.panel>header{height:74px;display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--line)}h1,h2,h3,p{margin:0}h1{font-size:20px;letter-spacing:-.02em}.eyebrow{text-transform:uppercase;letter-spacing:.14em;font:700 10px/1.4 ui-monospace,monospace;color:var(--p)}.header-actions{display:flex;align-items:center;gap:10px}.evidence{padding:6px 9px;border:1px solid currentColor;border-radius:999px;font:700 11px/1 ui-monospace,monospace}.evidence.native{color:var(--good)}.evidence.simulated{color:var(--p)}.icon{width:44px;height:44px;border:0;background:transparent;color:var(--muted);font-size:27px}.notice{padding:8px 18px;background:var(--surface);border-bottom:1px solid var(--line);color:var(--muted);font-size:12px}.body{display:grid;grid-template-columns:250px 1fr;height:calc(100% - 174px)}aside{border-right:1px solid var(--line);overflow:auto}.search-wrap{position:sticky;top:0;padding:14px;background:var(--bg);border-bottom:1px solid var(--line)}.search{width:100%;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink)}.search-wrap span{display:block;margin-top:8px;color:var(--muted);font:11px ui-monospace,monospace}.tool-list{padding:8px}.tool-row{width:100%;min-height:54px;padding:9px 10px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--ink);text-align:left}.tool-row strong,.tool-row span{display:block;overflow:hidden;text-overflow:ellipsis}.tool-row strong{font:700 12px ui-monospace,monospace}.tool-row span{margin-top:5px;color:var(--muted);font-size:11px}.tool-row:hover{background:var(--surface)}.tool-row.active{background:color-mix(in srgb,var(--p),transparent 91%);border-color:color-mix(in srgb,var(--p),transparent 70%)}.empty{padding:18px;color:var(--muted);font-size:12px}main{padding:18px;overflow:auto}.tool-heading{margin-bottom:16px}.tool-title{font:700 19px ui-monospace,monospace;overflow-wrap:anywhere}.tool-meta{margin-top:6px;color:var(--muted);font-size:12px}.block,details{margin-top:12px;border:1px solid var(--line);border-radius:11px;background:var(--bg)}.block-title{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border-bottom:1px solid var(--line)}h3,summary{font-size:13px}.example-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}.example-actions button{min-height:32px;padding:0 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);font-size:11px}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:12px}.field span{display:block;margin-bottom:6px;color:var(--muted);font-size:11px}.field input,.field select,.raw-input{width:100%;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}.field input[type=checkbox]{width:44px}.raw-input{min-height:110px;border:0;border-radius:0 0 10px 10px;resize:vertical;font:12px/1.55 ui-monospace,monospace}details summary{display:flex;align-items:center;min-height:44px;padding:10px 12px;cursor:pointer}.schema,.expected,.result,.history-list pre{margin:0;padding:12px;max-height:190px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface);color:var(--ink);font:11px/1.55 ui-monospace,monospace}.result-block{margin-bottom:18px}.history-empty{padding:0 12px 12px;color:var(--muted);font-size:12px}.history-list{margin:0;padding:0;list-style:none}.history-list li{border-top:1px solid var(--line)}.history-heading{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;font-size:11px}.history-heading strong{overflow-wrap:anywhere}.history-heading span{color:var(--muted);white-space:nowrap}.panel>footer{position:absolute;left:250px;right:0;bottom:0;height:58px;display:flex;align-items:center;justify-content:space-between;padding:8px 18px;border-top:1px solid var(--line);background:var(--bg)}footer span{color:var(--muted);font:11px ui-monospace,monospace}.run,.confirm-run{min-height:44px;padding:0 16px;border:0;border-radius:9px;background:var(--p);color:var(--button-ink);font-weight:750}.run:hover,.confirm-run:hover{background:var(--p2)}.run:disabled{opacity:.5}.live{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.confirm{max-width:380px;border:0;border-radius:14px;background:var(--bg);color:var(--ink);box-shadow:0 24px 70px #22163b4d}.confirm::backdrop{background:#17131f66}.confirm form{padding:6px}.confirm h2{margin-top:4px}.confirm-text{margin:12px 0 20px;color:var(--muted);line-height:1.45}.confirm form>div{display:flex;justify-content:flex-end;gap:8px}.confirm form button{min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink)}.confirm form .confirm-run{border:0;background:var(--p);color:var(--button-ink)}.mobile-picker{display:none}
+      *,*::before,*::after{box-sizing:border-box}button,input,select,textarea{font:inherit}button{cursor:pointer}.launcher{position:fixed;z-index:2147483646;right:max(18px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));width:48px;height:48px;border:0;border-radius:13px;background:var(--p);color:var(--button-ink);font:800 25px/1 ui-monospace,monospace;box-shadow:0 10px 28px #22163b3d}.launcher:focus-visible,.panel :focus-visible{outline:3px solid color-mix(in srgb,var(--p),white 35%);outline-offset:2px}.panel{position:fixed;z-index:2147483645;right:max(18px,env(safe-area-inset-right));bottom:max(78px,calc(env(safe-area-inset-bottom) + 70px));width:min(760px,calc(100vw - 36px));height:min(680px,calc(100dvh - 110px));background:var(--bg);border:0;border-radius:16px;box-shadow:0 24px 70px #22163b33;overflow:hidden;display:flex;flex-direction:column}.panel[hidden]{display:none}.panel>header{min-height:74px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--line)}h1,h2,h3,p{margin:0}h1{font-size:20px;letter-spacing:-.02em}.eyebrow{text-transform:uppercase;letter-spacing:.14em;font:700 10px/1.4 ui-monospace,monospace;color:var(--p)}.header-actions{display:flex;align-items:center;gap:10px}.evidence{padding:6px 9px;border:1px solid currentColor;border-radius:999px;font:700 11px/1 ui-monospace,monospace}.evidence.native{color:var(--good)}.evidence.simulated{color:var(--p)}.icon{width:44px;height:44px;border:0;background:transparent;color:var(--muted);font-size:27px}.notice{flex-shrink:0;padding:8px 18px;background:var(--surface);border-bottom:1px solid var(--line);color:var(--muted);font-size:12px}.body{display:grid;grid-template-columns:250px 1fr;flex:1;min-height:0}aside{border-right:1px solid var(--line);overflow:auto}.search-wrap{position:sticky;top:0;padding:14px;background:var(--bg);border-bottom:1px solid var(--line)}.search{width:100%;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink)}.search-wrap span{display:block;margin-top:8px;color:var(--muted);font:11px ui-monospace,monospace}.tool-list{padding:8px}.tool-row{width:100%;min-height:54px;padding:9px 10px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--ink);text-align:left}.tool-row strong,.tool-row span{display:block;overflow:hidden;text-overflow:ellipsis}.tool-row strong{font:700 12px ui-monospace,monospace}.tool-row span{margin-top:5px;color:var(--muted);font-size:11px}.tool-row:hover{background:var(--surface)}.tool-row.active{background:color-mix(in srgb,var(--p),transparent 91%);border-color:color-mix(in srgb,var(--p),transparent 70%)}.empty{padding:18px;color:var(--muted);font-size:12px}main{padding:18px;overflow:auto}.tool-heading{margin-bottom:16px}.tool-title{font:700 19px ui-monospace,monospace;overflow-wrap:anywhere}.tool-meta{margin-top:6px;color:var(--muted);font-size:12px}.block,details{margin-top:12px;border:1px solid var(--line);border-radius:11px;background:var(--bg)}.block-title{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border-bottom:1px solid var(--line)}h3,summary{font-size:13px}.example-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}.example-actions button{min-height:32px;padding:0 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);font-size:11px}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:12px}.field span{display:block;margin-bottom:6px;color:var(--muted);font-size:11px}.field input,.field select,.raw-input{width:100%;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}.field input[type=checkbox]{width:44px}.raw-input{min-height:110px;border:0;border-radius:0 0 10px 10px;resize:vertical;font:12px/1.55 ui-monospace,monospace}details summary{display:flex;align-items:center;min-height:44px;padding:10px 12px;cursor:pointer}.schema,.expected,.result,.history-list pre{margin:0;padding:12px;max-height:190px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface);color:var(--ink);font:11px/1.55 ui-monospace,monospace}.result-block{margin-bottom:18px}.history-empty{padding:0 12px 12px;color:var(--muted);font-size:12px}.history-list{margin:0;padding:0;list-style:none}.history-list li{border-top:1px solid var(--line)}.history-heading{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;font-size:11px}.history-heading strong{overflow-wrap:anywhere}.history-heading span{color:var(--muted);white-space:nowrap}.panel>footer{margin-left:250px;min-height:58px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:8px 18px;border-top:1px solid var(--line);background:var(--bg)}footer span{color:var(--muted);font:11px ui-monospace,monospace}.run{min-height:44px;padding:0 16px;border:0;border-radius:9px;background:var(--p);color:var(--button-ink);font-weight:750}.run:hover{background:var(--p2)}.run:disabled{opacity:.5}.live{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.mobile-picker{display:none}
       @media(prefers-color-scheme:dark){:host{--bg:#1b1821;--surface:#25212c;--ink:#f5f1fa;--muted:#aaa2b5;--line:#3b3544;--p:#9b7af0;--p2:#aa8df5;--button-ink:#17121d;--good:#5ad4a4}}
-      @media(max-width:640px){.launcher{right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom))}.launcher[aria-expanded=true]{display:none}.panel{inset:0;width:100vw;height:100dvh;border:0;border-radius:0;padding-top:env(safe-area-inset-top)}.panel>header{height:68px}.notice{padding:8px 14px}.mobile-picker{display:block;padding:10px 14px;border-bottom:1px solid var(--line)}.mobile-picker label{display:block;margin-bottom:5px;color:var(--muted);font-size:11px}.tool-select{width:100%;height:44px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}.body{display:block;height:calc(100% - 229px)}aside{display:none}main{height:100%;padding:14px}.fields{grid-template-columns:1fr}.panel>footer{left:0;height:70px;padding:9px 14px calc(9px + env(safe-area-inset-bottom))}.run{min-height:48px;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+      @media(max-width:640px){.launcher{right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom))}.launcher[aria-expanded=true]{display:none}.panel{inset:0;width:100vw;height:100dvh;border:0;border-radius:0;padding-top:env(safe-area-inset-top)}.panel>header{min-height:68px}.notice{padding:8px 14px}.mobile-picker{display:block;padding:10px 14px;border-bottom:1px solid var(--line)}.mobile-picker label{display:block;margin-bottom:5px;color:var(--muted);font-size:11px}.tool-select{width:100%;height:44px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}.body{display:block}aside{display:none}main{height:100%;padding:14px}.fields{grid-template-columns:1fr}.panel>footer{margin-left:0;min-height:70px;padding:9px 14px calc(9px + env(safe-area-inset-bottom))}.run{min-height:48px;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
       @media(prefers-reduced-motion:no-preference){.panel{animation:wb-in .16s ease-out}.launcher{transition:transform .15s ease}.launcher:hover{transform:translateY(-2px)}@keyframes wb-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}}
     `;
   }

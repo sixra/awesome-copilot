@@ -237,3 +237,18 @@ Runner reference: [Google WebMCP Evals](https://github.com/GoogleChromeLabs/webm
   each finding per `references/discovery.md`: a confirmed **spec** violation means
   the harness is missing an assertion — add it, then heal the failure. Conventions
   and invented checks are report input only.
+
+## Unsupported host and Workbench fallback
+
+Windows without `flock(1)` or `lockf(1)` cannot run this shipped mutation journal;
+it fails closed. Do not bypass locking, substitute an in-memory/browser lock, or
+install dependencies without user approval. Continue only read-only inventory and
+checks and report mutation checks **not-run** until a supported host journal
+runner is available. Do not count them as verified.
+
+Workbench is always read-only, in Native and Simulated transport: only observed,
+non-excluded approved manifest tools with `mutating: false` may run. Simulated
+transport still calls application handlers and does not make them side-effect-free.
+Use the host journal runner for every mutation, including invalid examples and
+cleanup; Workbench cannot supply those hooks. See [workbench.md](workbench.md) for
+separate Playwright package and browser download consent requirements.

@@ -117,8 +117,9 @@ manifest directory, optionally record `releasedAt` in the locked sidecar, then
 unlock/close it. A crash needs no sidecar deletion: the kernel releases ownership
 while the durable `started` entry remains for the next holder to reconcile.
 
-Apply this to VERIFY, HEAL retries, Playwright/Puppeteer harnesses, manual
-Workbench invocations and smoke/model evals. Disable runner-level retries and
+Apply this to VERIFY, HEAL retries, Playwright/Puppeteer harnesses and smoke/model
+evals. Workbench blocks mutations entirely; its read-only invocations do not
+implement or replace this protocol. Disable runner-level retries and
 wrap **every** dispatch, including model-selected calls, with the journal hooks.
 If an external runner cannot expose those hooks, expose only read-only tools or
 mark mutation evals not-run; pre-recording an entire eval is insufficient.
@@ -165,3 +166,18 @@ Source boundaries checked 2026-09-14: [Chrome WebMCP](https://developer.chrome.c
 is experimental; [Chrome execution](https://developer.chrome.com/docs/ai/webmcp/imperative-api)
 and [Puppeteer](https://pptr.dev/guides/webmcp) have different version requirements.
 The invalidation procedure above is webmcpify policy, not a WebMCP spec feature.
+
+## Unsupported host and Workbench fallback
+
+Windows without `flock(1)` or `lockf(1)` cannot run this shipped mutation journal;
+it fails closed. Do not bypass locking, substitute an in-memory/browser lock, or
+install dependencies without user approval. Continue only read-only inventory and
+checks and report mutation checks **not-run** until a supported host journal
+runner is available. Do not count them as verified.
+
+Workbench is always read-only, in Native and Simulated transport: only observed,
+non-excluded approved manifest tools with `mutating: false` may run. Simulated
+transport still calls application handlers and does not make them side-effect-free.
+Use the host journal runner for every mutation, including invalid examples and
+cleanup; Workbench cannot supply those hooks. See [workbench.md](workbench.md) for
+separate Playwright package and browser download consent requirements.
