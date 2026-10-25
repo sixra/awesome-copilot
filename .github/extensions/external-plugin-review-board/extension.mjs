@@ -10,6 +10,7 @@ import { BoardStore, isReadyForApproval, reviewBlockedReason, RECOMMENDATIONS } 
 import * as gh from "./lib/github.mjs";
 import { buildReviewPrompt, buildRereviewPrompt, REVIEW_FIELDS_SCHEMA } from "./lib/review-prompt.mjs";
 import { startBoardServer, expectedError } from "./lib/server.mjs";
+import { assertNoPendingFixesRequest, confirmRequestFixes } from "./lib/request-fixes.mjs";
 
 const CANVAS_ID = "external-plugin-review-board";
 const REPO = "github/awesome-copilot";
@@ -46,10 +47,28 @@ async function resolvePendingDecisions(numbers = store.pendingDecisionNumbers())
     return resolved;
 }
 
+async function resolvePendingFixesRequests(numbers = store.pendingFixesRequestNumbers()) {
+    const resolved = [];
+    for (const number of await numbers) {
+        try {
+            const status = await gh.getIssueStatus(store.state.repo, number);
+            const request = await store.resolvePendingFixesRequest(number, status);
+            if (request) {
+                detailCache.delete(number);
+                resolved.push(number);
+            }
+        } catch (error) {
+            session?.log(`Could not resolve pending fixes request for #${number}: ${error.message}`, { level: "warning" });
+        }
+    }
+    return resolved;
+}
+
 async function refresh() {
     refreshInFlight ??= (async () => {
         try {
             await resolvePendingDecisions();
+            await resolvePendingFixesRequests();
             const issues = await gh.listBoardIssues(store.state.repo);
             detailCache.clear();
             return await store.syncIssues(issues);
@@ -160,6 +179,7 @@ async function postDecisionCommand({ number, kind, comment }) {
     const item = store.getItem(number);
     if (item.decision) throw new Error(`#${number} was already actioned (${item.decision.kind}).`);
     if (item.pendingDecision) throw new Error(`#${number} already has a posted command awaiting workflow confirmation. Refresh the board.`);
+    assertNoPendingFixesRequest(item, number);
 
     const status = await gh.getIssueStatus(store.state.repo, number);
     if (status.state !== "OPEN") throw new Error(`#${number} is ${status.state.toLowerCase()}. Refresh the board.`);
@@ -203,6 +223,7 @@ async function postRequestFixes({ number, comment }) {
     const item = store.getItem(number);
     if (item.decision) throw new Error(`#${number} was already actioned (${item.decision.kind}).`);
     if (item.pendingDecision) throw new Error(`#${number} already has a posted command awaiting workflow confirmation. Refresh the board.`);
+    assertNoPendingFixesRequest(item, number);
     if (decisionsInFlight.has(number)) throw new Error(`#${number} already has a GitHub action in progress.`);
     decisionsInFlight.add(number);
     try {
@@ -212,16 +233,21 @@ async function postRequestFixes({ number, comment }) {
             throw new Error(`#${number} is already waiting on submitter fixes.`);
         }
         const commentUrl = await gh.postComment(store.state.repo, number, body);
+        const pendingFixesRequest = { body, commentUrl, at: new Date().toISOString() };
+        await store.recordPendingFixesRequest(number, pendingFixesRequest);
         detailCache.delete(number);
-        for (const delay of [1000, 2000, 4000]) {
-            await sleep(delay);
-            const latest = await gh.getIssueStatus(store.state.repo, number);
-            if (latest.labels.includes("requires-submitter-fixes")) {
-                await refresh();
-                return { number, commentUrl, pending: false };
-            }
-        }
-        return { number, commentUrl, pending: true };
+        const confirmed = await confirmRequestFixes({
+            number,
+            getIssueStatus: (issueNumber) => gh.getIssueStatus(store.state.repo, issueNumber),
+            onConfirmed: (latest) => store.resolvePendingFixesRequest(number, latest),
+            refresh,
+            sleep,
+            log: (error) => session?.log(
+                `Could not confirm fixes request for #${number}: ${error?.stack ?? error}`,
+                { level: "warning" },
+            ),
+        });
+        return { number, commentUrl, pending: !confirmed };
     } finally {
         decisionsInFlight.delete(number);
     }
@@ -249,6 +275,9 @@ function boardSummary() {
             decision: item.decision ? { kind: item.decision.kind, at: item.decision.at } : null,
             pendingDecision: item.pendingDecision
                 ? { kind: item.pendingDecision.kind, at: item.pendingDecision.at }
+                : null,
+            pendingFixesRequest: item.pendingFixesRequest
+                ? { at: item.pendingFixesRequest.at, commentUrl: item.pendingFixesRequest.commentUrl }
                 : null,
         })),
     };

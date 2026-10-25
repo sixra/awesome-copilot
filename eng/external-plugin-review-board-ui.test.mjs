@@ -32,10 +32,13 @@ function createContext(item, { bulkBusy = false } = {}) {
         reject: button(),
         requestFixes: button(),
         commentPost: button(),
+        comment: { value: "Update the README" },
+        preview: {},
     };
     const context = vm.createContext({
         board: { columns: [] },
         bulkBusy,
+        decisionBusy: false,
         clearTimeout() {},
         details: new Map(),
         findItem: () => item,
@@ -47,8 +50,8 @@ function createContext(item, { bulkBusy = false } = {}) {
         renderTab() {},
         selected: item.number,
         ui,
-        updatePreview() {},
     });
+    evaluateFunction(context, appSource, "function commentBody(kind)", "function resetConfirm(");
     return { context, ui };
 }
 

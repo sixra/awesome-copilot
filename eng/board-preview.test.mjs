@@ -258,3 +258,94 @@ test("external-plugin-review-board: Request fixes is unavailable once the submis
     assert.equal(ui.nodes.get("decision-request-fixes").disabled, true);
     assert.equal(ui.nodes.get("decision-comment-post").disabled, false);
 });
+
+test("external-plugin-review-board: each command preview strips only its route's command", async () => {
+    const ui = await createUI("external-plugin-review-board");
+    const textarea = ui.nodes.get("decision-comment");
+
+    textarea.value = "/reject Missing LICENSE";
+    await ui.context.decide("request-fixes");
+    assert.equal(ui.nodes.get("decision-preview").textContent,
+        "Will post:\n/request-fixes /reject Missing LICENSE");
+
+    ui.context.resetConfirm();
+    textarea.value = "/request-fixes Add docs";
+    await ui.context.decide("reject");
+    assert.equal(ui.nodes.get("decision-preview").textContent,
+        "Will post:\n/reject /request-fixes Add docs");
+});
+
+test("external-plugin-review-board: preview updates preserve item and bulk action guards", async () => {
+    const ui = await createUI("external-plugin-review-board");
+    const textarea = ui.nodes.get("decision-comment");
+    const input = ui.nodes.get("decision-comment").listeners.input;
+    const requestFixes = ui.nodes.get("decision-request-fixes");
+    const reject = ui.nodes.get("decision-reject");
+    const comment = ui.nodes.get("decision-comment-post");
+
+    vm.runInContext(`board.items[0].labels = ["requires-submitter-fixes"]`, ui.context);
+    textarea.value = "Try again";
+    input();
+    assert.equal(requestFixes.disabled, true);
+
+    vm.runInContext(`board.items[0].pendingDecision = { kind: "reject" }`, ui.context);
+    textarea.value = "Follow-up question";
+    input();
+    assert.equal(requestFixes.disabled, true);
+    assert.equal(reject.disabled, true);
+    assert.equal(comment.disabled, false);
+
+    vm.runInContext("bulkBusy = true", ui.context);
+    textarea.value = "Typing during column action";
+    input();
+    assert.equal(requestFixes.disabled, true);
+    assert.equal(reject.disabled, true);
+    assert.equal(comment.disabled, true);
+});
+
+test("external-plugin-review-board: Comment preserves a newer draft typed while posting", async () => {
+    let release;
+    let firstRequest = true;
+    const ui = await createUI("external-plugin-review-board", () => {
+        if (firstRequest) {
+            firstRequest = false;
+            return new Promise(resolve => { release = resolve; });
+        }
+        return Promise.resolve({ comments: [] });
+    });
+    const textarea = ui.nodes.get("decision-comment");
+    textarea.value = "Submitted comment";
+    ui.nodes.get("decision-comment").listeners.input();
+    await ui.context.decide("comment");
+    const pending = ui.context.decide("comment");
+    await new Promise(resolve => setImmediate(resolve));
+
+    textarea.value = "Newer unsent draft";
+    ui.nodes.get("decision-comment").listeners.input();
+    release({ commentUrl: "https://example.test/c/3" });
+    await pending;
+
+    assert.equal(textarea.value, "Newer unsent draft");
+    assert.equal(vm.runInContext("stagedComments.get(1)", ui.context), "Newer unsent draft");
+});
+
+test("external-plugin-review-board: Request fixes preserves a newer draft when another drawer is opened", async () => {
+    let release;
+    const ui = await createUI("external-plugin-review-board", () =>
+        new Promise(resolve => { release = resolve; }));
+    const textarea = ui.nodes.get("decision-comment");
+    textarea.value = "Submitted fixes";
+    ui.nodes.get("decision-comment").listeners.input();
+    await ui.context.decide("request-fixes");
+    const pending = ui.context.decide("request-fixes");
+    await new Promise(resolve => setImmediate(resolve));
+
+    textarea.value = "Newer unsent draft";
+    ui.nodes.get("decision-comment").listeners.input();
+    ui.select(2);
+    release({ commentUrl: "https://example.test/c/4", pending: false });
+    await pending;
+
+    assert.equal(ui.selected(), 2);
+    assert.equal(vm.runInContext("stagedComments.get(1)", ui.context), "Newer unsent draft");
+});

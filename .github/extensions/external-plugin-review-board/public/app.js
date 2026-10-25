@@ -47,6 +47,7 @@ const details = new Map();
 const pendingConfirm = { kind: null, timer: null };
 const stagedComments = new Map();
 let bulkBusy = false;
+let decisionBusy = false;
 
 // ---------- helpers ----------
 
@@ -441,12 +442,6 @@ function renderDrawer() {
 
     ui.drawerFooter.hidden = Boolean(item.decision);
     updatePreview();
-    ui.approve.disabled = bulkBusy || !item.reviewEligible || Boolean(item.pendingDecision);
-    ui.reject.disabled ||= bulkBusy || Boolean(item.pendingDecision);
-    const awaitingFixes = item.labels.includes("requires-submitter-fixes");
-    ui.requestFixes.disabled ||= bulkBusy || Boolean(item.pendingDecision) || awaitingFixes;
-    if (awaitingFixes) ui.requestFixes.title = "Already waiting on submitter fixes.";
-    ui.commentPost.disabled ||= bulkBusy;
     renderTab(item);
 }
 
@@ -591,14 +586,16 @@ async function loadDetail(number, { force = false } = {}) {
 
 function commentBody(kind) {
     if (kind === "comment") return ui.comment.value.trim();
-    const text = reasonText();
+    const text = reasonText(kind);
     if (kind === "approve") return text ? `/approve\n\n${text}` : "/approve";
     if (kind === "request-fixes") return text ? `/request-fixes ${text}` : "/request-fixes <fixes required>";
     return text ? `/reject ${text}` : "/reject <reason required>";
 }
 
-function reasonText() {
-    return ui.comment.value.trim().replace(/^\/(approve|reject|request-fixes)(?![\w-])\s*/i, "").trim();
+function reasonText(kind) {
+    return ui.comment.value.trim()
+        .replace(new RegExp(`^/${kind}(?![\\w-])\\s*`, "i"), "")
+        .trim();
 }
 
 // Free-form comments are posted as written, so they must not look like a slash command to the
@@ -620,13 +617,24 @@ function updatePreview() {
             `Reject posts: ${commentBody("reject")}`,
             `Approve posts: ${commentBody("approve")}`,
         ].map((line) => line.replace(/\n+/g, " ⏎ ")).join("\n");
-    const hasReason = Boolean(reasonText());
-    ui.reject.disabled = !hasReason;
+    const item = findItem(selected);
+    const busy = bulkBusy || decisionBusy;
+    const pendingDecision = Boolean(item?.pendingDecision);
+    const pendingFixesRequest = Boolean(item?.pendingFixesRequest);
+    const hasReason = Boolean(reasonText("reject"));
+    ui.reject.disabled = busy || pendingDecision || pendingFixesRequest || !hasReason;
     ui.reject.title = hasReason ? "" : "Reject requires a reason.";
-    ui.requestFixes.disabled = !hasReason;
-    ui.requestFixes.title = hasReason ? "" : "Request fixes requires a description of what to change.";
+    const hasFixes = Boolean(reasonText("request-fixes"));
+    const awaitingFixes = item?.labels?.includes("requires-submitter-fixes");
+    ui.requestFixes.disabled = busy || pendingDecision || pendingFixesRequest || awaitingFixes || !hasFixes;
+    ui.requestFixes.title = awaitingFixes
+        ? "Already waiting on submitter fixes."
+        : pendingFixesRequest
+            ? "A fixes request is awaiting workflow confirmation."
+            : hasFixes ? "" : "Request fixes requires a description of what to change.";
+    ui.approve.disabled = busy || pendingDecision || pendingFixesRequest || !item?.reviewEligible;
     const commentProblem = freeformCommentError(ui.comment.value.trim());
-    ui.commentPost.disabled = Boolean(commentProblem);
+    ui.commentPost.disabled = busy || Boolean(commentProblem);
     ui.commentPost.title = commentProblem ?? "";
 }
 
@@ -657,12 +665,12 @@ function resetConfirm() {
 
 async function decide(kind) {
     const item = findItem(selected);
-    if (!item || bulkBusy || (kind !== "comment" && item.pendingDecision)) return;
+    if (!item || bulkBusy || decisionBusy || (kind !== "comment" && item.pendingDecision)) return;
     const problem = kind === "comment"
         ? freeformCommentError(ui.comment.value.trim())
-        : kind === "reject" && !reasonText()
+        : kind === "reject" && !reasonText("reject")
             ? "Reject decisions require a reason."
-            : kind === "request-fixes" && !reasonText()
+            : kind === "request-fixes" && !reasonText("request-fixes")
                 ? "Request fixes needs a description of what the submitter must change."
                 : null;
     if (problem) {
@@ -686,28 +694,29 @@ async function decide(kind) {
         return;
     }
     clearTimeout(pendingConfirm.timer);
-    for (const button of Object.values(buttons)) button.disabled = true;
+    decisionBusy = true;
+    updatePreview();
     const number = item.number;
+    const submittedDraft = ui.comment.value;
     try {
         if (kind === "comment") {
-            const result = await api("POST", "/api/comment", { number, body: ui.comment.value.trim() });
+            const result = await api("POST", "/api/comment", { number, body: submittedDraft.trim() });
             toast(`Posted comment on #${number}`, { link: result.commentUrl });
-            stagedComments.set(number, "");
+            clearSubmittedDraft(number, submittedDraft, "");
             if (selected === number) {
-                ui.comment.value = "";
                 activeTab = "comments";
                 renderDrawer();
             }
             await loadDetail(number, { force: true });
         } else if (kind === "request-fixes") {
-            const result = await api("POST", "/api/request-fixes", { number, comment: ui.comment.value });
+            const result = await api("POST", "/api/request-fixes", { number, comment: submittedDraft });
             toast(
                 result.pending
                     ? `Posted /request-fixes on #${number}; waiting for the workflow to update labels.`
                     : `Requested fixes on #${number}`,
                 { link: result.commentUrl },
             );
-            stagedComments.delete(number);
+            clearSubmittedDraft(number, submittedDraft);
             if (selected === number) closeDrawer();
         } else {
             const result = await api("POST", "/api/decision", { number, kind, comment: ui.comment.value });
@@ -722,8 +731,27 @@ async function decide(kind) {
     } catch (error) {
         toast(error.message, { error: true });
     } finally {
+        decisionBusy = false;
         if (selected === number) resetConfirm();
+        else updatePreview();
     }
+}
+
+function clearSubmittedDraft(number, submittedDraft, replacement) {
+    const item = board.items.find((candidate) => candidate.number === number);
+    const currentDraft = selected === number
+        ? ui.comment.value
+        : stagedComments.has(number)
+            ? stagedComments.get(number)
+            : defaultComment(item);
+    if (currentDraft !== submittedDraft) return false;
+
+    if (replacement === undefined) stagedComments.delete(number);
+    else stagedComments.set(number, replacement);
+    if (selected === number && ui.comment.value === submittedDraft) {
+        ui.comment.value = replacement ?? defaultComment(item);
+    }
+    return true;
 }
 
 // ---------- toolbar ----------
