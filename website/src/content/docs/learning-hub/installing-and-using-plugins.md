@@ -111,6 +111,8 @@ Browse plugins in a specific marketplace:
 copilot plugin marketplace browse awesome-copilot
 ```
 
+Marketplace manifests can point plugins at a subdirectory of a git repository using a `git-subdir` source, and long plugin descriptions are accepted.
+
 Or from within an interactive Copilot session:
 
 ```
