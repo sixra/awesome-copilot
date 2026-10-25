@@ -51,34 +51,75 @@ Sources: [Netflix English (USA) Timed Text Style Guide](https://partnerhelp.netf
    6. Edit the wording only when the user asks for edited (not verbatim) captions.
 5. **Measure again** after fixing. A retime can create a new overlap or a gap under the minimum.
 
-## Command-Line Check
+## Reference Check Script
 
-[caption-checker](https://github.com/markksantos/caption-checker) is an MIT-licensed, zero-dependency Node.js 18+ CLI that applies the limits above and exits with 1 when any caption breaks a limit, so it can gate CI. It runs offline.
+When the user wants a repeatable check (a folder of files, or CI), write this script, or adapt it to the chosen standard. It applies the Netflix adult limits from the table, prints each failing caption and exits with 1 when any caption fails, so it can gate a build. It needs only Python 3.
 
-```bash
-npx -y github:markksantos/caption-checker captions.srt
-npx -y github:markksantos/caption-checker captions.vtt --standard bbc
-npx -y github:markksantos/caption-checker ep1.srt ep2.srt --standard netflix --fps 25 --json
+```python
+import re
+import sys
+
+# Netflix English, adult programs. Change these for another standard.
+LIMITS = {"cps": 20, "cpl": 42, "lines": 2, "min_s": 5 / 6, "max_s": 7, "gap_frames": 2}
+FPS = 24
+T = r"(?:(\d+):)?(\d{1,2}):(\d{1,2})[,.](\d{1,3})"
+TIMING = re.compile(T + r"\s*-->\s*" + T)
+TAGS = re.compile(r"<[^>]+>|\{\\[^}]*\}")
+
+
+def seconds(h, m, s, ms):
+    return int(h or 0) * 3600 + int(m) * 60 + int(s) + int((ms + "00")[:3]) / 1000
+
+
+def read_cues(path):
+    text = open(path, encoding="utf-8-sig").read().replace("\r\n", "\n")
+    for block in re.split(r"\n[ \t]*\n", text):
+        lines = block.strip().split("\n")
+        for i, line in enumerate(lines[:3]):
+            m = TIMING.search(line)
+            if m:
+                body = [TAGS.sub("", t).rstrip() for t in lines[i + 1:]]
+                g = m.groups()
+                yield seconds(*g[:4]), seconds(*g[4:]), [t for t in body if t.strip()]
+                break
+
+
+def check(path, lim=LIMITS, fps=FPS):
+    cues, failed = list(read_cues(path)), 0
+    for n, (start, end, text) in enumerate(cues, 1):
+        dur, chars, issues = end - start, sum(len(t) for t in text), []
+        if dur > 0 and chars / dur > lim["cps"]:
+            issues.append(f"{chars / dur:.1f} characters a second")
+        issues += [f"line {j} is {len(t)} characters"
+                   for j, t in enumerate(text, 1) if len(t) > lim["cpl"]]
+        if len(text) > lim["lines"]:
+            issues.append(f"{len(text)} lines")
+        if dur < lim["min_s"] or dur > lim["max_s"]:
+            issues.append(f"on screen {dur:.2f} s")
+        if n < len(cues):
+            gap = cues[n][0] - end
+            if gap < 0:
+                issues.append(f"overlaps the next caption by {-gap:.2f} s")
+            elif gap * fps < lim["gap_frames"] - 0.01:
+                issues.append(f"gap of {gap * fps:.0f} frames at {fps} fps")
+        if issues:
+            failed += 1
+            print(f"{path} #{n} {start:.3f} -> {end:.3f}: " + "; ".join(issues))
+    print(f"{path}: {len(cues) - failed} of {len(cues)} captions pass")
+    return failed == 0
+
+
+if __name__ == "__main__":
+    results = [check(p) for p in sys.argv[1:]]
+    sys.exit(0 if results and all(results) else 1)
 ```
 
-Standards: `netflix`, `netflix-kids`, `bbc`, `dcmp-lower`, `dcmp-middle`, `dcmp-upper`. An excerpt of the text output:
-
-```text
-travel-vlog.srt: 2 of 8 captions meet Netflix English, adult programs
-  #3  0:06.600 -> 0:07.100  First,
-      ✗ On screen 0.50 s (minimum 5/6 of a second)
-  #4  0:07.200 -> 0:09.000  we packed water, snacks, a rain jacket and a spare battery for the cam
-      ✗ Reading speed 41.1 characters a second (limit 20)
-      ✗ Line 1 is 74 characters (limit 42)
-```
+Run it as `python3 check_captions.py captions/*.srt`. For another standard, change `LIMITS`, and add a words-a-minute check (words divided by duration, times 60) for the BBC and DCMP. The script doesn't check the advice-level rules (chaining short gaps, the BBC's per-word time); report those separately.
 
 In GitHub Actions:
 
 ```yaml
-- uses: actions/setup-node@v4
-  with:
-    node-version: 20
-- run: npx -y github:markksantos/caption-checker captions/*.srt --standard netflix
+- run: python3 check_captions.py captions/*.srt
 ```
 
 ## Gotchas
