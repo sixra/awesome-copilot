@@ -160,7 +160,7 @@ async function startRereview({ number, guidance, instanceId, send }) {
 function stripCommand(text, command) {
     return String(text ?? "")
         .trim()
-        .replace(new RegExp(`^/${command}\\b`, "i"), "")
+        .replace(new RegExp(`^/${command}(?![\\w-])`, "i"), "")
         .trim();
 }
 
