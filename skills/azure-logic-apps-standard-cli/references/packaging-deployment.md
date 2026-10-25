@@ -45,10 +45,12 @@ workflow-designtime/
 *.trx
 ```
 
-Adapt/add exact repository-relative locations of tests, fixtures, request samples, docs,
+Adapt/add exact host-root-relative locations of tests, fixtures, request samples, docs,
 settings templates, reports, generated packages, and other non-runtime content inside the
-host root. Folders outside that root are already outside the package source. Do not use
-broad binary exclusions that would remove required runtime assemblies.
+host root containing `.funcignore`. For example, for a host at `repo\App`, exclude
+`repo\App\fixtures` with `fixtures/` in `repo\App\.funcignore`, not `App/fixtures/`.
+Folders outside the host root are already outside the package source. Do not use broad
+binary exclusions that would remove required runtime assemblies.
 
 A placeholder-only settings template is optional. Document that the runtime does not
 consume it; configure local/cloud settings through the appropriate process. Exclude the

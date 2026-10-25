@@ -118,7 +118,14 @@ Only after the above approvals, choose the required invocation:
 az logicapp test run --path App --workflow Orders --accept-sdk-terms --trust-project --restore --timeout 300
 ```
 
-For a reviewed previously restored project, omit `--restore`. Select an existing custom
+For a reviewed previously restored project, omit `--restore`. From the directory containing
+`App`, after creating `App\reports`, save a new sanitized report with:
+
+```azurecli
+az logicapp test run --path App --workflow Orders --accept-sdk-terms --trust-project --report-path reports/native.json --timeout 300
+```
+
+Use the host OS's path separator when invoking examples. Select an existing custom
 project with `--test-project`; there is no need to regenerate tests just to run them.
 `--timeout` bounds native steps (1-3600 seconds); identity-checked cleanup can take longer.
 
@@ -130,8 +137,10 @@ project with `--test-project`; there is no need to regenerate tests just to run 
 
 Use absolute paths when these different bases would be ambiguous. Report parents must
 exist; native report destinations must be new files. For example, after creating an
-appropriate reports directory under the project, a run's `--report-path native.json`
-is project-relative; results inspection must name that same file from the shell.
+`App\reports` directory, `--path App --report-path reports/native.json` writes
+`App\reports\native.json`. Using `--report-path native.json` instead writes `App\native.json`,
+not a file in the reports directory. Results inspection must name the same saved file
+relative to the shell's working directory, not the selected project.
 
 ## Interpret results without overstating coverage
 
@@ -158,10 +167,11 @@ directory's `.logicapp-test-state` run storage and can contain fixtures, outputs
 and failure details. Protect it; do not share it as a sanitized report.
 CLI telemetry opt-out does not establish that SDK telemetry is disabled.
 
-For a saved sanitized report:
+From the same directory containing `App`, inspect that saved sanitized report and the
+selected workflow:
 
 ```azurecli
-az logicapp test results show --result-file native.json --workflow-file workflow.json
+az logicapp test results show --result-file App/reports/native.json --workflow-file App/Orders/workflow.json
 ```
 
 Select the actual files according to the path table. Results inspection accepts closed
