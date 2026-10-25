@@ -24,7 +24,7 @@ If you are not sure a syntax or DMV column exists in the target version, say so 
 - Wrap transaction-compatible work in `BEGIN TRY ... BEGIN TRANSACTION ... COMMIT ... END TRY BEGIN CATCH ... END CATCH`.
 - Some administration statements cannot run inside a user transaction (for example `CREATE DATABASE`, `ALTER DATABASE`, `DROP DATABASE`, `BACKUP`, `RESTORE`, and `RECONFIGURE`). For these, use an autocommit path instead of the transaction wrapper: keep the same dry-run default and confirmation gate, run each statement on its own inside `TRY ... CATCH` with `THROW;`, check state before and after, and write the operation-specific recovery step (for example the backup to restore from, or the previous configuration value to set back).
 - In the `CATCH` block, roll back only if a transaction is open, then `THROW;` so the original error number and line reach the caller and Agent job history. Do not swallow errors.
-- In single-transaction procedures that may be called inside an outer transaction, only begin and commit a transaction when `@@TRANCOUNT = 0` on entry. Procedures that commit in batches must refuse to run inside a caller-owned transaction, because the outer transaction would keep every batch's locks and log until it ends.
+- In single-transaction procedures that may be called inside an outer transaction, only begin and commit a transaction when `@@TRANCOUNT = 0` on entry. Procedures that commit in batches must refuse to run inside a caller-owned transaction or with `IMPLICIT_TRANSACTIONS ON` (`@@OPTIONS & 2`), because either one keeps every batch's locks and log until an outer commit and lets a later rollback undo earlier batches.
 - Default to a dry run that fails closed. In T-SQL, use a `@DryRun bit = 1` parameter and treat anything other than an explicit `0`, including `NULL`, as a dry run (`IF @DryRun IS NULL OR @DryRun <> 0`). The parameter default only covers omitted arguments, so never test `IF @DryRun = 1` alone. The dry run prints or returns what would change (for example a row count) and changes nothing.
 - In PowerShell, `SupportsShouldProcess` and `-WhatIf` alone do not make dry run the default. Require an explicit `-Apply` switch that is off by default, and wrap every mutation in `if ($Apply -and $PSCmdlet.ShouldProcess($target, $action)) { ... }`. Without `-Apply`, report what would change and exit.
 - Make scripts idempotent: `CREATE OR ALTER`, `IF OBJECT_ID(...) IS NULL`, `IF NOT EXISTS`. Never silently overwrite an existing Agent job, linked server, alert, login, or user; detect it and stop or require an explicit flag.
@@ -57,10 +57,11 @@ BEGIN
         RETURN 2;
     END;
 
-    -- Batches commit independently, so a caller-owned transaction is not allowed.
-    IF @@TRANCOUNT > 0
+    -- Batches commit independently, so a caller-owned transaction or
+    -- IMPLICIT_TRANSACTIONS ON is not allowed.
+    IF @@TRANCOUNT > 0 OR (@@OPTIONS & 2) = 2
     BEGIN
-        RAISERROR(N'Run outside a caller transaction; this procedure commits per batch.', 16, 1);
+        RAISERROR(N'Run outside a caller transaction with IMPLICIT_TRANSACTIONS OFF; this procedure commits per batch.', 16, 1);
         RETURN 3;
     END;
 
@@ -107,7 +108,7 @@ BEGIN
 END;
 ```
 
-On failure, earlier batches stay committed and `@RowsAffected` reports only committed rows. A rerun picks up the remaining qualifying rows.
+On failure, earlier batches stay committed and the error is rethrown. Because the error is rethrown, SQL Server does not copy `@RowsAffected` back to the caller, so treat it as reliable only on successful completion; to see partial progress, count the archive table or log each batch before rethrowing. A rerun picks up the remaining qualifying rows.
 
 ## Ask before generating destructive or risky operations
 
