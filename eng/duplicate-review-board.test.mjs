@@ -337,6 +337,67 @@ test("two acceptances publish sequentially without reimporting and adopt verifie
     assert.ok(loaded.snapshot().items.every((item) => item.accepted && item.publication.status === "published"));
 });
 
+test("reconciliation does not adopt a checkbox when other active group evidence changed", async (t) => {
+    const { store, id } = await fixture(t);
+    const uncheckedBody = body.replace("- [x] Reviewed", "- [ ] Reviewed");
+    await store.import({ ...issue, body: uncheckedBody });
+    const second = store.snapshot().items[1];
+    await decide(store, id);
+    await decide(store, second.id, "consolidate");
+    const originalHash = store.report(12).sourceHash;
+    const gh = fakeGitHub();
+    const otherGroup = group(2, "Other", " ", "skills/other");
+    const changedBody = acceptGroup(uncheckedBody.replace(
+        otherGroup,
+        otherGroup.replace("Same test scope.", "Changed evidence."),
+    ), id);
+    gh.setBody(changedBody);
+
+    await new Publisher(store, gh).reconcile(12, id);
+
+    assert.equal(store.item(12, id).publication.status, "published");
+    assert.equal(store.item(12, id).accepted, false);
+    assert.equal(store.item(12, id).column, "separate");
+    assert.equal(store.item(12, second.id).column, "consolidate");
+    assert.equal(store.report(12).body, uncheckedBody);
+    assert.equal(store.report(12).sourceHash, originalHash);
+
+    const publisher = new Publisher(store, gh);
+    await assert.rejects(publisher.publish(publisher.preview(12, second.id).token), /report changed on GitHub/);
+    assert.equal(gh.created.length, 0);
+
+    await store.import({ ...issue, body: changedBody });
+    assert.equal(store.item(12, second.id).column, "unreviewed");
+    assert.equal(store.item(12, second.id).changed, true);
+});
+
+test("reconciliation does not adopt a checkbox when active groups were added or removed", async (t) => {
+    for (const [change, sourceBody] of [
+        ["added", body.replace("<!-- report footer -->", `${group(3, "Added", " ", "skills/added")}\n<!-- report footer -->`)],
+        ["removed", `### Summary\n\n### Potential Duplicates\n\n${group()}\n<!-- report footer -->`],
+    ]) {
+        const { store, id } = await fixture(t);
+        await decide(store, id);
+        const originalHash = store.report(12).sourceHash;
+        const gh = fakeGitHub();
+        const remoteBody = acceptGroup(sourceBody, id);
+        gh.setBody(remoteBody);
+
+        await new Publisher(store, gh).reconcile(12, id);
+
+        assert.equal(store.item(12, id).publication.status, "published", change);
+        assert.equal(store.report(12).body, body, change);
+        assert.equal(store.report(12).sourceHash, originalHash, change);
+        await store.import({ ...issue, body: remoteBody });
+        assert.equal(store.snapshot().items.length, change === "added" ? 3 : 1, change);
+        assert.deepEqual(
+            store.snapshot().items.map((item) => item.id).sort(),
+            parseReport(remoteBody).map((group) => group.id).sort(),
+            change,
+        );
+    }
+});
+
 test("acceptance receipt does not overwrite a newer import while the GitHub write is in flight", async (t) => {
     const { store, id } = await fixture(t);
     await decide(store, id);

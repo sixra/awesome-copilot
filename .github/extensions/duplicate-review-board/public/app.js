@@ -15,13 +15,14 @@ function loadResource(item, file) {
     const key = `${board.selected}:${item.id}:${file}`;
     if (!contents.has(key)) {
         const request = api("resource", { number: board.selected, id: item.id, path: file });
-        request.catch(() => contents.delete(key));
+        request.then(() => contents.delete(key), () => contents.delete(key));
         contents.set(key, request);
     }
     return contents.get(key);
 }
 
 function renderViewer(item) {
+    if (!editorItem()) return;
     const split = $("side-by-side").checked;
     $("viewer-tabs").hidden = split;
     $("viewer-panes").classList.toggle("split", split);
@@ -31,7 +32,12 @@ function renderViewer(item) {
         tab.setAttribute("role", "tab");
         tab.setAttribute("aria-selected", String(resource.path === viewing));
         tab.title = resource.path;
-        tab.addEventListener("click", () => { viewing = resource.path; renderViewer(item); });
+        tab.addEventListener("click", () => {
+            if (!editorItem()) return;
+            viewing = resource.path;
+            renderViewer(item);
+            [...$("viewer-tabs").children].find((node) => node.getAttribute("aria-selected") === "true")?.focus({ preventScroll: true });
+        });
         return tab;
     }));
     const shown = split ? item.resources : item.resources.filter((resource) => resource.path === viewing);
@@ -71,8 +77,10 @@ async function run(button, work, target = "message") {
     catch (error) { message(error.message, true, target); }
     finally {
         button.disabled = false;
-        const item = board.selected === opened?.number && board.items.find((entry) => entry.id === opened.id);
-        if (item && $("detail").open) refreshReview(item);
+        if (opened && $("detail").open) {
+            refreshReview(editorItem());
+            renderConflict();
+        }
     }
 }
 
@@ -184,15 +192,22 @@ function render() {
     }));
     if (!board.selected) $("board").append(element("p", "Find reports, then import one to begin. No remote actions happen automatically."));
     if (opened && $("detail").open) {
-        const item = board.items.find((entry) => entry.id === opened.id);
-        if (board.selected === opened.number && item) syncEditor(item);
+        const item = editorItem();
+        if (item) syncEditor(item);
+        else refreshReview();
+        renderConflict();
     }
     if (focus && !focus.element.isConnected) focusBoardControl(focus);
 }
 
 function receive(snapshot, savedEdit) {
+    if (savedEdit && snapshot.selected !== savedEdit.number) {
+        if (boardGeneration === savedEdit.boardGeneration) receive(snapshot);
+        return;
+    }
     let nextSnapshot = snapshot;
     if (savedEdit && boardGeneration !== savedEdit.boardGeneration) {
+        if (board.selected !== savedEdit.number) return;
         const liveItem = board.items.find((item) => item.id === savedEdit.id);
         const updatedItem = snapshot.items.find((item) => item.id === savedEdit.id);
         if (opened?.number !== savedEdit.number || opened.id !== savedEdit.id ||
@@ -205,7 +220,7 @@ function receive(snapshot, savedEdit) {
     board = nextSnapshot;
     boardGeneration++;
     render();
-    if (savedEdit && opened?.number === savedEdit.number && opened.id === savedEdit.id) {
+    if (savedEdit && board.selected === savedEdit.number && opened?.number === savedEdit.number && opened.id === savedEdit.id) {
         const item = board.items.find((entry) => entry.id === opened.id);
         if (item && opened.revision === savedEdit.revision) {
             opened.revision = item.revision;
@@ -225,6 +240,12 @@ async function move(item, column) {
 }
 
 function refreshReview(item) {
+    const suspended = !item;
+    $("editor-suspended").hidden = !suspended;
+    for (const id of ["review", "cancel-review", "column", "note", "draft-title", "draft-body", "preview", "reconcile", "save", "side-by-side"]) {
+        $(id).disabled = suspended;
+    }
+    if (suspended) return;
     $("review-result").textContent = item.queueId ? "Queued for a background agent. You can keep triaging." :
         item.reviewError || (item.review ? `${item.review.recommendation}\n\n${item.review.rationale}` : "No comparison yet.");
     $("review").disabled = Boolean(item.queueId || item.publication);
@@ -262,6 +283,17 @@ function itemValues(item) {
     return { column: item.column, note: item.note, draft: item.draft };
 }
 
+function editorItem() {
+    return opened && board.selected === opened.number
+        ? board.items.find((entry) => entry.id === opened.id) : null;
+}
+
+function requireEditorItem() {
+    const item = editorItem();
+    if (!item) throw new Error("This editor is paused. Select its source report again to continue; your edits are preserved.");
+    return item;
+}
+
 function loadEditor(item) {
     $("column").value = item.column;
     $("note").value = item.note;
@@ -272,8 +304,10 @@ function loadEditor(item) {
 
 function renderConflict() {
     $("edit-conflict").hidden = !opened?.conflict;
-    const item = opened && board.items.find((entry) => entry.id === opened.id);
-    $("save").disabled = Boolean(opened?.conflict || item?.publication);
+    const item = editorItem();
+    $("save").disabled = Boolean(!item || opened?.conflict || item.publication);
+    $("reload-latest").disabled = !item;
+    $("keep-mine").disabled = !item;
 }
 
 function renderEvidence(item) {
@@ -288,7 +322,11 @@ function renderEvidence(item) {
         const li = element("li");
         const view = element("button", resource.path);
         view.type = "button";
-        view.addEventListener("click", () => { viewing = resource.path; renderViewer(item); });
+        view.addEventListener("click", () => {
+            if (!editorItem()) return;
+            viewing = resource.path;
+            renderViewer(item);
+        });
         const link = element("a", "GitHub");
         const file = resource.path.startsWith("skills/") && !resource.path.endsWith("/SKILL.md") ? `${resource.path}/SKILL.md` : resource.path;
         safeLink(link, `https://github.com/${board.repo}/blob/main/${file.split("/").map(encodeURIComponent).join("/")}`);
@@ -347,15 +385,16 @@ function show(id) {
 let savingEdit;
 
 async function save() {
+    requireEditorItem();
     const edit = { number: opened.number, id: opened.id, revision: opened.revision, boardGeneration };
     const values = editorValues();
     savingEdit = { ...edit, values };
     try {
         const snapshot = await api("update", { ...edit, expectedRevision: edit.revision, ...values });
-        const updated = snapshot.items.find((item) => item.id === edit.id);
+        const updated = snapshot.selected === edit.number && snapshot.items.find((item) => item.id === edit.id);
         if (updated) savingEdit.responseRevision = updated.revision;
         receive(snapshot, { ...edit, values });
-        if (opened?.number === edit.number && opened.id === edit.id) {
+        if (board.selected === edit.number && opened?.number === edit.number && opened.id === edit.id) {
             message(dirty ? "Saved submitted changes. Newer typing is still unsaved." :
                 "Saved locally. GitHub is unchanged.", false, "detail-message");
         }
@@ -363,7 +402,7 @@ async function save() {
         const latest = await api("board").catch(() => null);
         if (latest) receive(latest);
         if (opened?.number === edit.number && opened.id === edit.id) {
-            const current = board.items.find((item) => item.id === edit.id);
+            const current = editorItem();
             if (current && current.revision !== edit.revision) {
                 opened.conflict = true;
                 renderConflict();
@@ -397,11 +436,13 @@ $("reports").addEventListener("change", () => {
 $("search").addEventListener("input", render);
 $("hide-published").addEventListener("change", render);
 $("side-by-side").addEventListener("change", () => {
-    const item = opened && board.items.find((entry) => entry.id === opened.id);
+    const item = editorItem();
     if (item) renderViewer(item);
 });
 $("column").addEventListener("change", () => { $("draft").hidden = $("column").value !== "consolidate"; });
-$("editor").addEventListener("input", (event) => { if (event.target.id !== "guidance") dirty = true; });
+$("editor").addEventListener("input", (event) => {
+    if (["column", "note", "draft-title", "draft-body"].includes(event.target.id)) dirty = true;
+});
 $("editor").addEventListener("change", (event) => { if (event.target.id === "column") dirty = true; });
 $("editor").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -419,7 +460,7 @@ $("detail").addEventListener("close", () => {
     restoreDialogFocus();
 });
 $("reload-latest").addEventListener("click", () => {
-    const item = board.items.find((entry) => entry.id === opened?.id);
+    const item = editorItem();
     if (!item) return;
     renderEvidence(item);
     loadEditor(item);
@@ -429,7 +470,7 @@ $("reload-latest").addEventListener("click", () => {
     renderConflict();
 });
 $("keep-mine").addEventListener("click", () => {
-    const item = board.items.find((entry) => entry.id === opened?.id);
+    const item = editorItem();
     if (!item) return;
     opened.revision = item.revision;
     opened.conflict = false;
@@ -437,13 +478,27 @@ $("keep-mine").addEventListener("click", () => {
     renderConflict();
     $("note").focus({ preventScroll: true });
 });
+$("resume-report").addEventListener("click", () => run($("resume-report"), async () => {
+    if (!opened) return;
+    const number = opened.number;
+    receive(await api("select", { number }));
+    if (opened?.number === number) {
+        if (board.selected !== number) throw new Error("The source report could not be selected. Your edits are preserved; try resuming again.");
+        message("Source report restored. Your local edits are preserved.", false, "detail-message");
+    }
+}, "detail-message"));
 $("review").addEventListener("click", () => run($("review"), async () => {
+    requireEditorItem();
     if (dirty) throw new Error("Save local edits before asking for a comparison.");
     await api("review", { ...opened, guidance: $("guidance").value });
     message("Comparison queued for a background agent.", false, "detail-message");
 }, "detail-message"));
-$("cancel-review").addEventListener("click", () => run($("cancel-review"), async () => receive(await api("cancel", opened)), "detail-message"));
+$("cancel-review").addEventListener("click", () => run($("cancel-review"), async () => {
+    requireEditorItem();
+    receive(await api("cancel", opened));
+}, "detail-message"));
 $("preview").addEventListener("click", () => run($("preview"), async () => {
+    requireEditorItem();
     if (dirty) throw new Error("Save local edits before previewing.");
     preview = await api("preview", opened);
     $("target").textContent = `Target: ${preview.target}`;
@@ -465,6 +520,7 @@ $("confirm").addEventListener("click", () => run($("confirm"), async () => {
     } finally { publishing = false; $("back").disabled = false; }
 }, "publish-message"));
 $("reconcile").addEventListener("click", () => run($("reconcile"), async () => {
+    requireEditorItem();
     receive(await api("reconcile", opened));
     message("GitHub result verified; local receipt updated.", false, "detail-message");
 }, "detail-message"));

@@ -25,6 +25,10 @@
     <form id="editor">
       <div class="dialog-heading"><h2 id="detail-title"></h2><button type="button" id="close">Close</button></div>
       <a id="source" target="_blank" rel="noopener noreferrer">Open source report</a>
+      <section id="editor-suspended" role="alert" hidden>
+        <p>This editor is paused because another report is selected. Your edits are preserved.</p>
+        <button type="button" id="resume-report">Resume source report</button>
+      </section>
       <p id="flags"></p>
       <h3>Resources</h3><ul id="resources"></ul>
       <section id="viewer" aria-labelledby="viewer-title">

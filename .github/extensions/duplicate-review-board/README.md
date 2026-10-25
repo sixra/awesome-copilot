@@ -60,6 +60,12 @@ can be requested again.
 
 Edits carry the group's loaded revision. A concurrent edit or changed report
 rejects a stale save instead of overwriting newer triage.
+If another panel selects a different report, the open editor pauses without
+discarding drafts. Resume its source report from the dialog to continue editing.
+
+Resource previews share only in-flight requests in the panel; completed reads
+use the server's ten-minute cache rather than an indefinite browser cache.
+Display-only controls do not count as unsaved triage.
 
 ## Remote safeguards and recovery
 
@@ -82,6 +88,10 @@ the stable consolidation marker, then saves a local receipt without writing to
 GitHub. The marker prevents a later weekly report creating another tracking
 issue for the same paths. If no unique result is found, the error remains visible:
 inspect GitHub and the saved state manually rather than retrying blindly.
+
+Reconciling an acceptance advances the saved report body and hash only when all
+active groups still match their imported evidence. Otherwise, import the report
+again before publishing another group's decision.
 
 ## Agent actions
 

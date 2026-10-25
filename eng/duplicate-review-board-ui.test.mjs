@@ -62,6 +62,7 @@ class FakeElement {
     }
 
     setAttribute(name, value) { this.attributes[name] = value; }
+    getAttribute(name) { return this.attributes[name]; }
     removeAttribute(name) { delete this.attributes[name]; }
     focus() { this.document.activeElement = this; }
     showModal() { this.open = true; }
@@ -121,7 +122,7 @@ async function harness(fetchOverride = async () => response({})) {
     document.body = new FakeElement("body", document);
     document.activeElement = document.body;
     const ids = ["discover", "reports", "import", "search", "hide-published", "message", "board", "detail",
-        "editor", "detail-title", "close", "source", "flags", "resources", "viewer-tabs", "viewer-panes",
+        "editor", "editor-suspended", "resume-report", "detail-title", "close", "source", "flags", "resources", "viewer-tabs", "viewer-panes",
         "side-by-side", "reason", "review-result", "guidance", "review", "cancel-review", "column", "note",
         "draft-title", "draft-body", "draft", "edit-conflict", "reload-latest", "keep-mine", "conflict-message",
         "receipt", "save", "preview", "detail-message", "confirmation", "target", "publish-title", "publish-body",
@@ -358,4 +359,257 @@ test("closing a dialog restores its opener or a visible fallback", async () => {
     h.context.render();
     h.context.closeDetail();
     assert.equal(h.document.activeElement.id, "search");
+});
+
+test("resource requests deduplicate only while pending, then refresh after success or failure", async () => {
+    let requests = 0;
+    let settle;
+    const h = await harness(async (url) => {
+        if (url === "/api/resource") {
+            requests++;
+            return new Promise((resolve) => { settle = resolve; });
+        }
+        return response({});
+    });
+    h.context.receive(snapshot([sampleItem("a", "r1")]));
+    const item = sampleItem("a", "r1");
+    const first = h.context.loadResource(item, "agents/a.agent.md");
+    assert.equal(h.context.loadResource(item, "agents/a.agent.md"), first);
+    settle(response({ content: "first" }));
+    assert.equal((await first).content, "first");
+    const failed = h.context.loadResource(item, "agents/a.agent.md");
+    assert.equal(requests, 2);
+    assert.equal(h.context.loadResource(item, "agents/a.agent.md"), failed);
+    settle(response({ error: "Unavailable" }, false));
+    await assert.rejects(failed, /Unavailable/);
+    const fresh = h.context.loadResource(item, "agents/a.agent.md");
+    assert.equal(requests, 3);
+    settle(response({ content: "fresh" }));
+    assert.equal((await fresh).content, "fresh");
+    h.context.show("a");
+    assert.equal(requests, 4);
+    settle(response({ content: "after refresh" }));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(h.nodes["viewer-panes"].children[0].children[1].textContent, "after refresh");
+});
+
+test("keyboard tab activation focuses the replacement selected tab", async () => {
+    const h = await harness();
+    h.context.receive(snapshot([sampleItem("a", "r1", {
+        resources: [{ path: "agents/a.agent.md" }, { path: "agents/b.agent.md" }],
+    })]));
+    h.context.show("a");
+    const second = h.nodes["viewer-tabs"].children[1];
+    second.focus();
+    // Enter and Space activate native buttons by dispatching click.
+    second.dispatch("click");
+    assert.notEqual(h.document.activeElement, second);
+    assert.equal(h.document.activeElement, h.nodes["viewer-tabs"].children[1]);
+    assert.equal(h.document.activeElement.isConnected, true);
+    assert.equal(h.document.activeElement.getAttribute("aria-selected"), "true");
+    h.document.activeElement.dispatch("click");
+    assert.equal(h.document.activeElement, h.nodes["viewer-tabs"].children[1]);
+});
+
+function otherReport(items) {
+    const result = snapshot(items);
+    return { ...result, selected: 2, reports: [...result.reports, {
+        number: 2, title: "Other report", state: "open",
+        url: "https://github.com/github/awesome-copilot/issues/2",
+    }] };
+}
+
+for (const succeeds of [true, false]) {
+    test(`report switch suspends same-ID editor during ${succeeds ? "successful" : "rejected"} saves`, async () => {
+        let settle;
+        const other = otherReport([sampleItem("a", "b9", { note: "other report note" })]);
+        const h = await harness(async (url, options, initial) => {
+            if (url === "/api/update") return new Promise((resolve) => { settle = resolve; });
+            if (url === "/api/board") return response(other);
+            return response(initial);
+        });
+        h.context.receive(snapshot([sampleItem("a", "r1")]));
+        h.context.show("a");
+        h.nodes.note.value = "my report A note";
+        h.nodes["draft-body"].value = "my report A draft";
+        h.nodes.editor.dispatch("input", { target: h.nodes.note });
+        const pending = h.context.run(h.nodes.save, () => h.context.save(), "detail-message");
+        h.context.receive(other);
+        assert.equal(h.nodes["editor-suspended"].hidden, false);
+        for (const id of ["save", "review", "cancel-review", "preview", "reconcile", "reload-latest", "keep-mine"]) {
+            assert.equal(h.nodes[id].disabled, true, id);
+        }
+        h.nodes["reload-latest"].dispatch("click");
+        h.nodes["keep-mine"].dispatch("click");
+        assert.equal(h.nodes.note.value, "my report A note");
+        assert.equal(h.nodes["draft-body"].value, "my report A draft");
+        assert.equal(vm.runInContext("opened.revision", h.context), "r1");
+        settle(succeeds ? response(other) : response({ error: "Revision conflict" }, false));
+        await pending;
+        assert.equal(vm.runInContext("opened.revision", h.context), "r1");
+        assert.equal(vm.runInContext("dirty", h.context), true);
+        assert.equal(h.nodes.save.disabled, true);
+        assert.equal(h.nodes["edit-conflict"].hidden, true);
+        await assert.rejects(h.context.save(), /paused/);
+        h.context.receive(snapshot([sampleItem("a", "r2", { note: "latest A" })]));
+        assert.equal(h.nodes["editor-suspended"].hidden, true);
+        assert.equal(h.nodes["edit-conflict"].hidden, false);
+        assert.equal(h.nodes.note.value, "my report A note");
+        h.nodes["keep-mine"].dispatch("click");
+        assert.equal(vm.runInContext("opened.revision", h.context), "r2");
+        assert.equal(h.nodes["draft-body"].value, "my report A draft");
+        assert.equal(h.nodes.save.disabled, false);
+    });
+}
+
+test("late report A response cannot replace a newer selected report B", async () => {
+    let settle;
+    const h = await harness(async (url) => {
+        if (url === "/api/update") return new Promise((resolve) => { settle = resolve; });
+        return response({});
+    });
+    h.context.receive(snapshot([sampleItem("a", "r1")]));
+    h.context.show("a");
+    h.nodes.note.value = "submitted";
+    h.nodes.editor.dispatch("input", { target: h.nodes.note });
+    const pending = h.context.save();
+    h.context.receive(otherReport([sampleItem("a", "b1")]));
+    settle(response(snapshot([sampleItem("a", "r2", { note: "submitted" })])));
+    await pending;
+    assert.equal(vm.runInContext("board.selected", h.context), 2);
+    assert.equal(vm.runInContext("opened.revision", h.context), "r1");
+    assert.equal(h.nodes.save.disabled, true);
+    assert.equal(h.nodes.note.value, "submitted");
+});
+
+test("a save response selecting another report suspends edits even without a prior event", async () => {
+    const other = otherReport([sampleItem("a", "b1")]);
+    const h = await harness(async (url) => response(url === "/api/update" ? other : {}));
+    h.context.receive(snapshot([sampleItem("a", "r1")]));
+    h.context.show("a");
+    h.nodes.note.value = "submitted A";
+    h.nodes.editor.dispatch("input", { target: h.nodes.note });
+    await h.context.save();
+    assert.equal(vm.runInContext("board.selected", h.context), 2);
+    assert.equal(vm.runInContext("opened.revision", h.context), "r1");
+    assert.equal(vm.runInContext("dirty", h.context), true);
+    assert.equal(h.nodes.note.value, "submitted A");
+    assert.equal(h.nodes.save.disabled, true);
+});
+
+test("a mismatched save snapshot cannot overwrite a newer board event", async () => {
+    let settle;
+    const h = await harness(async (url) => {
+        if (url === "/api/update") return new Promise((resolve) => { settle = resolve; });
+        return response({});
+    });
+    h.context.receive(snapshot([sampleItem("a", "r1")]));
+    h.context.show("a");
+    const pending = h.context.save();
+    h.context.receive(otherReport([sampleItem("a", "b9", { note: "newer B" })]));
+    settle(response(otherReport([sampleItem("a", "b1", { note: "stale B" })])));
+    await pending;
+    assert.equal(vm.runInContext("board.items[0].revision", h.context), "b9");
+    assert.equal(vm.runInContext("board.items[0].note", h.context), "newer B");
+});
+
+test("existing conflict controls cannot load or adopt another report's same-ID group", async () => {
+    const h = await harness();
+    h.context.receive(snapshot([sampleItem("a", "r1")]));
+    h.context.show("a");
+    h.nodes.note.value = "private A";
+    h.nodes["draft-title"].value = "draft A";
+    h.nodes.editor.dispatch("input", { target: h.nodes.note });
+    const latestA = snapshot([sampleItem("a", "r2", { note: "remote A" })]);
+    h.context.receive(latestA);
+    assert.equal(h.nodes["edit-conflict"].hidden, false);
+    h.context.receive(otherReport([sampleItem("a", "b1", { note: "remote B" })]));
+    h.nodes["reload-latest"].dispatch("click");
+    h.nodes["keep-mine"].dispatch("click");
+    assert.equal(h.nodes.note.value, "private A");
+    assert.equal(h.nodes["draft-title"].value, "draft A");
+    assert.equal(vm.runInContext("opened.revision", h.context), "r1");
+    assert.equal(vm.runInContext("opened.conflict", h.context), true);
+    h.context.receive(latestA);
+    h.nodes["reload-latest"].dispatch("click");
+    assert.equal(h.nodes.note.value, "remote A");
+    assert.equal(vm.runInContext("opened.revision", h.context), "r2");
+});
+
+test("display-only checkbox does not dirty edits, block actions or cancel queued review", async () => {
+    const calls = [];
+    const h = await harness(async (url) => {
+        calls.push(url);
+        return response({ target: "issue", title: "Preview", body: "Body" });
+    });
+    h.context.receive(snapshot([sampleItem("a", "r1", { queueId: "queued" })]));
+    h.context.show("a");
+    h.nodes["side-by-side"].checked = true;
+    h.nodes.editor.dispatch("input", { target: h.nodes["side-by-side"] });
+    h.nodes["side-by-side"].dispatch("change");
+    assert.equal(vm.runInContext("dirty", h.context), false);
+    h.nodes.preview.dispatch("click");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls.includes("/api/preview"), true);
+    assert.equal(calls.includes("/api/update"), false);
+    assert.equal(calls.includes("/api/cancel"), false);
+    assert.equal(vm.runInContext("board.items[0].queueId", h.context), "queued");
+    h.context.receive(snapshot([sampleItem("a", "r1")]));
+    h.nodes.review.dispatch("click");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls.includes("/api/review"), true);
+    h.context.window.confirm = () => { throw new Error("Unexpected discard warning"); };
+    h.context.closeDetail();
+    assert.equal(h.nodes.detail.open, false);
+});
+
+test("paused modal resumes its source report without discarding drafts or adopting another report revision", async () => {
+    let selected;
+    const latestA = snapshot([sampleItem("a", "r2", { note: "latest A" })]);
+    const h = await harness(async (url, options) => {
+        if (url === "/api/select") {
+            selected = JSON.parse(options.body).number;
+            return response(latestA);
+        }
+        return response({});
+    });
+    h.context.receive(snapshot([sampleItem("a", "r1")]));
+    h.context.show("a");
+    h.nodes.note.value = "unsaved A note";
+    h.nodes["draft-body"].value = "unsaved A draft";
+    h.nodes.editor.dispatch("input", { target: h.nodes.note });
+    const staleTab = h.nodes["viewer-tabs"].children[0];
+    h.context.receive(otherReport([sampleItem("a", "b9")]));
+    h.nodes["resume-report"].focus();
+    staleTab.dispatch("click");
+    assert.equal(h.document.activeElement, h.nodes["resume-report"]);
+    assert.equal(vm.runInContext("opened.revision", h.context), "r1");
+    h.nodes["resume-report"].dispatch("click");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(selected, 1);
+    assert.equal(h.nodes.detail.open, true);
+    assert.equal(h.nodes["editor-suspended"].hidden, true);
+    assert.equal(h.nodes.note.value, "unsaved A note");
+    assert.equal(h.nodes["draft-body"].value, "unsaved A draft");
+    assert.equal(h.nodes["edit-conflict"].hidden, false);
+    assert.equal(vm.runInContext("opened.revision", h.context), "r1");
+    h.nodes["keep-mine"].dispatch("click");
+    assert.equal(vm.runInContext("opened.revision", h.context), "r2");
+    assert.equal(h.nodes["draft-body"].value, "unsaved A draft");
+});
+
+test("failed modal resume displays the error and preserves suspended drafts", async () => {
+    const h = await harness(async (url) => response(url === "/api/select" ? { error: "Select failed" } : {}, url !== "/api/select"));
+    h.context.receive(snapshot([sampleItem("a", "r1")]));
+    h.context.show("a");
+    h.nodes.note.value = "private A";
+    h.nodes.editor.dispatch("input", { target: h.nodes.note });
+    h.context.receive(otherReport([sampleItem("a", "b9")]));
+    h.nodes["resume-report"].dispatch("click");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(h.nodes["detail-message"].textContent, "Select failed");
+    assert.equal(h.nodes["editor-suspended"].hidden, false);
+    assert.equal(h.nodes["resume-report"].disabled, false);
+    assert.equal(h.nodes.note.value, "private A");
+    assert.equal(vm.runInContext("opened.revision", h.context), "r1");
 });

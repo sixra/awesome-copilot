@@ -4,11 +4,17 @@ import { acceptGroup, digest, parseReport } from "./report.mjs";
 function adoptAcceptance(report, body, sourceHash) {
     if (report.sourceHash !== sourceHash) return;
     const groups = parseReport(body);
+    const activeItems = report.items.filter((item) => !item.removed);
+    if (groups.length !== activeItems.length || groups.some((group) => {
+        const item = activeItems.find((entry) => entry.id === group.id);
+        return !item || item.fingerprint !== group.fingerprint;
+    })) return;
+
     report.body = body;
     report.sourceHash = digest(body);
-    for (const item of report.items) {
+    for (const item of activeItems) {
         const group = groups.find((entry) => entry.id === item.id);
-        if (group && item.accepted !== group.accepted) {
+        if (item.accepted !== group.accepted) {
             item.accepted = group.accepted;
             item.revision = randomUUID();
         }
