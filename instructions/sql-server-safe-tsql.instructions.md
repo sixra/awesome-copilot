@@ -37,7 +37,7 @@ If you are not sure a syntax or DMV column exists in the target version, say so 
 ```sql
 CREATE OR ALTER PROCEDURE dbo.usp_ArchiveOrders
     @OlderThanDays int,
-    @BatchSize     int = 5000,
+    @BatchSize     int = 1000,
     @DryRun        bit = 1,
     @RowsAffected  int = NULL OUTPUT
 AS
@@ -107,6 +107,8 @@ BEGIN
     END CATCH;
 END;
 ```
+
+The default `@BatchSize` is 1000; tune larger values, because a batch that takes thousands of locks can escalate to a table lock that blocks other sessions.
 
 On failure, earlier batches stay committed and the error is rethrown. Because the error is rethrown, SQL Server does not copy `@RowsAffected` back to the caller, so treat it as reliable only on successful completion; to see partial progress, count the archive table or log each batch before rethrowing. A rerun picks up the remaining qualifying rows.
 
