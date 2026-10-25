@@ -1,9 +1,11 @@
 const token = document.querySelector('meta[name="board-token"]').content;
+const MAX_REVIEW_BATCH_SIZE = 10;
 const $ = (id) => document.getElementById(id);
 let board = { items: [], counts: {} };
 let selected = null;
 let busy = false;
 let confirmation = null;
+let displayedSyncError = null;
 const reviewSelection = new Set();
 const fileChoice = new Map();
 const previews = new Map();
@@ -65,6 +67,7 @@ function renderContents(detail, item) {
         const pre = element("pre", state.data.content, "file-contents");
         pre.tabIndex = 0;
         pre.setAttribute("data-scroll-key", previewKey(item, file));
+        pre.setAttribute("data-focus-key", `file-preview-${encodeURIComponent(file)}`);
         pre.setAttribute("aria-label", `Contents of ${file}`);
         detail.append(pre);
         if (state.data.truncated) detail.append(element("p", `Showing the first ${state.data.content.length.toLocaleString()} characters of ${state.data.size.toLocaleString()} bytes.`, "warning"));
@@ -133,24 +136,24 @@ function matchingItems() {
 }
 
 function oldestUnreviewed() {
-    return matchingItems().filter((item) => !item.pending && !item.review && Number.isFinite(item.age))
+    return matchingItems().filter((item) => !item.pending && !item.publication && !item.review && Number.isFinite(item.age))
         .sort((a, b) => b.age - a.age || a.id.localeCompare(b.id));
 }
 
 function renderBatch(items) {
-    const available = new Set(board.items.filter((item) => !item.pending).map((item) => item.id));
+    const available = new Set(board.items.filter((item) => !item.pending && !item.publication).map((item) => item.id));
     for (const id of reviewSelection) if (!available.has(id)) reviewSelection.delete(id);
     const visible = new Set(items.map((item) => item.id));
     const hidden = [...reviewSelection].filter((id) => !visible.has(id)).length;
-    $("batch-selection").textContent = `${reviewSelection.size} selected${hidden ? ` (${hidden} hidden by filters)` : ""}. Selection is retained when filters change.`;
+    $("batch-selection").textContent = `${reviewSelection.size} selected${hidden ? ` (${hidden} hidden by filters)` : ""}. Selection is retained when filters change. Each batch sends at most ${MAX_REVIEW_BATCH_SIZE}; any remaining selection waits for your next explicit batch.`;
     $("review-selected").textContent = `Review selected (${reviewSelection.size})`;
     $("review-selected").disabled = busy || Boolean(board.progress) || !reviewSelection.size;
     $("clear-selection").disabled = busy || !reviewSelection.size;
-    $("select-matching").disabled = busy || Boolean(board.progress) || !items.some((item) => !item.pending && !reviewSelection.has(item.id));
+    $("select-matching").disabled = busy || Boolean(board.progress) || !items.some((item) => !item.pending && !item.publication && !reviewSelection.has(item.id));
     const count = Number($("oldest-count").value);
     const valid = Number.isSafeInteger(count) && count > 0;
     const eligible = oldestUnreviewed().length;
-    $("review-oldest").textContent = valid ? `Review ${Math.min(count, eligible)} oldest` : "Review oldest";
+    $("review-oldest").textContent = valid ? `Review ${Math.min(count, eligible, MAX_REVIEW_BATCH_SIZE)} oldest` : "Review oldest";
     $("review-oldest").disabled = busy || Boolean(board.progress) || !valid || !eligible;
     $("oldest-count").disabled = busy;
     const pending = board.items.filter((item) => item.pending?.kind === "review").length;
@@ -162,8 +165,9 @@ function renderBatch(items) {
 function reviewItems(ids) {
     return run(async () => {
         if (!ids.length) throw new Error("Select resources or choose a positive oldest count with eligible items.");
-        await api("request_reviews", { ids });
-        for (const id of ids) reviewSelection.delete(id);
+        const batch = ids.slice(0, MAX_REVIEW_BATCH_SIZE);
+        await api("request_reviews", { ids: batch });
+        for (const id of batch) reviewSelection.delete(id);
     });
 }
 
@@ -208,20 +212,23 @@ function renderDetailContent(detail) {
         section("Prepared diff fingerprint", `${item.prepared.baseSha}\n${item.prepared.diffHash}`);
     }
     if (item.publication) {
+        detail.append(element("p", "Published work is retained for inspection. Further review and preparation are disabled; inspect the linked PR and child session.", "badge"));
         const link = element("a", "View published pull request");
         const url = new URL(item.publication.url);
         if (url.protocol === "https:") {
             link.href = url.href;
             link.target = "_blank";
             link.rel = "noopener noreferrer";
+            link.setAttribute("data-focus-key", "published-pr-link");
             detail.append(link);
         }
     }
     const actions = element("div", "", "actions");
     const pending = Boolean(item.pending);
-    addAction(actions, item.review ? "Re-review in child" : "Review in child", () => work(item, "review"), pending);
-    addAction(actions, "Prepare refresh locally", () => work(item, "prepare-refresh"), pending || !item.review);
-    addAction(actions, "Prepare removal locally", () => work(item, "prepare-removal"), pending || !item.review);
+    const blocked = pending || Boolean(item.publication);
+    addAction(actions, item.review ? "Re-review in child" : "Review in child", () => work(item, "review"), blocked);
+    addAction(actions, "Prepare refresh locally", () => work(item, "prepare-refresh"), blocked || !item.review);
+    addAction(actions, "Prepare removal locally", () => work(item, "prepare-removal"), blocked || !item.review);
     addAction(actions, "Publish PR...", () => {
         confirmation = { id: item.id, diffHash: item.prepared.diffHash };
         $("publish-preview").textContent = `${item.id}\nChild: ${item.childSessionId}\n\n${item.prepared.summary}\n\nStaged diff SHA-256:\n${item.prepared.diffHash}`;
@@ -242,6 +249,14 @@ function render() {
     $("notice").textContent = board.progress
         ? `Scanning local history: ${board.progress.completed}/${board.progress.total ?? "?"} resources...`
         : `${board.updatedAt ? `Last scan ${new Date(board.updatedAt).toLocaleString()}.` : "Scan to build the inventory."} No network reads or writes during scanning or review.${board.warning ? ` ${board.warning}` : ""}`;
+    if (displayedSyncError && !board.syncError && $("error").textContent === displayedSyncError) {
+        $("error").hidden = true;
+    }
+    displayedSyncError = board.syncError ?? null;
+    if (board.syncError) {
+        $("error").textContent = board.syncError;
+        $("error").hidden = false;
+    }
     $("counts").replaceChildren(...["stale", "aging", "fresh", "unknown"].map((key) =>
         element("span", `${board.counts[key] ?? 0} ${key}`, `count ${key}`)));
     const items = matchingItems();
@@ -253,7 +268,7 @@ function render() {
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
         checkbox.checked = reviewSelection.has(item.id);
-        checkbox.disabled = busy || Boolean(board.progress) || Boolean(item.pending);
+        checkbox.disabled = busy || Boolean(board.progress) || Boolean(item.pending) || Boolean(item.publication);
         checkbox.setAttribute("aria-label", `Select ${item.id} for AI review`);
         checkbox.setAttribute("data-focus-key", `select-${encodeURIComponent(item.id)}`);
         checkbox.addEventListener("change", () => {
@@ -278,7 +293,7 @@ function render() {
 
 $("scan").addEventListener("click", () => run(() => api("scan", {})));
 $("select-matching").addEventListener("click", () => {
-    for (const item of matchingItems()) if (!item.pending) reviewSelection.add(item.id);
+    for (const item of matchingItems()) if (!item.pending && !item.publication) reviewSelection.add(item.id);
     render();
 });
 $("clear-selection").addEventListener("click", () => { reviewSelection.clear(); render(); });
@@ -286,7 +301,8 @@ $("review-selected").addEventListener("click", () => reviewItems([...reviewSelec
 $("oldest-count").addEventListener("input", () => renderBatch(matchingItems()));
 $("review-oldest").addEventListener("click", () => {
     const count = Number($("oldest-count").value);
-    return reviewItems(Number.isSafeInteger(count) && count > 0 ? oldestUnreviewed().slice(0, count).map((item) => item.id) : []);
+    return reviewItems(Number.isSafeInteger(count) && count > 0
+        ? oldestUnreviewed().slice(0, Math.min(count, MAX_REVIEW_BATCH_SIZE)).map((item) => item.id) : []);
 });
 for (const id of ["search", "age", "type", "recommendation"]) $(id).addEventListener("input", render);
 $("dismiss").addEventListener("click", () => $("confirm").close());

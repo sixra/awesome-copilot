@@ -17,8 +17,9 @@ export async function git(root, args, encoding = "utf8") {
 }
 
 export function body(text, file) {
+    if (!file.endsWith(".md")) return text;
     const normalized = text.replace(/\r\n/g, "\n");
-    const content = file.endsWith(".md") ? normalized.replace(/^---\n[\s\S]*?\n---(?:\n|$)/, "") : normalized;
+    const content = normalized.replace(/^---\n[\s\S]*?\n---(?:\n|$)/, "");
     return content.replace(/\s/g, "");
 }
 

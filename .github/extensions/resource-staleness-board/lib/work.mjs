@@ -48,6 +48,12 @@ improvements: string, capabilityEvidence: string }. Include precise evidence and
 First inspect the actual diff in this child session and confirm it still matches the prepared scope and recorded summary.
 Require HEAD to equal prepared.baseSha and the SHA-256 of the raw stdout bytes of
 git diff --cached --binary to equal prepared.diffHash. Reject any additional unstaged/untracked changes affecting this work.
+Before committing or pushing, verify that this child is publishing to the target repository github/awesome-copilot. Verify a
+configured remote URL resolves to that exact repository, then fetch its refs/heads/main into a temporary local ref without
+changing the branch, index, or worktree. Require 'git merge-base --is-ancestor prepared.baseSha <fetched-main-ref>' to succeed.
+This remote read is authorized only for this explicitly confirmed publication; do not fetch during review or preparation.
+If repository provenance, fetch, or ancestry cannot be established, report a blocker and preserve all local staged and unstaged
+work without committing or pushing.
 If unexpected edits, changed upstream content, missing prepared work, or permission issues prevent safe publication, report a blocker;
 do not silently regenerate or broaden the diff. Follow the repository PR template and contribution requirements.
 Commit only this resource's prepared changes, push this child's branch, and create a pull request targeting main.

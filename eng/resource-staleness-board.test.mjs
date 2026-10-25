@@ -26,6 +26,7 @@ const review = {
 };
 const diffHash = "d".repeat(64);
 const baseSha = "b".repeat(40);
+const MAX_REVIEW_BATCH_SIZE = 10;
 
 async function directory(t) {
     const root = await mkdtemp(path.join(os.tmpdir(), "resource-staleness-"));
@@ -78,7 +79,7 @@ test("age thresholds use whole days and include unknown history explicitly", () 
     assert.deepEqual(classify(null, now), { age: null, ageBand: "unknown" });
     assert.throws(() => classify("not a date", now), /Invalid resource date/);
     assert.equal(body("---\ndescription: changed\n---\nKeep  this.\r\n", "example.md"), "Keepthis.");
-    assert.equal(body("---\nnot frontmatter\n---\n", "example.txt"), "---notfrontmatter---");
+    assert.equal(body("---\nnot frontmatter\n---\n", "example.txt"), "---\nnot frontmatter\n---\n");
 });
 
 test("resource groups cover all five types and bundle hook/skill assets once", () => {
@@ -208,7 +209,7 @@ test("publication requires a child, prepared exact diff and explicit boolean con
     }
     await store.result({ ...publication, url: "https://github.com/github/awesome-copilot/pull/123" });
     assert.match(store.item(resource.id).publication.url, /\/pull\/123$/);
-    await assert.rejects(store.queue(resource.id, "publish", true, diffHash), /Publishing requires/);
+    await assert.rejects(store.queue(resource.id, "publish", true, diffHash), /follow-up work is disabled/);
 });
 
 test("independent writers serialize and reload state instead of overwriting each other", async (t) => {
@@ -373,7 +374,7 @@ test("batch prompts route independent background children and require all three 
     }
 });
 
-async function loadCanvas(t, f, { send } = {}) {
+async function loadCanvas(t, f, { send, scanInventoryOverride } = {}) {
     let canvas;
     const prompts = [];
     const context = vm.createContext({
@@ -401,7 +402,11 @@ async function loadCanvas(t, f, { send } = {}) {
             exports = await import(specifier.startsWith(".")
                 ? pathToFileURL(path.resolve(extensionDir, specifier)).href : specifier);
             if (specifier === "./lib/inventory.mjs") {
-                exports = { ...exports, git: (_root, args, encoding) => git(f.root, args, encoding) };
+                exports = {
+                    ...exports,
+                    git: (_root, args, encoding) => git(f.root, args, encoding),
+                    ...(scanInventoryOverride ? { scanInventory: scanInventoryOverride } : {}),
+                };
             }
         }
         return new vm.SyntheticModule(Object.keys(exports), function () {
@@ -414,6 +419,33 @@ async function loadCanvas(t, f, { send } = {}) {
     t.after(() => canvas.onClose({ instanceId: "test-panel" }));
     return { canvas, action, prompts };
 }
+
+test("scan progress broadcasts are throttled without dropping final board notifications", async (t) => {
+    const f = await fixture(t);
+    await f.write(resource.id, "A resource.\n");
+    await f.commit("2025-01-01T00:00:00Z", "Add resource");
+    const emitted = [];
+    const originalEmit = BoardStore.prototype.emit;
+    BoardStore.prototype.emit = function () {
+        emitted.push(this.progress ? { ...this.progress } : null);
+        return originalEmit.call(this);
+    };
+    try {
+        const { action } = await loadCanvas(t, f, {
+            scanInventoryOverride: async (_root, { progress }) => {
+                for (let completed = 1; completed <= 100; completed++) progress({ completed, total: 100 });
+                return { items: [resource], warning: null };
+            },
+        });
+        await action("scan");
+    } finally {
+        BoardStore.prototype.emit = originalEmit;
+    }
+    const progress = emitted.filter(Boolean);
+    assert.ok(progress.length < 10, `expected fewer than 10 progress broadcasts, got ${progress.length}`);
+    assert.equal(progress.at(-1).completed, 100, "the final sync contains the last progress value");
+    assert.equal(emitted.at(-1), null, "finally broadcasts the completed scan state");
+});
 
 test("canvas routes use local history, protected loopback HTTP and reusable persistent state", async (t) => {
     const f = await fixture(t);
@@ -580,6 +612,28 @@ test("batch HTTP and RPC routes queue once, retain per-item results, and reject 
     assert.equal(prompts.length, 1);
 });
 
+test("batch review limit is enforced by canvas schema and HTTP before queueing", async (t) => {
+    const f = await fixture(t);
+    const ids = Array.from({ length: MAX_REVIEW_BATCH_SIZE + 1 }, (_, index) => `agents/resource-${index}.agent.md`);
+    for (const id of ids) await f.write(id, `Resource ${id}.\n`);
+    await f.commit("2025-01-01T00:00:00Z", "Add batch resources");
+    const { canvas, action, prompts } = await loadCanvas(t, f);
+    await action("scan");
+    const schema = canvas.actions.find((entry) => entry.name === "request_reviews").inputSchema;
+    assert.equal(schema.properties.ids.maxItems, MAX_REVIEW_BATCH_SIZE);
+    await assert.rejects(action("request_reviews", { ids }), /at most 10 resources per batch/i);
+    const opened = await canvas.open({ instanceId: "test-panel", input: {} });
+    const token = (await (await fetch(opened.url)).text()).match(/name="board-token" content="([^"]+)"/)[1];
+    const response = await fetch(`${opened.url}api/request_reviews`, {
+        method: "POST", headers: { "X-Board-Token": token, "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /at most 10 resources per batch/i);
+    assert.equal((await action("get_board")).items.filter((item) => item.pending).length, 0);
+    assert.equal(prompts.length, 0);
+});
+
 test("failed batch dispatch releases every current token without automatic retry", async (t) => {
     const f = await fixture(t);
     const second = "agents/second.agent.md";
@@ -609,26 +663,67 @@ async function rendererFixture(items = [{
     ...resource, review: { ...review, improvements: "<img src=x onerror=alert(1)>" },
     childSessionId: "child-1", prepared: { summary: "Focused change", diffHash, baseSha },
 }]) {
+    let document;
     class Node {
         constructor(tag = "div") {
             this.tag = tag; this.children = []; this.handlers = {}; this.value = ""; this.hidden = false;
             this.content = "token"; this.textContent = ""; this.disabled = false;
         }
-        append(...nodes) { this.children.push(...nodes); }
-        replaceChildren(...nodes) { this.children = nodes; }
+        append(...nodes) {
+            for (const child of nodes) {
+                child.parent = this;
+                this.children.push(child);
+            }
+        }
+        replaceChildren(...nodes) {
+            if (this.contains(document?.activeElement)) document.activeElement = document.body;
+            for (const child of this.children) child.parent = null;
+            this.children = [];
+            this.append(...nodes);
+        }
         setAttribute(name, value) { this[name] = value; }
         getAttribute(name) { return this[name]; }
-        querySelector() { return null; }
-        querySelectorAll() { return []; }
-        contains() { return false; }
+        querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
+        querySelectorAll(selector) {
+            const [, attribute, value] = selector.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/) ?? [];
+            if (!attribute) return [];
+            const matches = [];
+            const visit = (parent) => {
+                for (const child of parent.children) {
+                    if (child.getAttribute(attribute) !== undefined &&
+                        (value === undefined || child.getAttribute(attribute) === value)) matches.push(child);
+                    visit(child);
+                }
+            };
+            visit(this);
+            return matches;
+        }
+        contains(target) {
+            if (this === target) return true;
+            return this.children.some((child) => child.contains(target));
+        }
         addEventListener(name, handler) { this.handlers[name] = handler; }
         showModal() { this.open = true; }
         close() { this.open = false; }
+        focus() { document.activeElement = this; }
         click() { if (!this.disabled) return this.handlers.click?.(); }
     }
     const nodes = new Map();
+    const body = new Node("body");
+    document = {
+        body,
+        activeElement: body,
+        querySelector: (selector) => selector === 'meta[name="board-token"]'
+            ? Object.assign(new Node("meta"), { content: "token" })
+            : body.querySelector(selector),
+        getElementById: (id) => node(id),
+        createElement: (tag) => new Node(tag),
+    };
     const node = (id) => {
-        if (!nodes.has(id)) nodes.set(id, new Node());
+        if (!nodes.has(id)) {
+            nodes.set(id, new Node());
+            body.append(nodes.get(id));
+        }
         return nodes.get(id);
     };
     node("age").value = "all";
@@ -643,7 +738,7 @@ async function rendererFixture(items = [{
     const events = {};
     const context = vm.createContext({
         URL,
-        document: { querySelector: () => new Node(), getElementById: node, createElement: (tag) => new Node(tag) },
+        document,
         EventSource: class { addEventListener(name, handler) { events[name] = handler; } },
         fetch: async (url, options) => {
             requests.push({ url, options });
@@ -658,7 +753,7 @@ async function rendererFixture(items = [{
     });
     vm.runInContext(await readFile(path.join(extensionDir, "public", "app.js"), "utf8"), context);
     await new Promise((resolve) => setImmediate(resolve));
-    return { node, requests, state, emit: () => events.board({ data: JSON.stringify(state) }) };
+    return { node, requests, state, document, emit: () => events.board({ data: JSON.stringify(state) }) };
 }
 
 test("renderer confirmation sends the exact prepared hash and renders untrusted evidence as text", async () => {
@@ -684,6 +779,56 @@ test("renderer confirmation sends the exact prepared hash and renders untrusted 
         id: resource.id, kind: "publish", confirmed: true, diffHash,
     });
     assert.equal(node("confirm").open, false);
+});
+
+test("detail rebuild restores focus and preview scroll for file contents and published PR links", async () => {
+    const item = {
+        ...resource, review: { ...review }, childSessionId: "child-1",
+        prepared: { summary: "Focused change", diffHash, baseSha },
+        publication: { url: "https://github.com/github/awesome-copilot/pull/1" },
+    };
+    const { node, document, state, emit } = await rendererFixture([item]);
+    assert.equal(node("resources").children[0].children[0].disabled, true);
+    assert.equal(node("select-matching").disabled, true);
+    assert.equal(node("review-oldest").disabled, true);
+    node("resources").children[0].children[1].click();
+    await new Promise((resolve) => setImmediate(resolve));
+    let preview = node("detail").querySelector('[data-focus-key="file-preview-agents%2Fexample.agent.md"]');
+    assert.ok(preview);
+    preview.scrollTop = 47;
+    preview.focus();
+    emit();
+    preview = node("detail").querySelector('[data-focus-key="file-preview-agents%2Fexample.agent.md"]');
+    assert.equal(document.activeElement, preview);
+    assert.equal(preview.scrollTop, 47);
+    let link = node("detail").querySelector('[data-focus-key="published-pr-link"]');
+    assert.ok(link);
+    link.focus();
+    emit();
+    link = node("detail").querySelector('[data-focus-key="published-pr-link"]');
+    assert.equal(document.activeElement, link);
+    const actions = node("detail").children.find((entry) => entry.className === "actions");
+    assert.ok(actions.children.every((entry) => entry.disabled), "published work cannot be reviewed, prepared, or republished");
+    state.syncError = "Unable to reload shared board state: invalid JSON.";
+    emit();
+    assert.equal(node("error").hidden, false);
+    assert.equal(node("error").textContent, state.syncError);
+    delete state.syncError;
+    emit();
+    assert.equal(node("error").hidden, true);
+});
+
+test("renderer sends only the next bounded batch and retains remaining selection", async () => {
+    const items = Array.from({ length: MAX_REVIEW_BATCH_SIZE + 2 }, (_, index) => ({
+        ...resource, id: `agents/resource-${index}.agent.md`,
+    }));
+    const { node, requests } = await rendererFixture(items);
+    node("select-matching").click();
+    assert.match(node("batch-selection").textContent, /at most 10.*remaining selection waits/i);
+    await node("review-selected").click();
+    const batch = requests.find((request) => request.url.endsWith("request_reviews"));
+    assert.deepEqual(JSON.parse(batch.options.body).ids, items.slice(0, MAX_REVIEW_BATCH_SIZE).map((item) => item.id));
+    assert.match(node("batch-selection").textContent, /^2 selected/);
 });
 
 test("oldest batch uses matching unreviewed known ages, skips pending work, and reports live progress", async () => {

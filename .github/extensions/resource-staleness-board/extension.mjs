@@ -10,6 +10,8 @@ import { scanInventory, fingerprint, git, groupResources } from "./lib/inventory
 import { buildBatchReviewPrompt, buildWorkPrompt } from "./lib/work.mjs";
 
 const ID = "resource-staleness-board";
+const MAX_REVIEW_BATCH_SIZE = 10;
+const SCAN_PROGRESS_INTERVAL_MS = 100;
 const extensionDir = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(extensionDir, "public");
 const projectDir = path.resolve(extensionDir, "..", "..", "..");
@@ -46,8 +48,16 @@ async function scan() {
         try {
             store.progress = { completed: 0, total: null };
             store.emit();
+            let lastProgressEmission = 0;
             return await store.sync(await scanInventory(root, {
-                progress: (value) => { store.progress = value; store.emit(); },
+                progress: (value) => {
+                    store.progress = value;
+                    const now = Date.now();
+                    if (now - lastProgressEmission >= SCAN_PROGRESS_INTERVAL_MS) {
+                        lastProgressEmission = now;
+                        store.emit();
+                    }
+                },
             }));
         } finally {
             store.progress = null;
@@ -92,6 +102,9 @@ async function requestReviews(input, instanceId, send) {
     if (!Array.isArray(input.ids) || !input.ids.length || input.ids.some((id) => typeof id !== "string" || !id.trim()) ||
         new Set(input.ids).size !== input.ids.length) {
         throw new Error("Choose one or more unique resource IDs for batch review.");
+    }
+    if (input.ids.length > MAX_REVIEW_BATCH_SIZE) {
+        throw new Error(`Review at most ${MAX_REVIEW_BATCH_SIZE} resources per batch.`);
     }
     await store.load();
     const observedFingerprints = new Map();
@@ -158,7 +171,7 @@ const review = {
 const schemas = {
     get_board: {}, scan: {},
     request_reviews: { required: ["ids"], properties: {
-        ids: { type: "array", minItems: 1, uniqueItems: true, items: text },
+        ids: { type: "array", minItems: 1, maxItems: MAX_REVIEW_BATCH_SIZE, uniqueItems: true, items: text },
     } },
     request_work: { required: ["id", "kind"], properties: {
         id: text, kind: { type: "string", enum: WORK_KINDS.filter((kind) => kind !== "publish") },

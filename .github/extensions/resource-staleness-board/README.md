@@ -29,8 +29,13 @@ This is a project customization, not a marketplace plugin.
    original source baseline rather than treating the prepared working tree as source.
 5. **Publish PR...** previews the prepared summary, child, and staged-diff hash.
    Only **Confirm publish PR** authorizes the child to commit, push, and open a PR
-   against `main`. The child must verify the exact staged diff and base commit
-   first. Nothing merges automatically.
+   against `main`. The child must verify the exact staged diff and base commit,
+   verify the target remote, fetch its `main` into a temporary ref, and require
+   the prepared base to be an ancestor of that ref before committing or pushing.
+   Unrelated local branch commits block publication without discarding work.
+   Nothing merges automatically. Published items retain their evidence, but
+   further reviews and preparation are disabled; inspect the PR and retained
+   child rather than reusing a no-longer-staged prepared diff.
 
 Cancellation invalidates a queued result; it **does not** interrupt the child,
 undo edits, or cancel a publication already dispatched. Inspect that child before
@@ -42,11 +47,15 @@ launching duplicate work.
 Check individual resource boxes or use **Select matching**, then **Review selected**.
 Selections survive filter changes, with a count of selected items hidden by the
 current filters. **Clear selection** clears the whole selection. Pending items
-cannot be selected. Selecting an already reviewed item requests a new review.
+and published items cannot be selected. Selecting an already reviewed item requests a new review.
+Each request contains at most 10 resources. Larger selections send the next 10
+and retain the remainder for another explicit batch; they do not automatically
+start all remaining children.
 
 Alternatively, enter a positive whole number (default 10) and use **Review N oldest**.
 This chooses up to N matching resources with known ages, oldest first, skipping
-items that already have reviews or pending work. Unknown-history resources can
+items that already have reviews, pending work, or publication records.
+Each click is capped at 10 resources. Unknown-history resources can
 still be reviewed by selecting them explicitly. The button shows the actual
 number of eligible resources, not a promise to create N reviews when fewer match.
 
@@ -77,9 +86,10 @@ inspect retained children before retrying.
 
 - Stale is **more than 30 whole days**; aging is **14 through 30**; fresh is
   **under 14**. Fresh items are hidden by default but included in the counts.
-- Git history follows file renames. Pure renames, whitespace/line-ending-only
-  changes, markdown-frontmatter-only changes, and bulk formatting/normalization
-  commits are ignored. Substantive changes accompanying a rename still count.
+- Git history follows file renames. Pure renames, Markdown whitespace/line-ending
+  and frontmatter-only changes, and bulk formatting/normalization commits are
+  ignored. Non-Markdown assets preserve all whitespace when comparing content,
+  including string literals and indentation. Substantive changes accompanying a rename still count.
   A file with no qualifying modification uses its addition commit's author date.
 - Hook/skill folders are single resources, dated by their most recent meaningful
   file change, including bundled assets. Unknown history is shown explicitly.
@@ -89,7 +99,9 @@ inspect retained children before retrying.
   fresh. Missing/non-regular files and Git errors fail the scan explicitly.
   Untracked resources and deleted historical files are not inventoried.
 - Scanning is explicit and progress is streamed. At most four resources inspect
-  history concurrently. A full initial scan may take several minutes on Windows.
+  history concurrently. Intermediate notifications are throttled to at most one
+  per 100 ms; final inventory and completion notifications are always sent.
+  A full initial scan may take several minutes on Windows.
 
 Reviews distinguish old-but-current content from misleading or materially
 outdated guidance. A removal recommendation must explain which native capability
@@ -137,6 +149,9 @@ Publication requires a stored prepared diff SHA-256, its base commit, and explic
 confirmation for that hash. Cross-process state writes use an exclusive lock and
 atomic replacement. An interrupted writer may leave a `.lock` file: inspect the
 owning process and remove only that specific stale lock before retrying.
+Open subscribers poll for external state changes every 250 ms, so results
+recorded by another conversation reach existing panels. Polling stops after the
+last subscriber disconnects; reload errors are surfaced without dropping local state.
 Corrupt state and persistence errors are surfaced, not reset silently.
 
 ## Canvas actions
@@ -146,7 +161,7 @@ Corrupt state and persistence errors are surfaced, not reset silently.
 | `get_board` | Read local inventory, progress, evidence, and child-session IDs. |
 | `scan` | Rebuild inventory from local Git history and working-tree content. Canvas callers receive counts; the renderer receives the full snapshot. |
 | `request_work` | Queue `{id, kind}` and return child-routing instructions. Canvas actions support `review`, `prepare-refresh`, and `prepare-removal` only. Publishing is available only through the UI's **Confirm publish PR** flow. |
-| `request_reviews` | Atomically queue `{ids: [...]}` for read-only background review in each item's reusable child. Return per-item requests and combined coordinator instructions; RPC callers follow these instructions, while UI requests dispatch them once. |
+| `request_reviews` | Atomically queue `{ids: [...]}` with 1-10 unique resource IDs for read-only background review in each item's reusable child. Return per-item requests and combined coordinator instructions; RPC callers follow these instructions, while UI requests dispatch them once. |
 | `record_session` | Save `{id, token, childSessionId}` immediately after choosing the child; canvas callers receive counts and the affected item. |
 | `record_result` | Record `{id, token, review}`; `{id, token, summary, diffHash, baseSha}` for preparation; `{id, token, url}` for publication; or `{id, token, error}` on failure. Canvas callers receive counts and the affected item. |
 | `cancel_work` | Invalidate `{id, token}` without stopping the child or changing remote state; canvas callers receive counts and the affected item. |
@@ -166,6 +181,7 @@ From the repository root:
 
 ```powershell
 node --experimental-vm-modules --test eng\resource-staleness-board.test.mjs
+node --test eng\resource-staleness-preview.test.mjs eng\resource-staleness-history.test.mjs eng\resource-staleness-lifecycle.test.mjs
 ```
 
 Tests use temporary local Git repositories, SDK/session doubles, and loopback

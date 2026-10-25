@@ -20,15 +20,24 @@ export class BoardStore {
         this.listeners = new Set();
         this.pending = Promise.resolve();
         this.progress = null;
+        this.diskContents = null;
+        this.syncError = null;
+        this.transactionActive = false;
+        this.localRevision = 0;
+        this.pollTimer = null;
+        this.polling = null;
     }
 
     async load() {
         try {
-            const state = JSON.parse(await readFile(this.file, "utf8"));
+            const contents = await readFile(this.file, "utf8");
+            const state = JSON.parse(contents);
             if (state.version !== 1 || state.root !== this.root || !Array.isArray(state.items)) {
                 throw new Error("Staleness board state has an unsupported version or repository.");
             }
             this.state = state;
+            this.diskContents = contents;
+            this.syncError = null;
         } catch (error) {
             if (error.code !== "ENOENT") throw error;
         }
@@ -39,54 +48,115 @@ export class BoardStore {
         const state = structuredClone(this.state);
         const counts = { stale: 0, aging: 0, fresh: 0, unknown: 0 };
         for (const item of state.items) counts[item.ageBand]++;
-        return { ...state, counts, progress: this.progress };
+        return { ...state, counts, progress: this.progress, ...(this.syncError ? { syncError: this.syncError } : {}) };
     }
 
     subscribe(listener) {
         this.listeners.add(listener);
-        return () => this.listeners.delete(listener);
+        if (!this.pollTimer) {
+            this.pollTimer = setInterval(() => {
+                if (!this.polling) {
+                    this.polling = this.refreshFromDisk().catch((error) => {
+                        const message = `Unable to reload shared board state: ${error.message}`;
+                        if (message !== this.syncError) {
+                            this.syncError = message;
+                            this.emit();
+                        }
+                    }).finally(() => { this.polling = null; });
+                }
+            }, 250);
+            this.pollTimer.unref?.();
+        }
+        let subscribed = true;
+        return () => {
+            if (!subscribed) return;
+            subscribed = false;
+            this.listeners.delete(listener);
+            if (this.listeners.size === 0 && this.pollTimer) {
+                clearInterval(this.pollTimer);
+                this.pollTimer = null;
+            }
+        };
     }
 
     emit() {
         for (const listener of this.listeners) listener(this.snapshot());
     }
 
+    async refreshFromDisk() {
+        const revision = this.localRevision;
+        if (this.transactionActive) return;
+        let contents;
+        try {
+            contents = await readFile(this.file, "utf8");
+        } catch (error) {
+            if (error.code === "ENOENT" && this.diskContents === null) return;
+            if (error.code === "ENOENT") throw new Error("The shared board state file disappeared.");
+            throw error;
+        }
+        if (this.transactionActive || revision !== this.localRevision) return;
+        if (contents === this.diskContents) {
+            if (this.syncError) {
+                this.syncError = null;
+                this.emit();
+            }
+            return;
+        }
+        const state = JSON.parse(contents);
+        if (state.version !== 1 || state.root !== this.root || !Array.isArray(state.items)) {
+            throw new Error("Shared board state has an unsupported version or repository.");
+        }
+        this.state = state;
+        this.diskContents = contents;
+        this.syncError = null;
+        this.emit();
+    }
+
     transaction(change) {
         const run = async () => {
-            await mkdir(path.dirname(this.file), { recursive: true });
-            let lock;
-            for (let attempt = 0; !lock && attempt < 50; attempt++) {
-                try {
-                    lock = await open(`${this.file}.lock`, "wx");
-                } catch (error) {
-                    if (error.code !== "EEXIST") throw error;
-                    await new Promise((resolve) => setTimeout(resolve, 100));
-                }
-            }
-            if (!lock) throw new Error(`State is locked by another writer: ${this.file}.lock. Inspect that process before removing a stale lock.`);
-            let result;
+            this.transactionActive = true;
             try {
-                await lock.writeFile(JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
-                await this.load();
-                const state = structuredClone(this.state);
-                result = change(state);
-                const temporary = `${this.file}.${randomUUID()}.tmp`;
-                try {
-                    await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, { flag: "wx" });
-                    await rename(temporary, this.file);
-                } catch (error) {
-                    try { await unlink(temporary); } catch (cleanupError) {
-                        if (cleanupError.code !== "ENOENT") throw new AggregateError([error, cleanupError], "State write and cleanup failed.");
+                await mkdir(path.dirname(this.file), { recursive: true });
+                let lock;
+                for (let attempt = 0; !lock && attempt < 50; attempt++) {
+                    try {
+                        lock = await open(`${this.file}.lock`, "wx");
+                    } catch (error) {
+                        if (error.code !== "EEXIST") throw error;
+                        await new Promise((resolve) => setTimeout(resolve, 100));
                     }
-                    throw error;
                 }
-                this.state = state;
+                if (!lock) throw new Error(`State is locked by another writer: ${this.file}.lock. Inspect that process before removing a stale lock.`);
+                let result;
+                try {
+                    await lock.writeFile(JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
+                    await this.load();
+                    const state = structuredClone(this.state);
+                    result = change(state);
+                    const contents = `${JSON.stringify(state, null, 2)}\n`;
+                    const temporary = `${this.file}.${randomUUID()}.tmp`;
+                    try {
+                        await writeFile(temporary, contents, { flag: "wx" });
+                        await rename(temporary, this.file);
+                    } catch (error) {
+                        try { await unlink(temporary); } catch (cleanupError) {
+                            if (cleanupError.code !== "ENOENT") throw new AggregateError([error, cleanupError], "State write and cleanup failed.");
+                        }
+                        throw error;
+                    }
+                    this.state = state;
+                    this.diskContents = contents;
+                    this.syncError = null;
+                    this.localRevision++;
+                } finally {
+                    await lock.close();
+                    await unlink(`${this.file}.lock`);
+                }
+                this.emit();
+                return result;
             } finally {
-                await lock.close();
-                await unlink(`${this.file}.lock`);
+                this.transactionActive = false;
             }
-            this.emit();
-            return result;
         };
         const operation = this.pending.then(run, run);
         this.pending = operation;
@@ -123,6 +193,7 @@ export class BoardStore {
         return this.transaction((state) => {
             if (!WORK_KINDS.includes(kind)) throw new Error("Unknown work kind.");
             const item = this.item(id, state);
+            if (item.publication) throw new Error("This child has published its prepared work; follow-up work is disabled to preserve its committed baseline.");
             if (observedFingerprint !== undefined &&
                 (item.fingerprint !== observedFingerprint || (item.pending && item.pending.fingerprint !== observedFingerprint))) {
                 throw new Error("The resource changed since it was observed. Scan again before requesting work.");
@@ -143,6 +214,7 @@ export class BoardStore {
         }
         return this.transaction((state) => ids.map((id) => {
             const item = this.item(id, state);
+            if (item.publication) throw new Error(`This child has published its prepared work; follow-up work is disabled to preserve its committed baseline: ${id}.`);
             const observed = observedFingerprints?.get?.(id);
             if (observed !== undefined &&
                 (item.fingerprint !== observed || (item.pending && item.pending.fingerprint !== observed))) {
