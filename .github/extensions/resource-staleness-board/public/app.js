@@ -1,5 +1,6 @@
 const token = document.querySelector('meta[name="board-token"]').content;
 const MAX_REVIEW_BATCH_SIZE = 10;
+const CONNECTION_ERROR = "Live updates disconnected. Reconnecting automatically; no work is retried.";
 const $ = (id) => document.getElementById(id);
 let board = { items: [], counts: {} };
 let boardVersion = 0;
@@ -10,6 +11,7 @@ let displayedSyncError = null;
 const reviewSelection = new Set();
 const fileChoice = new Map();
 const previews = new Map();
+let previewGeneration = null;
 
 function defaultFile(item) {
     return item.files.find((file) => /(^|\/)(SKILL|README)\.md$/i.test(file))
@@ -103,6 +105,7 @@ async function api(action, input) {
 }
 
 async function run(operation, refreshBoard = true) {
+    const focusKey = document.activeElement?.getAttribute?.("data-focus-key");
     busy = true;
     $("error").hidden = true;
     render();
@@ -114,7 +117,7 @@ async function run(operation, refreshBoard = true) {
         $("error").hidden = false;
     } finally {
         busy = false;
-        render();
+        render(focusKey);
     }
 }
 
@@ -193,7 +196,10 @@ function renderDetail() {
     renderDetailContent(detail);
     const restored = scroll && [...detail.querySelectorAll("[data-scroll-key]")].find((node) => node.getAttribute("data-scroll-key") === scroll.key);
     if (restored) restored.scrollTop = scroll.top;
-    if (focusKey && !detail.contains(document.activeElement)) detail.querySelector(`[data-focus-key="${focusKey}"]`)?.focus();
+    if (focusKey && !detail.contains(document.activeElement)) {
+        const control = detail.querySelector(`[data-focus-key="${focusKey}"]`);
+        if (control && !control.disabled) control.focus();
+    }
 }
 
 function renderDetailContent(detail) {
@@ -253,8 +259,13 @@ function renderDetailContent(detail) {
     if (item.files.length > 1) section("Files included", item.files.join("\n"));
 }
 
-function render() {
-    const focusKey = document.activeElement?.getAttribute?.("data-focus-key");
+function render(restoreFocusKey) {
+    const focusKey = typeof restoreFocusKey === "string" ? restoreFocusKey : document.activeElement?.getAttribute?.("data-focus-key");
+    const generation = board.scanGeneration ?? 0;
+    if (previewGeneration !== generation) {
+        previews.clear();
+        previewGeneration = generation;
+    }
     $("scan").disabled = busy || Boolean(board.progress);
     $("notice").setAttribute("aria-busy", String(Boolean(board.progress)));
     $("notice").textContent = board.progress
@@ -299,7 +310,12 @@ function render() {
     }));
     if (!items.length) $("resources").append(element("p", board.updatedAt ? "No resources match these filters." : "No scan yet."));
     renderDetail();
-    if (focusKey) document.querySelector(`[data-focus-key="${focusKey}"]`)?.focus();
+    if (typeof focusKey === "string") {
+        const control = document.querySelector(`[data-focus-key="${focusKey}"]`);
+        const fallback = document.querySelector(`[data-focus-key="resource-${encodeURIComponent(selected)}"]`);
+        if (control && !control.disabled) control.focus();
+        else fallback?.focus();
+    }
 }
 
 $("scan").addEventListener("click", () => run(() => api("scan", {})));
@@ -331,10 +347,13 @@ const events = new EventSource(`/events?token=${encodeURIComponent(token)}`);
 events.addEventListener("board", (event) => {
     board = JSON.parse(event.data);
     boardVersion++;
+    if ($("error").textContent === CONNECTION_ERROR) $("error").hidden = true;
     render();
 });
 events.onerror = () => {
-    $("error").textContent = "Live updates disconnected. Reconnecting automatically; no work is retried.";
-    $("error").hidden = false;
+    if ($("error").hidden) {
+        $("error").textContent = CONNECTION_ERROR;
+        $("error").hidden = false;
+    }
 };
 run(() => api("get_board"), false);

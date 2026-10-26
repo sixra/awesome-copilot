@@ -305,7 +305,9 @@ export class BoardStore {
                     prepared: same ? previous.prepared : null,
                     publication: previous?.publication ?? null,
                     pending: same ? previous.pending : null,
-                    error: same ? previous.error : previous ? "Content changed; review and prepared changes were invalidated." : null,
+                    error: !same && (previous?.review || previous?.prepared || previous?.pending)
+                        ? "Content changed; review and prepared changes were invalidated."
+                        : previous?.error ?? null,
                 };
             });
             state.updatedAt = new Date().toISOString();

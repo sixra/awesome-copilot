@@ -132,6 +132,11 @@ to the coordinating conversation. Reviews and local preparation prohibit network
 operations; publication is separately confirmed and bound to a prepared diff hash.
 Remote publication still follows the child's normal permission and PR-template
 requirements. No approval of unrelated remote actions is implied.
+The board checks the source fingerprint and binds confirmation to the stored
+staged-diff hash, but cannot inspect the isolated child's checkout through the
+current session interface. Child HEAD/diff verification and remote-write scope
+remain agent instructions, not a code-enforced sandbox; accepting a canonical PR
+URL does not attest that its diff matches the preparation.
 
 ## Persistent local state
 
@@ -166,9 +171,9 @@ Corrupt state and persistence errors are surfaced, not reset silently.
 | `scan` | Rebuild inventory from local Git history and working-tree content. Canvas callers receive counts; the renderer receives the full snapshot. |
 | `request_work` | Queue `{id, kind}` and return child-routing instructions. Canvas actions support `review`, `prepare-refresh`, and `prepare-removal` only. Publishing is available only through the UI's **Confirm publish PR** flow. |
 | `request_reviews` | Atomically queue `{ids: [...]}` with 1-10 unique resource IDs for read-only background review in each item's reusable child. Return per-item requests and combined coordinator instructions; RPC callers follow these instructions, while UI requests dispatch them once. |
-| `record_session` | Save `{id, token, childSessionId}` immediately after choosing the child; canvas callers receive counts and the affected item. |
+| `record_session` | Save `{id, token, childSessionId}` immediately after choosing the child; canvas callers receive counts and the same allowlisted item projection as `get_item`. |
 | `record_result` | Record `{id, token, review}`; `{id, token, summary, diffHash, baseSha}` for preparation; `{id, token, url}` for publication; or `{id, token, error}` on failure. Canvas callers receive counts and the affected item. |
-| `cancel_work` | Invalidate `{id, token}` without stopping the child or changing remote state; canvas callers receive counts and the affected item. |
+| `cancel_work` | Invalidate `{id, token}` without stopping the child or changing remote state; canvas callers receive counts and the same allowlisted item projection as `get_item`. |
 
 New review results must include `recommendation`, `rationale`,
 `stalenessAssessment`, `improvements`, and `capabilityEvidence`. Previously saved

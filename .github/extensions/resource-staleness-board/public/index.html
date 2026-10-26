@@ -11,7 +11,7 @@
 <body>
     <header>
         <div><h1>Resource staleness</h1><p>Age is a signal, not a verdict. Review locally; publish only when ready.</p></div>
-        <button id="scan">Scan local repository</button>
+        <button id="scan" data-focus-key="scan">Scan local repository</button>
     </header>
     <p id="notice" role="status" aria-live="polite" aria-busy="false">Loading local board...</p>
     <p id="error" role="alert" hidden></p>
@@ -26,11 +26,11 @@
         <h2>Batch AI review</h2>
         <p>Assess staleness, usefulness beyond current models, and the recommended action in background child sessions. No files are changed.</p>
         <div class="actions">
-            <button id="select-matching">Select matching</button>
-            <button id="clear-selection">Clear selection</button>
-            <button id="review-selected">Review selected (0)</button>
-            <label>Oldest unreviewed count <input id="oldest-count" type="number" min="1" step="1" value="10"></label>
-            <button id="review-oldest">Review oldest</button>
+            <button id="select-matching" data-focus-key="select-matching">Select matching</button>
+            <button id="clear-selection" data-focus-key="clear-selection">Clear selection</button>
+            <button id="review-selected" data-focus-key="review-selected">Review selected (0)</button>
+            <label>Oldest unreviewed count <input id="oldest-count" data-focus-key="oldest-count" type="number" min="1" step="1" value="10"></label>
+            <button id="review-oldest" data-focus-key="review-oldest">Review oldest</button>
         </div>
         <p id="batch-selection" role="status" aria-live="polite"></p>
         <p id="review-progress" role="status" aria-live="polite"></p>

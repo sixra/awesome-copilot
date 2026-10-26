@@ -160,6 +160,7 @@ async function dispatch(action, input = {}, instanceId, send = false) {
         return send ? snapshot : compactSnapshot(snapshot, input.id);
     }
     if (action === "record_result") {
+        await store.load();
         const observedFingerprint = input.error ? null : await checkContent(input.id);
         const snapshot = await store.result(input, observedFingerprint);
         return send ? snapshot : compactSnapshot(snapshot, input.id);
@@ -174,7 +175,7 @@ async function dispatch(action, input = {}, instanceId, send = false) {
 function compactSnapshot(snapshot, id) {
     const result = { counts: snapshot.counts, total: snapshot.items.length, updatedAt: snapshot.updatedAt };
     if (snapshot.warning) result.warning = snapshot.warning;
-    if (id) result.item = snapshot.items.find((item) => item.id === id) ?? null;
+    if (id) result.item = canvasItemDetail(snapshot, id).item;
     return result;
 }
 

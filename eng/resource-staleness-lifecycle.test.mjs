@@ -176,6 +176,41 @@ test("an older provider scan cannot overwrite the latest inventory or its review
     assert.equal(afterStaleCompletion.warning, beforeStaleCompletion.warning);
 });
 
+test("changed resources report invalidation only when saved review, preparation, or pending work is lost", async (t) => {
+    const directory = await localDirectory(t);
+    const store = await new BoardStore(path.join(directory, "state.json"), directory).load();
+    const resources = ["unreviewed", "failed", "reviewed", "prepared", "pending"]
+        .map((name) => ({ ...item, id: `agents/${name}.agent.md` }));
+    await store.sync({ items: resources, warning: null });
+    let work = await store.queue(resources[1].id, "review");
+    await store.result({ id: work.id, token: work.pending.token, error: "Existing failure" });
+    for (const resource of resources.slice(2, 4)) {
+        work = await store.queue(resource.id, "review");
+        await store.recordSession(resource.id, work.pending.token, `child-${resource.id}`);
+        await store.result({ id: resource.id, token: work.pending.token, review });
+    }
+    work = await store.queue(resources[3].id, "prepare-refresh");
+    await store.result({
+        id: work.id, token: work.pending.token, summary: "Prepared content",
+        diffHash: "d".repeat(64), baseSha: "b".repeat(40),
+    });
+    await store.queue(resources[4].id, "review");
+
+    await store.sync({
+        items: resources.map((resource) => ({ ...resource, fingerprint: "source-v2" })),
+        warning: null,
+    });
+    assert.equal(store.item(resources[0].id).error, null);
+    assert.equal(store.item(resources[1].id).error, "Existing failure");
+    for (const resource of resources.slice(2)) {
+        const changed = store.item(resource.id);
+        assert.match(changed.error, /Content changed.*invalidated/);
+        assert.equal(changed.review, null);
+        assert.equal(changed.prepared, null);
+        assert.equal(changed.pending, null);
+    }
+});
+
 test("published lifecycle blocks stale follow-up work and prompts verify target main ancestry", async (t) => {
     const directory = await localDirectory(t);
     const store = await new BoardStore(path.join(directory, "state.json"), directory).load();

@@ -481,7 +481,7 @@ test("canvas routes use local history, protected loopback HTTP and reusable pers
     assert.equal(sessionSaved.item.childSessionId, "retained-child");
     assert.equal(sessionSaved.items, undefined);
     const reviewSaved = await action("record_result", { id: resource.id, token: queued.token, review });
-    assert.equal(reviewSaved.item.review.recommendation, "refresh");
+    assert.equal(reviewSaved.item.recommendation, "refresh");
     assert.equal(reviewSaved.items, undefined);
     const response = await fetch(`${opened.url}api/request_work`, {
         method: "POST", headers, body: JSON.stringify({ id: resource.id, kind: "prepare-refresh" }),
@@ -665,6 +665,7 @@ async function rendererFixture(items = [{
     childSessionId: "child-1", prepared: { summary: "Focused change", diffHash, baseSha },
 }], { holdBoardResponses = false, holdPreviewResponses = false } = {}) {
     let currentPreview = { id: resource.id, file: resource.id, size: 9, binary: false, truncated: false, content: "<script>" };
+    let actionError = null;
     let document;
     class Node {
         constructor(tag = "div") {
@@ -707,7 +708,7 @@ async function rendererFixture(items = [{
         addEventListener(name, handler) { this.handlers[name] = handler; }
         showModal() { this.open = true; }
         close() { this.open = false; }
-        focus() { document.activeElement = this; }
+        focus() { if (!this.disabled) document.activeElement = this; }
         click() { if (!this.disabled) return this.handlers.click?.(); }
     }
     const nodes = new Map();
@@ -732,6 +733,9 @@ async function rendererFixture(items = [{
     node("type").value = "all";
     node("recommendation").value = "all";
     node("oldest-count").value = "10";
+    for (const id of ["scan", "select-matching", "clear-selection", "review-selected", "oldest-count", "review-oldest"]) {
+        node(id).setAttribute("data-focus-key", id);
+    }
     const state = {
         items,
         counts: { stale: 1 }, updatedAt: "2026-10-22T00:00:00Z", scanGeneration: 1,
@@ -743,9 +747,22 @@ async function rendererFixture(items = [{
     const context = vm.createContext({
         URL,
         document,
-        EventSource: class { addEventListener(name, handler) { events[name] = handler; } },
+        EventSource: class {
+            addEventListener(name, handler) { events[name] = handler; }
+            set onerror(handler) { events.error = handler; }
+        },
         fetch: async (url, options) => {
             requests.push({ url, options });
+            if (actionError && !url.endsWith("get_board") && !url.endsWith("read_file")) {
+                return { ok: false, json: async () => ({ error: actionError }) };
+            }
+            if (url.endsWith("request_work")) {
+                const input = JSON.parse(options.body);
+                state.items.find((item) => item.id === input.id).pending = { kind: input.kind, at: "now", token: "work-token" };
+            }
+            if (url.endsWith("cancel_work")) {
+                state.items.find((item) => item.id === JSON.parse(options.body).id).pending = null;
+            }
             if (url.endsWith("request_reviews")) {
                 for (const id of JSON.parse(options.body).ids) {
                     state.items.find((item) => item.id === id).pending = { kind: "review", at: "now" };
@@ -773,6 +790,8 @@ async function rendererFixture(items = [{
     await new Promise((resolve) => setImmediate(resolve));
     return {
         node, requests, state, document, emit: () => events.board({ data: JSON.stringify(state) }),
+        disconnect: () => events.error(),
+        previewKeys: () => [...vm.runInContext("previews.keys()", context)],
         releaseBoardResponse: () => {
             const release = pendingBoardResponses.shift();
             if (!release) return false;
@@ -786,6 +805,7 @@ async function rendererFixture(items = [{
             return true;
         },
         setPreview: (value) => { currentPreview = value; },
+        setActionError: (value) => { actionError = value; },
         setHoldBoardResponses: (value) => { holdBoardResponses = value; },
     };
 }
@@ -854,7 +874,7 @@ test("preview errors are retried after a completed scan", async () => {
 });
 
 test("stale in-flight preview responses cannot replace a newer scan preview", async () => {
-    const { node, state, emit, requests, releasePreviewResponse, setPreview } = await rendererFixture(undefined, {
+    const { node, state, emit, requests, releasePreviewResponse, setPreview, previewKeys } = await rendererFixture(undefined, {
         holdPreviewResponses: true,
     });
     node("resources").children[0].children[1].click();
@@ -874,6 +894,87 @@ test("stale in-flight preview responses cannot replace a newer scan preview", as
     assert.equal(releasePreviewResponse(), true);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(contents(), "New scan content");
+    assert.equal(previewKeys().length, 1);
+    assert.ok(previewKeys()[0].endsWith(`\0${state.scanGeneration}`));
+});
+
+test("preview cache retains only the current generation across repeated scans", async () => {
+    const { node, state, emit, previewKeys } = await rendererFixture();
+    node("resources").children[0].children[1].click();
+    await new Promise((resolve) => setImmediate(resolve));
+    for (let generation = 2; generation <= 30; generation++) {
+        state.scanGeneration = generation;
+        emit();
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.equal(previewKeys().length, 1);
+        assert.ok(previewKeys()[0].endsWith(`\0${generation}`));
+    }
+});
+
+test("fresh SSE boards clear connection warnings but preserve action and sync errors", async () => {
+    const { node, state, emit, disconnect, setActionError } = await rendererFixture();
+    disconnect();
+    assert.match(node("error").textContent, /Live updates disconnected/);
+    assert.equal(node("error").hidden, false);
+    emit();
+    assert.equal(node("error").hidden, true);
+
+    setActionError("Review could not start.");
+    await node("scan").click();
+    disconnect();
+    emit();
+    assert.equal(node("error").hidden, false);
+    assert.equal(node("error").textContent, "Review could not start.");
+
+    state.syncError = "Unable to reload shared board state.";
+    emit();
+    disconnect();
+    emit();
+    assert.equal(node("error").hidden, false);
+    assert.equal(node("error").textContent, state.syncError);
+});
+
+test("keyboard actions restore an enabled control after failed work", async () => {
+    const { node, document, setActionError } = await rendererFixture();
+    node("resources").children[0].children[1].click();
+    await new Promise((resolve) => setImmediate(resolve));
+    const key = "action-Prepare%20refresh%20locally";
+    const action = () => node("detail").querySelector(`[data-focus-key="${key}"]`);
+    action().focus();
+    setActionError("Preparation failed.");
+    await action().click();
+    assert.equal(document.activeElement, action());
+    assert.equal(document.activeElement.disabled, false);
+});
+
+test("keyboard review, preparation, and cancellation fall back to the selected resource", async () => {
+    for (const [label, item] of [
+        ["Review in child", { ...resource, review: null }],
+        ["Prepare refresh locally", { ...resource, review: { ...review } }],
+        ["Prepare removal locally", { ...resource, review: { ...review } }],
+        ["Cancel local wait", { ...resource, review: { ...review }, pending: { kind: "review", token: "work-token", at: "now" } }],
+    ]) {
+        const { node, document } = await rendererFixture([item]);
+        node("resources").children[0].children[1].click();
+        await new Promise((resolve) => setImmediate(resolve));
+        const action = node("detail").querySelector(`[data-focus-key="action-${encodeURIComponent(label)}"]`);
+        assert.ok(action);
+        action.focus();
+        await action.click();
+        const selectedButton = node("resources").children[0].children[1];
+        assert.equal(document.activeElement, selectedButton, label);
+        assert.equal(document.activeElement.disabled, false);
+    }
+});
+
+test("keyboard batch review falls back when the submitted selection is cleared", async () => {
+    const { node, document } = await rendererFixture([{ ...resource, review: null }]);
+    node("resources").children[0].children[1].click();
+    node("select-matching").click();
+    node("review-selected").focus();
+    await node("review-selected").click();
+    assert.equal(document.activeElement, node("resources").children[0].children[1]);
+    assert.equal(node("review-selected").disabled, true);
 });
 
 test("scan progress is busy during updates and clears when the final status is announced", async () => {
