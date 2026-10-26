@@ -17,6 +17,24 @@ let session;
 const object = (properties = {}, required = []) => ({ type: "object", additionalProperties: false, properties, required });
 const identity = { number: { type: "integer", minimum: 1 }, id: { type: "string", pattern: "^[a-f0-9]{24}$" } };
 const reviewIdentity = { ...identity, queueId: { type: "string", minLength: 1 } };
+const pick = (value, fields) => Object.fromEntries(fields.filter((field) => Object.hasOwn(value, field)).map((field) => [field, value[field]]));
+function agentSnapshot(snapshot) {
+    return {
+        ...pick(snapshot, ["repo", "selected", "snapshotSequence"]),
+        columns: snapshot.columns.map((column) => pick(column, ["id", "label"])),
+        reports: snapshot.reports.map((report) => pick(report, ["number", "title", "url", "state", "importedAt"])),
+        items: snapshot.items.map((item) => ({
+            ...pick(item, [
+                "id", "number", "title", "reason", "accepted", "fingerprint", "removed", "column",
+                "queueId", "agentId", "reviewError", "changed", "revision",
+            ]),
+            resources: item.resources.map((resource) => pick(resource, ["path", "type", "description"])),
+            review: item.review && pick(item.review, ["recommendation", "rationale", "at"]),
+            publication: item.publication && pick(item.publication, ["kind", "status", "at", "url"]),
+        })),
+    };
+}
+
 async function startReview(number, id, instanceId, guidance = "") {
     if (typeof guidance !== "string" || guidance.length > 4000) throw new Error("Guidance must be at most 4000 characters.");
     const item = await store.queue(number, id);
@@ -89,23 +107,23 @@ session = await joinSession({
         description: "Triage duplicate-resource reports locally, compare groups in background agents, and preview confirmed acceptance or consolidation actions.",
         inputSchema: object(),
         actions: [
-            action("get_board", "Read local reports, groups, decisions, AI reviews, and publication receipts.", object(), () => store.snapshot()),
+            action("get_board", "Read local reports, groups, decisions, AI reviews, and publication receipts; private notes and issue drafts are omitted.", object(), () => agentSnapshot(store.snapshot())),
             action("list_reports", "List duplicate-review report issues without importing or changing them.", object(), operations.reports),
-            action("import_report", "Read a report from GitHub; preserve unchanged local decisions and flag changed groups.", object({ number: identity.number }, ["number"]), operations.import),
+            action("import_report", "Read a report from GitHub; preserve unchanged local decisions and flag changed groups. Private notes and issue drafts are omitted.", object({ number: identity.number }, ["number"]), async (input) => agentSnapshot(await operations.import(input))),
             action("read_resource", "Read a resource file in a group from the main branch, without changing GitHub or local state.", object({
                 ...identity, path: { type: "string", minLength: 1, maxLength: 300 },
             }, ["number", "id", "path"]), operations.resource),
-            action("select_report", "Switch to a previously imported local report, without accessing GitHub.", object({ number: identity.number }, ["number"]), operations.select),
+            action("select_report", "Switch to a previously imported local report, without accessing GitHub. Private notes and issue drafts are omitted.", object({ number: identity.number }, ["number"]), async (input) => agentSnapshot(await operations.select(input))),
             action("start_review", "Dispatch a read-only comparison through a background agent only; never review in the foreground.", object({
                 ...identity, guidance: { type: "string", maxLength: 4000 },
             }, ["number", "id"]), (input, ctx) => startReview(input.number, input.id, ctx.instanceId, input.guidance)),
             action("record_review", "Record the exact queued background result without changing the maintainer's decision.", object({
                 ...reviewIdentity, recommendation: { type: "string", enum: ["separate", "consolidate", "deferred"] },
                 rationale: { type: "string", minLength: 1, maxLength: 16000 },
-            }, ["number", "id", "queueId", "recommendation", "rationale"]), (input) => store.finish(input.number, input.id, input.queueId, input)),
+            }, ["number", "id", "queueId", "recommendation", "rationale"]), async (input) => agentSnapshot(await store.finish(input.number, input.id, input.queueId, input))),
             action("fail_review", "Record an explicit background-review failure for the matching queue token.", object({
                 ...reviewIdentity, error: { type: "string", minLength: 1, maxLength: 4000 },
-            }, ["number", "id", "queueId", "error"]), (input) => store.finish(input.number, input.id, input.queueId, input)),
+            }, ["number", "id", "queueId", "error"]), async (input) => agentSnapshot(await store.finish(input.number, input.id, input.queueId, input))),
         ],
         open: async (ctx) => {
             if (!store) throw new CanvasError("not_ready", "The board is still starting. Retry opening it.");
@@ -123,6 +141,8 @@ session = await joinSession({
                         throw expectedError(error.message, 400);
                     }
                 }]));
+                // This loopback token is not a trusted caller identity: same-user local agents can fetch the page and token.
+                // Keep human confirmation as UI workflow, not authorization; the SDK exposes no authenticated caller context.
                 panel = await startBoardServer({
                     publicDir,
                     api: {

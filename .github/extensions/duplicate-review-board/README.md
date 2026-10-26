@@ -79,6 +79,15 @@ The authenticated `gh` CLI is required for GitHub reads and confirmed writes.
 The board is intentionally restricted to this repository. GitHub permissions
 still apply. No write is exposed as an agent-callable canvas action.
 
+The loopback token protects browser requests, not against other processes running
+as the same OS user. Such processes can fetch the page/token or invoke `gh`
+directly. The confirmation dialog and single-use preview bind the UI publication
+flow to its displayed payload; they are not proof of human identity. A caller-set
+`confirmed` flag would not provide that proof either. Run only trusted local
+agents and tools with these credentials; isolating an untrusted worker requires
+runtime-enforced filesystem, network, and credential restrictions outside this
+extension.
+
 Previews expire after five minutes, are single-use, and are invalidated by local
 edits or a changed source report. The report is re-read immediately before a write.
 GitHub issue-body updates do not provide transactional compare-and-swap; avoid
@@ -106,7 +115,7 @@ again before publishing another group's decision.
 
 | Action | Purpose |
 | --- | --- |
-| `get_board` | Read the local report, groups, queue tokens, and receipts. |
+| `get_board` | Read an agent-safe view of report evidence, queue tokens, and receipts. |
 | `list_reports` | Discover report issues, read-only. |
 | `import_report` | Import or refresh a report from GitHub. |
 | `select_report` | Switch between imported local reports. |
@@ -119,6 +128,8 @@ Decision/draft updates and review cancellation are available only through the
 authenticated loopback UI, not agent-callable canvas actions. The SDK does not
 provide a trusted caller-identity flag for distinguishing a maintainer from a
 background agent. UI updates still require `expectedRevision`.
+Agent-callable snapshot results omit local notes and consolidation drafts for
+every caller; the loopback UI retains the full editor data.
 
 The loopback UI reuses the Open PR Board's authenticated HTTP/SSE server, has
 searchable kanban cards, native modal focus management, keyboard-operable decision

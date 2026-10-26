@@ -474,10 +474,11 @@ test("local decision updates are UI-only and reject stale saves", async (t) => {
     const { canvas, act } = await loadExtension(t);
     assert.ok(!canvas.actions.some((action) => ["update_group", "cancel_review"].includes(action.name)));
     await act("import_report", { number: 12 });
-    const item = (await act("get_board")).items[0];
     const opened = await canvas.open({ instanceId: "test-duplicate-board", input: {} });
     const html = await (await fetch(opened.url)).text();
     const token = /name="board-token" content="([^"]+)"/.exec(html)[1];
+    const uiBoard = () => fetch(opened.url + "api/board", { headers: { "x-board-token": token } }).then((response) => response.json());
+    const item = (await uiBoard()).items[0];
     const update = (changes) => fetch(opened.url + "api/update", {
         method: "POST",
         headers: { "x-board-token": token, "Content-Type": "application/json" },
@@ -487,7 +488,8 @@ test("local decision updates are UI-only and reject stale saves", async (t) => {
     assert.equal((await update(changes)).status, 400);
     assert.equal((await update({ ...changes, expectedRevision: item.revision })).status, 200);
     assert.equal((await update({ ...changes, note: "Stale", expectedRevision: item.revision })).status, 400);
-    assert.equal((await act("get_board")).items[0].note, "Saved");
+    assert.equal((await uiBoard()).items[0].note, "Saved");
+    assert.equal((await act("get_board")).items[0].note, undefined);
 });
 
 async function loadExtension(t, { supported = true } = {}) {
