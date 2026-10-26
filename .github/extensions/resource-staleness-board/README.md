@@ -174,6 +174,8 @@ Forwarded prompts retain only a valid prior recommendation, not saved review
 prose. Preparation independently reassesses the source within the selected work
 scope; prior generated text is not an instruction. Prompts identify the
 runtime-managed repository checkout without including its absolute local path.
+Prepared summaries remain available for local inspection but are omitted from
+prompts, which forward only validated base-commit and staged-diff hashes.
 
 The renderer reuses the Open PR Board's token-protected loopback server at
 `../open-pr-board/lib/server.mjs`; both project extensions must be present.

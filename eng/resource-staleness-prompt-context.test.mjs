@@ -68,24 +68,41 @@ test("prompts omit the absolute checkout path without losing preparation preflig
         ...item({ recommendation: "keep" }),
         prepared: {
             kind: "prepare-refresh",
-            summary: "A summary for comparison with the actual staged diff.",
+            summary: payload,
+            notes: { instruction: payload },
             baseSha: "b".repeat(40),
             diffHash: "d".repeat(64),
+            extra: payload,
         },
     };
     const single = buildWorkPrompt({ item: prepared, instanceId: "panel-1", root });
     const batch = buildBatchReviewPrompt({
-        items: [{ ...item({ recommendation: "remove" }), pending: { kind: "review", token: "review-token" } }],
+        items: [{
+            ...prepared,
+            pending: { kind: "review", token: "review-token" },
+        }],
         instanceId: "panel-1",
         root,
     });
 
+    assert.deepEqual(promptEvidence(single).prepared, {
+        baseSha: "b".repeat(40),
+        diffHash: "d".repeat(64),
+    });
+    assert.deepEqual(promptEvidence(batch).prepared, {
+        baseSha: "b".repeat(40),
+        diffHash: "d".repeat(64),
+    });
+    assert.doesNotMatch(single, new RegExp(payload));
+    assert.doesNotMatch(batch, new RegExp(payload));
     assert.doesNotMatch(single, /C:\\Users\\private-user\\work\\awesome-copilot/);
     assert.doesNotMatch(batch, /C:\\Users\\private-user\\work\\awesome-copilot/);
     assert.match(single, /git rev-parse HEAD to equal b{40}/);
     assert.match(single, /git diff --cached --binary to equal d{64}/);
     assert.match(single, /Do not reset, unstage, or replace these edits/);
     assert.match(single, /baseSha: git rev-parse HEAD; diffHash/);
+    assert.match(batch, /git rev-parse HEAD to equal b{40}/);
+    assert.match(batch, /git diff --cached --binary to equal d{64}/);
     assert.match(batch, /"fingerprint": "a{64}"/);
 
     const publish = buildWorkPrompt({
@@ -101,4 +118,19 @@ test("prompts omit the absolute checkout path without losing preparation preflig
     assert.match(publish, /git diff --cached --binary to equal d{64}/);
     assert.match(publish, /git merge-base --is-ancestor prepared\.baseSha/);
     assert.match(publish, /preserve all local staged and unstaged\s+work/);
+});
+
+test("prompts refuse malformed prepared hashes instead of interpolating them", () => {
+    const malformed = {
+        ...item(null),
+        prepared: {
+            baseSha: `${payload} ${"b".repeat(40)}`,
+            diffHash: "d".repeat(64),
+        },
+    };
+
+    assert.throws(
+        () => buildWorkPrompt({ item: malformed, instanceId: "panel-1" }),
+        /Prepared work metadata is invalid/,
+    );
 });
