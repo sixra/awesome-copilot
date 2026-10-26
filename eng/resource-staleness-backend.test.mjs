@@ -33,7 +33,7 @@ async function makeRepository(t) {
     return { root, gitRoot, resourceId };
 }
 
-async function loadCanvas(t, root, { scanInventoryOverride } = {}) {
+async function loadCanvas(t, root, { scanInventoryOverride, send = async () => {} } = {}) {
     let canvas;
     const logs = [];
     const home = path.join(root, "home");
@@ -42,7 +42,7 @@ async function loadCanvas(t, root, { scanInventoryOverride } = {}) {
         createCanvas: (definition) => definition,
         joinSession: async ({ canvases }) => {
             [canvas] = canvases;
-            return { send: async () => {}, log: (message) => logs.push(message) };
+            return { send, log: (message) => logs.push(message) };
         },
         CanvasError: class extends Error {
             constructor(code, message) { super(message); this.code = code; }
@@ -185,7 +185,9 @@ test("single and batch prompts receive completeness from the completed scan warn
             warning: "Shallow Git history is incomplete.",
         }),
     });
-    await action("scan");
+    const scanResponse = await action("scan");
+    assert.equal(scanResponse.warning, "Warning recorded; inspect the HTTP dashboard for details.");
+    assert.doesNotMatch(scanResponse.warning, /Shallow Git history/);
     const single = await action("request_work", { id: resourceId, kind: "review" });
     assert.match(single.instructions, /"historyCompleteness": "incomplete"/);
     await action("cancel_work", { id: resourceId, token: single.token });
@@ -235,4 +237,52 @@ test("HTTP work and preview failures expose safe summaries without raw stacks", 
     assert.equal(previewResponse.status, 400);
     assert.match((await previewResponse.json()).error, /File is not part of this resource/);
     assert.equal(logs.some((message) => /Error:|\\n\s+at /.test(message)), false);
+});
+
+test("single and batch dispatch failures persist redacted diagnostics and release their queues", async (t) => {
+    const { root, resourceId } = await makeRepository(t);
+    let sends = 0;
+    const { canvas, action } = await loadCanvas(t, root, {
+        send: async () => {
+            sends++;
+            throw new Error("Dispatch failed for C:\\Users\\private-user\\credentials.json; token=secret-value.");
+        },
+    });
+    await action("scan");
+    const opened = await canvas.open({ instanceId: "backend-test", input: {} });
+    const html = await (await fetch(opened.url)).text();
+    const token = html.match(/name="board-token" content="([^"]+)"/)[1];
+    const headers = { "X-Board-Token": token, "Content-Type": "application/json" };
+    const getBoard = async () => {
+        const response = await fetch(`${opened.url}api/get_board`, {
+            headers: { "X-Board-Token": token },
+        });
+        assert.equal(response.status, 200);
+        return response.json();
+    };
+    const assertReleasedAndRedacted = async (expectedSends) => {
+        assert.equal(sends, expectedSends, "the failed dispatch must not be retried automatically");
+        const item = (await getBoard()).items.find((entry) => entry.id === resourceId);
+        assert.equal(item.pending, null);
+        assert.match(item.error, /(?:Batch )?dispatch failed or receipt is uncertain/i);
+        assert.doesNotMatch(item.error, /private-user|credentials\.json|secret-value/);
+    };
+
+    const singleResponse = await fetch(`${opened.url}api/request_work`, {
+        method: "POST", headers, body: JSON.stringify({ id: resourceId, kind: "review" }),
+    });
+    assert.equal(singleResponse.status, 400);
+    const singleError = await singleResponse.json();
+    assert.match(singleError.error, /Dispatch failed/);
+    assert.doesNotMatch(singleError.error, /private-user|credentials\.json|secret-value/);
+    await assertReleasedAndRedacted(1);
+
+    const batchResponse = await fetch(`${opened.url}api/request_reviews`, {
+        method: "POST", headers, body: JSON.stringify({ ids: [resourceId] }),
+    });
+    assert.equal(batchResponse.status, 400);
+    const batchError = await batchResponse.json();
+    assert.match(batchError.error, /Dispatch failed/);
+    assert.doesNotMatch(batchError.error, /private-user|credentials\.json|secret-value/);
+    await assertReleasedAndRedacted(2);
 });

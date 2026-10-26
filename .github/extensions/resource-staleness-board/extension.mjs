@@ -7,7 +7,7 @@ import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/exte
 import { startBoardServer, expectedError } from "../open-pr-board/lib/server.mjs";
 import {
     BoardStore, WORK_KINDS, RECOMMENDATIONS, DEFAULT_CANVAS_PAGE_SIZE, MAX_CANVAS_PAGE_SIZE,
-    canvasBoardPage, canvasItemDetail, validateCanvasReadInput,
+    canvasBoardPage, canvasDiagnostic, canvasItemDetail, validateCanvasReadInput,
 } from "./lib/state.mjs";
 import { scanInventory, fingerprint, git, groupResources } from "./lib/inventory.mjs";
 import { buildBatchReviewPrompt, buildWorkPrompt } from "./lib/work.mjs";
@@ -99,7 +99,7 @@ async function requestWork(input, instanceId, send) {
             await session.send({ prompt: instructions });
         } catch (error) {
             await store.cancel(item.id, item.pending.token,
-                `Dispatch failed or receipt is uncertain: ${error.message}. Inspect the retained child before retrying, especially publication.`);
+                `Dispatch failed or receipt is uncertain: ${safeErrorSummary(error)}. Inspect the retained child before retrying, especially publication.`);
             throw error;
         }
     }
@@ -124,7 +124,7 @@ async function requestReviews(input, instanceId, send) {
             await session.send({ prompt: instructions });
         } catch (error) {
             await store.cancelReviews(items,
-                `Batch dispatch failed or receipt is uncertain: ${error.message}. Inspect retained children before retrying.`);
+                `Batch dispatch failed or receipt is uncertain: ${safeErrorSummary(error)}. Inspect retained children before retrying.`);
             throw error;
         }
     }
@@ -174,7 +174,8 @@ async function dispatch(action, input = {}, instanceId, send = false) {
 
 function compactSnapshot(snapshot, id) {
     const result = { counts: snapshot.counts, total: snapshot.items.length, updatedAt: snapshot.updatedAt };
-    if (snapshot.warning) result.warning = snapshot.warning;
+    const warning = canvasDiagnostic(snapshot.warning, "warning");
+    if (warning) result.warning = warning;
     if (id) result.item = canvasItemDetail(snapshot, id).item;
     return result;
 }
@@ -214,8 +215,8 @@ const schemas = {
     cancel_work: { required: ["id", "token"], properties: identity },
 };
 const descriptions = {
-    get_board: "Read a bounded page of resource summaries. Use offset and limit to paginate; review details are available through get_item.",
-    get_item: "Read the full details for one exact resource ID, including its review and tracked file list.",
+    get_board: "Read a bounded page of resource summaries. Use offset and limit to paginate. Full review prose and prepared summaries are available only in the local UI.",
+    get_item: "Read one resource's tracked file list and allowlisted lifecycle metadata. Full review prose and prepared summaries are available only in the local UI.",
     scan: "Scan local tracked resources and meaningful Git history. Never fetches or writes to GitHub.",
     request_work: "Queue review or local preparation in a reusable child session. Publication is available only through the UI after explicit confirmation.",
     request_reviews: "Queue read-only background reviews for selected resource IDs atomically; return routing instructions for reusable child sessions.",

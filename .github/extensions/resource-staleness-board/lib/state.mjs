@@ -29,9 +29,11 @@ export function validateCanvasReadInput(action, input = {}) {
     return input;
 }
 
-function boundedText(value, maxLength = 240) {
-    if (typeof value !== "string") return value;
-    return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
+export function canvasDiagnostic(value, level = "error") {
+    if (value === null || value === undefined || value === "") return null;
+    return level === "warning"
+        ? "Warning recorded; inspect the HTTP dashboard for details."
+        : "Error recorded; inspect the HTTP dashboard for details.";
 }
 
 export function canvasBoardPage(snapshot, { offset = 0, limit = DEFAULT_CANVAS_PAGE_SIZE } = {}) {
@@ -46,15 +48,15 @@ export function canvasBoardPage(snapshot, { offset = 0, limit = DEFAULT_CANVAS_P
         lastChange: item.lastChange ? { sha: item.lastChange.sha, date: item.lastChange.date } : null,
         recommendation: item.review?.recommendation ?? null,
         pending: item.pending ? { kind: item.pending.kind, at: item.pending.at } : null,
-        error: boundedText(item.error),
+        error: canvasDiagnostic(item.error),
     }));
     return {
         counts: snapshot.counts,
         total,
         updatedAt: snapshot.updatedAt,
-        ...(snapshot.warning ? { warning: boundedText(snapshot.warning) } : {}),
+        ...(snapshot.warning ? { warning: canvasDiagnostic(snapshot.warning, "warning") } : {}),
         ...(snapshot.progress ? { progress: { completed: snapshot.progress.completed, total: snapshot.progress.total } } : {}),
-        ...(snapshot.syncError ? { syncError: boundedText(snapshot.syncError) } : {}),
+        ...(snapshot.syncError ? { syncError: canvasDiagnostic(snapshot.syncError) } : {}),
         page: { offset, limit, nextOffset: offset + items.length < total ? offset + items.length : null },
         items,
     };
@@ -87,7 +89,7 @@ export function canvasItemDetail(snapshot, id) {
             publication: item.publication ? {
                 url: item.publication.url, at: item.publication.at,
             } : null,
-            error: boundedText(item.error),
+            error: canvasDiagnostic(item.error),
         },
     };
 }

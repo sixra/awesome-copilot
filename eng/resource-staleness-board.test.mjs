@@ -566,7 +566,7 @@ test("dispatch failures are explicit, release the local queue and never retry au
     assert.match((await response.json()).error, /Connection lost/);
     const item = (await action("get_board")).items[0];
     assert.equal(item.pending, null);
-    assert.match(item.error, /receipt is uncertain/);
+    assert.equal(item.error, "Error recorded; inspect the HTTP dashboard for details.");
     assert.equal(prompts.length, 1);
 });
 
@@ -605,7 +605,8 @@ test("batch HTTP and RPC routes queue once, retain per-item results, and reject 
     await action("record_result", { ...requests[0], review });
     await action("record_result", { ...requests[1], error: "Child busy with unrelated work." });
     assert.equal((await action("get_board")).items.filter((item) => item.pending).length, 0);
-    assert.match((await action("get_board")).items.find((item) => item.id === second).error, /unrelated work/);
+    assert.equal((await action("get_board")).items.find((item) => item.id === second).error,
+        "Error recorded; inspect the HTTP dashboard for details.");
 
     await f.write(second, "Changed after scanning.\n");
     await assert.rejects(action("request_reviews", { ids }), /resource changed/);
@@ -655,7 +656,7 @@ test("failed batch dispatch releases every current token without automatic retry
     assert.match((await response.json()).error, /Connection lost/);
     for (const item of (await action("get_board")).items) {
         assert.equal(item.pending, null);
-        assert.match(item.error, /receipt is uncertain/);
+        assert.equal(item.error, "Error recorded; inspect the HTTP dashboard for details.");
     }
     assert.equal(prompts.length, 1);
 });

@@ -161,6 +161,10 @@ Scans register a shared generation before reading inventory. Only the latest
 requested scan can commit its results; completed generations invalidate preview
 caches even when resource fingerprints stay the same.
 Corrupt state and persistence errors are surfaced, not reset silently.
+Model-facing canvas reads and mutation responses expose fixed diagnostic
+messages rather than saved error, warning, or synchronization-error prose.
+Inspect the local HTTP UI for full messages. Dispatch failure messages are
+redacted before persistence to remove paths and credentials.
 
 ## Canvas actions
 
