@@ -1,0 +1,74 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+    canvasBoardPage,
+    canvasItemDetail,
+    DEFAULT_CANVAS_PAGE_SIZE,
+    MAX_CANVAS_PAGE_SIZE,
+    validateCanvasReadInput,
+} from "../.github/extensions/resource-staleness-board/lib/state.mjs";
+
+const items = Array.from({ length: MAX_CANVAS_PAGE_SIZE + 3 }, (_, index) => ({
+    id: `agents/example-${index}.agent.md`,
+    type: "agents",
+    files: [`agents/example-${index}.agent.md`],
+    fingerprint: `fingerprint-${index}`,
+    age: index,
+    ageBand: "fresh",
+    lastChange: { sha: "a".repeat(40), date: "2026-10-26T00:00:00.000Z", subject: "x".repeat(10000) },
+    review: {
+        recommendation: "refresh",
+        rationale: "Long private review prose.",
+        improvements: "Long improvement details.",
+        capabilityEvidence: "Long evidence details.",
+        stalenessAssessment: "Long assessment details.",
+    },
+    prepared: { kind: "prepare-refresh", summary: "Do not include this full detail." },
+    pending: null,
+    error: null,
+}));
+const snapshot = {
+    items,
+    counts: { stale: 0, aging: 0, fresh: items.length, unknown: 0 },
+    updatedAt: "2026-10-26T00:00:00.000Z",
+    warning: "x".repeat(300),
+    progress: { completed: 2, total: 5 },
+    syncError: "y".repeat(300),
+};
+
+test("canvas board summaries are paginated, bounded, and omit file lists and review prose", () => {
+    const first = canvasBoardPage(snapshot);
+    assert.equal(first.items.length, DEFAULT_CANVAS_PAGE_SIZE);
+    assert.equal(first.total, items.length);
+    assert.equal(first.page.nextOffset, DEFAULT_CANVAS_PAGE_SIZE);
+    assert.equal(first.items[0].recommendation, "refresh");
+    assert.equal(first.items[0].files, undefined);
+    assert.equal(first.items[0].review, undefined);
+    assert.equal(first.items[0].prepared, undefined);
+    assert.equal(first.warning.length, 240);
+    assert.equal(first.syncError.length, 240);
+    assert.ok(first.warning.endsWith("..."));
+    assert.deepEqual(first.items[0].lastChange, { sha: "a".repeat(40), date: "2026-10-26T00:00:00.000Z" });
+    assert.deepEqual(first.progress, { completed: 2, total: 5 });
+
+    const last = canvasBoardPage(snapshot, { offset: MAX_CANVAS_PAGE_SIZE, limit: MAX_CANVAS_PAGE_SIZE });
+    assert.equal(last.items.length, 3);
+    assert.equal(last.page.nextOffset, null);
+});
+
+test("canvas item detail returns one exact full item", () => {
+    const detail = canvasItemDetail(snapshot, items[0].id);
+    assert.equal(detail.item.id, items[0].id);
+    assert.deepEqual(detail.item.files, items[0].files);
+    assert.deepEqual(detail.item.review, items[0].review);
+    assert.equal(detail.item.prepared.summary, items[0].prepared.summary);
+    assert.throws(() => canvasItemDetail(snapshot, "missing"), /Resource not on this board/);
+});
+
+test("runtime canvas read checks reject invalid pagination, IDs, and extra keys", () => {
+    assert.throws(() => validateCanvasReadInput("get_board", { limit: MAX_CANVAS_PAGE_SIZE + 1 }), /limit/);
+    assert.throws(() => validateCanvasReadInput("get_board", { offset: 1.5 }), /offset/);
+    assert.throws(() => validateCanvasReadInput("get_board", { unexpected: true }), /Unexpected/);
+    assert.throws(() => validateCanvasReadInput("get_item", { id: "item", unexpected: true }), /Unexpected/);
+    assert.throws(() => validateCanvasReadInput("get_item", { id: " " }), /id/);
+});

@@ -158,7 +158,8 @@ Corrupt state and persistence errors are surfaced, not reset silently.
 
 | Action | Purpose |
 | --- | --- |
-| `get_board` | Read local inventory, progress, evidence, and child-session IDs. |
+| `get_board` | Read a page of compact resource summaries with optional `{offset, limit}` (default 20, maximum 50). Use `page.nextOffset` for the next page. File lists and review prose are omitted; the HTTP renderer still receives the full inventory. |
+| `get_item` | Read `{id}` to obtain the full details of one exact resource, including its file list and saved review. |
 | `scan` | Rebuild inventory from local Git history and working-tree content. Canvas callers receive counts; the renderer receives the full snapshot. |
 | `request_work` | Queue `{id, kind}` and return child-routing instructions. Canvas actions support `review`, `prepare-refresh`, and `prepare-removal` only. Publishing is available only through the UI's **Confirm publish PR** flow. |
 | `request_reviews` | Atomically queue `{ids: [...]}` with 1-10 unique resource IDs for read-only background review in each item's reusable child. Return per-item requests and combined coordinator instructions; RPC callers follow these instructions, while UI requests dispatch them once. |
@@ -169,6 +170,10 @@ Corrupt state and persistence errors are surfaced, not reset silently.
 New review results must include `recommendation`, `rationale`,
 `stalenessAssessment`, `improvements`, and `capabilityEvidence`. Previously saved
 reviews without a staleness assessment remain readable; re-review to add it.
+Forwarded prompts retain only a valid prior recommendation, not saved review
+prose. Preparation independently reassesses the source within the selected work
+scope; prior generated text is not an instruction. Prompts identify the
+runtime-managed repository checkout without including its absolute local path.
 
 The renderer reuses the Open PR Board's token-protected loopback server at
 `../open-pr-board/lib/server.mjs`; both project extensions must be present.
@@ -182,6 +187,7 @@ From the repository root:
 ```powershell
 node --experimental-vm-modules --test eng\resource-staleness-board.test.mjs
 node --test eng\resource-staleness-preview.test.mjs eng\resource-staleness-history.test.mjs eng\resource-staleness-lifecycle.test.mjs
+node --test eng\resource-staleness-read.test.mjs eng\resource-staleness-prompt-context.test.mjs
 ```
 
 Tests use temporary local Git repositories, SDK/session doubles, and loopback

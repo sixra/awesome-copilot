@@ -40,8 +40,8 @@
         <section aria-label="Resources sorted oldest first"><p id="matching"></p><div id="resources"></div></section>
         <section id="detail" aria-label="Selected resource"><p>Select a resource to review its evidence and next action.</p></section>
     </main>
-    <dialog id="confirm">
-        <h2>Publish this prepared change?</h2>
+    <dialog id="confirm" aria-labelledby="confirm-title">
+        <h2 id="confirm-title">Publish this prepared change?</h2>
         <p>This asks the retained child session to commit, push its branch, and open a PR against main. It does not merge the PR.</p>
         <pre id="publish-preview"></pre>
         <div class="actions"><button id="dismiss">Keep local</button><button id="publish-confirm">Confirm publish PR</button></div>

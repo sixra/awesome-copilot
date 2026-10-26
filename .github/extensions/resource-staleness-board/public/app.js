@@ -2,6 +2,7 @@ const token = document.querySelector('meta[name="board-token"]').content;
 const MAX_REVIEW_BATCH_SIZE = 10;
 const $ = (id) => document.getElementById(id);
 let board = { items: [], counts: {} };
+let boardVersion = 0;
 let selected = null;
 let busy = false;
 let confirmation = null;
@@ -82,6 +83,7 @@ function element(tag, text, className) {
 }
 
 async function api(action, input) {
+    const requestedBoardVersion = action === "get_board" ? boardVersion : null;
     const response = await fetch(`/api/${action}`, {
         method: input === undefined ? "GET" : "POST",
         headers: { "Content-Type": "application/json", "X-Board-Token": token },
@@ -89,16 +91,22 @@ async function api(action, input) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `Request failed (${response.status}).`);
+    if (action === "get_board") {
+        if (requestedBoardVersion !== boardVersion) return board;
+        board = result;
+        boardVersion++;
+        return board;
+    }
     return result;
 }
 
-async function run(operation) {
+async function run(operation, refreshBoard = true) {
     busy = true;
     $("error").hidden = true;
     render();
     try {
         await operation();
-        board = await api("get_board");
+        if (refreshBoard) await api("get_board");
     } catch (error) {
         $("error").textContent = error.message;
         $("error").hidden = false;
@@ -319,10 +327,11 @@ $("publish-confirm").addEventListener("click", () => {
 const events = new EventSource(`/events?token=${encodeURIComponent(token)}`);
 events.addEventListener("board", (event) => {
     board = JSON.parse(event.data);
+    boardVersion++;
     render();
 });
 events.onerror = () => {
     $("error").textContent = "Live updates disconnected. Reconnecting automatically; no work is retried.";
     $("error").hidden = false;
 };
-run(async () => { board = await api("get_board"); });
+run(() => api("get_board"), false);

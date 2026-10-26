@@ -490,7 +490,7 @@ test("canvas routes use local history, protected loopback HTTP and reusable pers
     assert.equal(prompts.length, 1);
     assert.match(prompts[0], /Reuse child session "retained-child"/);
     assert.match(prompts[0], /Do NOT commit, push/);
-    const pending = (await action("get_board")).items[0].pending;
+    const pending = (await action("get_item", { id: resource.id })).item.pending;
     await action("record_result", {
         id: resource.id, token: pending.token, summary: "One focused edit", baseSha, diffHash,
     });
@@ -512,8 +512,9 @@ test("canvas routes use local history, protected loopback HTTP and reusable pers
     await f.write(resource.id, "Changed after scanning.\n");
     await assert.rejects(action("request_work", { id: resource.id, kind: "review" }), /resource changed/);
     const reloaded = await loadCanvas(t, f);
-    assert.equal((await reloaded.action("get_board")).items[0].childSessionId, "retained-child");
-    assert.equal((await reloaded.action("get_board")).items[0].prepared.diffHash, diffHash);
+    const retained = await reloaded.action("get_item", { id: resource.id });
+    assert.equal(retained.item.childSessionId, "retained-child");
+    assert.equal(retained.item.prepared.diffHash, diffHash);
     assert.deepEqual((await git(f.root, ["status", "--porcelain", "--", "agents"])).trim(), "M agents/example.agent.md");
 });
 
@@ -662,7 +663,7 @@ test("failed batch dispatch releases every current token without automatic retry
 async function rendererFixture(items = [{
     ...resource, review: { ...review, improvements: "<img src=x onerror=alert(1)>" },
     childSessionId: "child-1", prepared: { summary: "Focused change", diffHash, baseSha },
-}]) {
+}], { holdBoardResponses = false } = {}) {
     let document;
     class Node {
         constructor(tag = "div") {
@@ -736,6 +737,7 @@ async function rendererFixture(items = [{
     };
     const requests = [];
     const events = {};
+    const pendingBoardResponses = [];
     const context = vm.createContext({
         URL,
         document,
@@ -748,13 +750,59 @@ async function rendererFixture(items = [{
                 }
             }
             const preview = { id: resource.id, file: resource.id, size: 9, binary: false, truncated: false, content: "<script>" };
+            if (url.endsWith("get_board")) {
+                const snapshot = JSON.parse(JSON.stringify(state));
+                const response = { ok: true, json: async () => snapshot };
+                if (holdBoardResponses) return new Promise((resolve) => pendingBoardResponses.push(() => resolve(response)));
+                return response;
+            }
             return { ok: true, json: async () => url.endsWith("read_file") ? preview : state };
         },
     });
     vm.runInContext(await readFile(path.join(extensionDir, "public", "app.js"), "utf8"), context);
     await new Promise((resolve) => setImmediate(resolve));
-    return { node, requests, state, document, emit: () => events.board({ data: JSON.stringify(state) }) };
+    return {
+        node, requests, state, document, emit: () => events.board({ data: JSON.stringify(state) }),
+        releaseBoardResponse: () => {
+            const release = pendingBoardResponses.shift();
+            if (!release) return false;
+            release();
+            return true;
+        },
+        setHoldBoardResponses: (value) => { holdBoardResponses = value; },
+    };
 }
+
+test("initial renderer snapshot cannot replace a newer SSE board", async () => {
+    const item = { ...resource, review: null };
+    const { node, state, emit, releaseBoardResponse } = await rendererFixture([item], { holdBoardResponses: true });
+    state.items[0].review = review;
+    emit();
+    assert.equal(releaseBoardResponse(), true);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.match(node("review-progress").textContent, /^1 with saved reviews/);
+});
+
+test("post-mutation renderer snapshot cannot replace a newer SSE board", async () => {
+    const item = { ...resource, review: null };
+    const { node, state, emit, setHoldBoardResponses, releaseBoardResponse } = await rendererFixture([item]);
+    setHoldBoardResponses(true);
+    const scan = node("scan").click();
+    await new Promise((resolve) => setImmediate(resolve));
+    state.items[0].review = review;
+    emit();
+    assert.equal(releaseBoardResponse(), true);
+    await scan;
+    assert.match(node("review-progress").textContent, /^1 with saved reviews/);
+});
+
+test("publication confirmation dialog labels its heading", async () => {
+    const html = await readFile(path.join(extensionDir, "public", "index.html"), "utf8");
+    const dialog = html.match(/<dialog id="confirm"([^>]*)>([\s\S]*?)<\/dialog>/);
+    const heading = dialog?.[2].match(/<h2 id="([^"]+)">/);
+    assert.ok(dialog);
+    assert.equal(dialog[1].match(/aria-labelledby="([^"]+)"/)?.[1], heading?.[1]);
+});
 
 test("renderer confirmation sends the exact prepared hash and renders untrusted evidence as text", async () => {
     const { node, requests } = await rendererFixture();

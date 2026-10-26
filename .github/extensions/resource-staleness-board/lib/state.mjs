@@ -4,6 +4,68 @@ import path from "node:path";
 
 export const RECOMMENDATIONS = ["keep", "refresh", "remove"];
 export const WORK_KINDS = ["review", "prepare-refresh", "prepare-removal", "publish"];
+export const DEFAULT_CANVAS_PAGE_SIZE = 20;
+export const MAX_CANVAS_PAGE_SIZE = 50;
+
+export function validateCanvasReadInput(action, input = {}) {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+        throw new Error("Canvas action input must be an object.");
+    }
+    const allowed = action === "get_board" ? ["offset", "limit"] : ["id"];
+    if (Object.keys(input).some((key) => !allowed.includes(key))) throw new Error("Unexpected canvas action input.");
+
+    const requireInteger = (value, name, maximum = Number.MAX_SAFE_INTEGER) => {
+        if (!Number.isSafeInteger(value) || value < 0 || value > maximum) throw new Error(`${name} must be a valid non-negative integer.`);
+    };
+    if (action === "get_board") {
+        if (input.offset !== undefined) requireInteger(input.offset, "offset");
+        if (input.limit !== undefined) {
+            requireInteger(input.limit, "limit", MAX_CANVAS_PAGE_SIZE);
+            if (input.limit < 1) throw new Error(`limit must be between 1 and ${MAX_CANVAS_PAGE_SIZE}.`);
+        }
+    } else if (typeof input.id !== "string" || !input.id.trim()) {
+        throw new Error("id must be a non-empty string.");
+    }
+    return input;
+}
+
+function boundedText(value, maxLength = 240) {
+    if (typeof value !== "string") return value;
+    return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
+}
+
+export function canvasBoardPage(snapshot, { offset = 0, limit = DEFAULT_CANVAS_PAGE_SIZE } = {}) {
+    validateCanvasReadInput("get_board", { offset, limit });
+    const total = snapshot.items.length;
+    const items = snapshot.items.slice(offset, offset + limit).map((item) => ({
+        id: item.id,
+        type: item.type,
+        fingerprint: item.fingerprint,
+        age: item.age,
+        ageBand: item.ageBand,
+        lastChange: item.lastChange ? { sha: item.lastChange.sha, date: item.lastChange.date } : null,
+        recommendation: item.review?.recommendation ?? null,
+        pending: item.pending ? { kind: item.pending.kind, at: item.pending.at } : null,
+        error: boundedText(item.error),
+    }));
+    return {
+        counts: snapshot.counts,
+        total,
+        updatedAt: snapshot.updatedAt,
+        ...(snapshot.warning ? { warning: boundedText(snapshot.warning) } : {}),
+        ...(snapshot.progress ? { progress: { completed: snapshot.progress.completed, total: snapshot.progress.total } } : {}),
+        ...(snapshot.syncError ? { syncError: boundedText(snapshot.syncError) } : {}),
+        page: { offset, limit, nextOffset: offset + items.length < total ? offset + items.length : null },
+        items,
+    };
+}
+
+export function canvasItemDetail(snapshot, id) {
+    validateCanvasReadInput("get_item", { id });
+    const item = snapshot.items.find((entry) => entry.id === id);
+    if (!item) throw new Error(`Resource not on this board: ${id}. Scan first.`);
+    return { item: structuredClone(item) };
+}
 
 function startWork(item, kind) {
     if (item.pending) throw new Error(`Resource ${item.id} already has pending work. Cancel it before retrying.`);
@@ -26,18 +88,28 @@ export class BoardStore {
         this.localRevision = 0;
         this.pollTimer = null;
         this.polling = null;
+        this.notificationPending = false;
     }
 
-    async load() {
+    async load({ notify = true, force = false } = {}) {
+        if (this.transactionActive && !force) return this;
+        const revision = this.localRevision;
         try {
             const contents = await readFile(this.file, "utf8");
             const state = JSON.parse(contents);
             if (state.version !== 1 || state.root !== this.root || !Array.isArray(state.items)) {
                 throw new Error("Staleness board state has an unsupported version or repository.");
             }
+            if ((this.transactionActive && !force) || revision !== this.localRevision) return this;
+            const changed = contents !== this.diskContents;
+            const recovered = this.syncError !== null;
             this.state = state;
             this.diskContents = contents;
             this.syncError = null;
+            if (changed || recovered) {
+                if (notify && !this.transactionActive) this.emit();
+                else this.notificationPending = true;
+            }
         } catch (error) {
             if (error.code !== "ENOENT") throw error;
         }
@@ -130,7 +202,7 @@ export class BoardStore {
                 let result;
                 try {
                     await lock.writeFile(JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
-                    await this.load();
+                    await this.load({ notify: false, force: true });
                     const state = structuredClone(this.state);
                     result = change(state);
                     const contents = `${JSON.stringify(state, null, 2)}\n`;
@@ -148,6 +220,7 @@ export class BoardStore {
                     this.diskContents = contents;
                     this.syncError = null;
                     this.localRevision++;
+                    this.notificationPending = false;
                 } finally {
                     await lock.close();
                     await unlink(`${this.file}.lock`);
@@ -156,6 +229,10 @@ export class BoardStore {
                 return result;
             } finally {
                 this.transactionActive = false;
+                if (this.notificationPending) {
+                    this.notificationPending = false;
+                    this.emit();
+                }
             }
         };
         const operation = this.pending.then(run, run);

@@ -98,6 +98,45 @@ test("shared-state reload errors are exposed and clear after a valid replacement
     assert.equal(recovered.items[0].fingerprint, "source-v1");
 });
 
+test("a transaction that fails after reloading another provider's completed review notifies subscribers", async (t) => {
+    const directory = await localDirectory(t);
+    const file = path.join(directory, "state.json");
+    const first = await new BoardStore(file, directory).load();
+    const second = await new BoardStore(file, directory).load();
+    await first.sync({ items: [item], warning: null });
+    const work = await first.queue(item.id, "review");
+    await first.recordSession(item.id, work.pending.token, "child");
+    await first.result({ id: item.id, token: work.pending.token, review });
+
+    let emissions = 0;
+    let observed;
+    const unsubscribe = second.subscribe((snapshot) => {
+        emissions++;
+        observed = snapshot;
+    });
+    t.after(unsubscribe);
+    await assert.rejects(second.transaction(() => { throw new Error("intentional failed transaction"); }), /intentional failed transaction/);
+    assert.equal(observed.items[0].review.rationale, review.rationale);
+    assert.equal(emissions, 1);
+});
+
+test("load emits when clearing a reload error, but not when disk state is unchanged", async (t) => {
+    const directory = await localDirectory(t);
+    const file = path.join(directory, "state.json");
+    const store = await new BoardStore(file, directory).load();
+    await store.sync({ items: [item], warning: null });
+    let emissions = 0;
+    const unsubscribe = store.subscribe(() => { emissions++; });
+    t.after(unsubscribe);
+
+    store.syncError = "Unable to reload shared board state: test";
+    await store.load();
+    assert.equal(store.syncError, null);
+    assert.equal(emissions, 1);
+    await store.load();
+    assert.equal(emissions, 1);
+});
+
 test("published lifecycle blocks stale follow-up work and prompts verify target main ancestry", async (t) => {
     const directory = await localDirectory(t);
     const store = await new BoardStore(path.join(directory, "state.json"), directory).load();

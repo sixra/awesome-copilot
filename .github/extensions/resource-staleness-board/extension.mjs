@@ -5,7 +5,10 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
 import { startBoardServer, expectedError } from "../open-pr-board/lib/server.mjs";
-import { BoardStore, WORK_KINDS, RECOMMENDATIONS } from "./lib/state.mjs";
+import {
+    BoardStore, WORK_KINDS, RECOMMENDATIONS, DEFAULT_CANVAS_PAGE_SIZE, MAX_CANVAS_PAGE_SIZE,
+    canvasBoardPage, canvasItemDetail, validateCanvasReadInput,
+} from "./lib/state.mjs";
 import { scanInventory, fingerprint, git, groupResources } from "./lib/inventory.mjs";
 import { buildBatchReviewPrompt, buildWorkPrompt } from "./lib/work.mjs";
 
@@ -127,8 +130,20 @@ async function requestReviews(input, instanceId, send) {
 }
 
 async function dispatch(action, input = {}, instanceId, send = false) {
+    if (!send && (action === "get_board" || action === "get_item")) validateCanvasReadInput(action, input);
     await initialize();
-    if (action === "get_board") { await store.load(); return store.snapshot(); }
+    if (action === "get_board") {
+        await store.load();
+        const snapshot = store.snapshot();
+        return send ? snapshot : canvasBoardPage(snapshot, {
+            offset: input.offset ?? 0,
+            limit: input.limit ?? DEFAULT_CANVAS_PAGE_SIZE,
+        });
+    }
+    if (action === "get_item") {
+        await store.load();
+        return canvasItemDetail(store.snapshot(), input.id);
+    }
     if (action === "scan") {
         const snapshot = await scan();
         return send ? snapshot : compactSnapshot(snapshot);
@@ -169,7 +184,12 @@ const review = {
     },
 };
 const schemas = {
-    get_board: {}, scan: {},
+    get_board: { properties: {
+        offset: { type: "integer", minimum: 0 },
+        limit: { type: "integer", minimum: 1, maximum: MAX_CANVAS_PAGE_SIZE },
+    } },
+    get_item: { required: ["id"], properties: { id: text } },
+    scan: {},
     request_reviews: { required: ["ids"], properties: {
         ids: { type: "array", minItems: 1, maxItems: MAX_REVIEW_BATCH_SIZE, uniqueItems: true, items: text },
     } },
@@ -184,7 +204,8 @@ const schemas = {
     cancel_work: { required: ["id", "token"], properties: identity },
 };
 const descriptions = {
-    get_board: "Read the local inventory, recommendations, pending work, and retained child-session links.",
+    get_board: "Read a bounded page of resource summaries. Use offset and limit to paginate; review details are available through get_item.",
+    get_item: "Read the full details for one exact resource ID, including its review and tracked file list.",
     scan: "Scan local tracked resources and meaningful Git history. Never fetches or writes to GitHub.",
     request_work: "Queue review or local preparation in a reusable child session. Publication is available only through the UI after explicit confirmation.",
     request_reviews: "Queue read-only background reviews for selected resource IDs atomically; return routing instructions for reusable child sessions.",
