@@ -639,6 +639,33 @@
     }
   },
   {
+    "name": "copilot-session-dj",
+    "description": "A playful, local Strudel soundtrack for the current GitHub Copilot session and its subagents. Includes an English/Japanese DJ Canvas, three synth-only presets, and silent-until-clicked playback with explicit stop controls.",
+    "version": "0.1.0",
+    "author": {
+      "name": "nomhiro",
+      "url": "https://github.com/nomhiro"
+    },
+    "repository": "https://github.com/nomhiro/copilot-session-jam",
+    "homepage": "https://github.com/nomhiro/copilot-session-jam/releases/tag/v0.1.0",
+    "license": "AGPL-3.0-or-later",
+    "keywords": [
+      "canvas",
+      "strudel",
+      "music",
+      "session",
+      "subagents",
+      "local-audio"
+    ],
+    "source": {
+      "source": "github",
+      "repo": "nomhiro/copilot-session-jam",
+      "path": "dist/copilot-session-dj",
+      "ref": "v0.1.0",
+      "sha": "fb815e24917136289c5a9152da8c81f25a7d33b6"
+    }
+  },
+  {
     "name": "crowdstrike-falcon-foundry",
     "description": "AI coding assistant skills for building CrowdStrike Falcon Foundry apps: scaffolding, deployment, and best practices for API integrations, collections, functions, UI extensions, UI pages, and workflows.",
     "version": "1.6.0",
@@ -1145,6 +1172,30 @@
     }
   },
   {
+    "name": "megalinter",
+    "description": "Set up, run and fix MegaLinter on any repository: 100+ linters for 69+ languages, 23+ formats and 21+ tooling formats, from CI or locally.",
+    "version": "1.0.3",
+    "author": {
+      "name": "OX Security",
+      "url": "https://github.com/oxsecurity"
+    },
+    "repository": "https://github.com/oxsecurity/megalinter",
+    "homepage": "https://megalinter.io",
+    "license": "AGPL-3.0",
+    "keywords": [
+      "linter",
+      "code-quality",
+      "formatter",
+      "security",
+      "ci"
+    ],
+    "source": {
+      "source": "github",
+      "repo": "oxsecurity/megalinter",
+      "sha": "e96b2d606cd8b32303706e8cd8f9c3c9269eb043"
+    }
+  },
+  {
     "name": "microsoft-docs",
     "description": "Access official Microsoft documentation, API references, and code samples for Azure, .NET, Windows, and more.",
     "version": "0.3.1",
@@ -1400,6 +1451,36 @@
       "source": "github",
       "repo": "nitrosend/copilot",
       "sha": "9790c695cec6c36673927071f5913d0ae9bc0a8d"
+    }
+  },
+  {
+    "name": "orrery",
+    "description": "Architecture and system design diagrams with official AWS, Azure, Google Cloud, Kubernetes and GitHub icons, auto-laid out by ELK and rendered from a YAML spec to SVG, PNG, editable draw.io, React TSX and a standalone HTML viewer.",
+    "version": "0.4.0",
+    "author": {
+      "name": "Sagar Gupta",
+      "url": "https://github.com/Sagargupta16"
+    },
+    "repository": "https://github.com/Sagargupta16/orrery",
+    "homepage": "https://github.com/Sagargupta16/orrery",
+    "license": "MIT",
+    "keywords": [
+      "diagram",
+      "architecture",
+      "system-design",
+      "aws",
+      "azure",
+      "gcp",
+      "kubernetes",
+      "drawio",
+      "svg",
+      "png"
+    ],
+    "source": {
+      "source": "github",
+      "repo": "Sagargupta16/orrery",
+      "ref": "v0.4.0",
+      "sha": "69942d3358d492a9b328ef35164b8f4ed41a0493"
     }
   },
   {
