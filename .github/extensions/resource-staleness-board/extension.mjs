@@ -11,6 +11,7 @@ import {
 } from "./lib/state.mjs";
 import { scanInventory, fingerprint, git, groupResources } from "./lib/inventory.mjs";
 import { buildBatchReviewPrompt, buildWorkPrompt } from "./lib/work.mjs";
+import { safeErrorSummary } from "./lib/diagnostics.mjs";
 
 const ID = "resource-staleness-board";
 const MAX_REVIEW_BATCH_SIZE = 10;
@@ -49,10 +50,11 @@ async function scan() {
     if (scanning) return scanning;
     scanning = (async () => {
         try {
+            const generation = await store.beginScan();
             store.progress = { completed: 0, total: null };
             store.emit();
             let lastProgressEmission = 0;
-            return await store.sync(await scanInventory(root, {
+            const result = await scanInventory(root, {
                 progress: (value) => {
                     store.progress = value;
                     const now = Date.now();
@@ -61,7 +63,9 @@ async function scan() {
                         store.emit();
                     }
                 },
-            }));
+            });
+            await store.sync({ ...result, generation });
+            return store.snapshot();
         } finally {
             store.progress = null;
             store.emit();
@@ -86,9 +90,10 @@ async function requestWork(input, instanceId, send) {
     if (input.kind === "publish" && !send) {
         throw new Error("Publishing is available only through the UI after confirming Publish PR.");
     }
+    await store.load();
     const observedFingerprint = await checkContent(input.id);
     const item = await store.queue(input.id, input.kind, input.confirmed, input.diffHash, observedFingerprint);
-    const instructions = buildWorkPrompt({ item, instanceId, root });
+    const instructions = buildWorkPrompt({ item, instanceId, historyComplete: !store.snapshot().warning });
     if (send) {
         try {
             await session.send({ prompt: instructions });
@@ -113,7 +118,7 @@ async function requestReviews(input, instanceId, send) {
     const observedFingerprints = new Map();
     for (const id of input.ids) observedFingerprints.set(id, await checkContent(id));
     const items = await store.queueReviews(input.ids, observedFingerprints);
-    const instructions = buildBatchReviewPrompt({ items, instanceId, root });
+    const instructions = buildBatchReviewPrompt({ items, instanceId, historyComplete: !store.snapshot().warning });
     if (send) {
         try {
             await session.send({ prompt: instructions });
@@ -171,6 +176,10 @@ function compactSnapshot(snapshot, id) {
     if (snapshot.warning) result.warning = snapshot.warning;
     if (id) result.item = snapshot.items.find((item) => item.id === id) ?? null;
     return result;
+}
+
+function safeHttpError(error) {
+    return safeErrorSummary(error);
 }
 
 const text = { type: "string", minLength: 1 };
@@ -241,8 +250,9 @@ session = await joinSession({
                         try {
                             return await dispatch(action, body, ctx.instanceId, true);
                         } catch (error) {
-                            session.log(`Staleness board ${action}: ${error.stack}`, { level: "warning" });
-                            throw expectedError(error.message, 400);
+                            const summary = safeHttpError(error);
+                            session.log(`Staleness board ${action}: ${summary}`, { level: "warning" });
+                            throw expectedError(summary, 400);
                         }
                     },
                 ]));
@@ -251,7 +261,9 @@ session = await joinSession({
                         await initialize();
                         return await readResourceFile(root, store.item(body?.id), body?.file);
                     } catch (error) {
-                        throw expectedError(error.message, 400);
+                        const summary = safeHttpError(error);
+                        session.log(`Staleness board read_file: ${summary}`, { level: "warning" });
+                        throw expectedError(summary, 400);
                     }
                 };
                 server = await startBoardServer({
@@ -259,7 +271,9 @@ session = await joinSession({
                     api: {
                         snapshot: () => store.snapshot(),
                         subscribe: (listener) => store.subscribe(listener), routes,
-                        logger: { error: (message, error) => session.log(`${message}: ${error.stack}`, { level: "error" }) },
+                        logger: { error: (message, error) => session.log(
+                            `Staleness board HTTP server: ${safeHttpError(error ?? message)}`, { level: "error" },
+                        ) },
                     },
                 });
                 servers.set(ctx.instanceId, server);

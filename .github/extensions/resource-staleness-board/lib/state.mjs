@@ -64,7 +64,32 @@ export function canvasItemDetail(snapshot, id) {
     validateCanvasReadInput("get_item", { id });
     const item = snapshot.items.find((entry) => entry.id === id);
     if (!item) throw new Error(`Resource not on this board: ${id}. Scan first.`);
-    return { item: structuredClone(item) };
+    return {
+        item: {
+            id: item.id,
+            type: item.type,
+            files: [...item.files],
+            fingerprint: item.fingerprint,
+            age: item.age,
+            ageBand: item.ageBand,
+            lastChange: item.lastChange ? { sha: item.lastChange.sha, date: item.lastChange.date } : null,
+            recommendation: item.review?.recommendation ?? null,
+            ...(item.review?.at ? { reviewedAt: item.review.at } : {}),
+            childSessionId: item.childSessionId ?? null,
+            pending: item.pending ? {
+                token: item.pending.token, kind: item.pending.kind,
+                fingerprint: item.pending.fingerprint, at: item.pending.at,
+            } : null,
+            prepared: item.prepared ? {
+                kind: item.prepared.kind, diffHash: item.prepared.diffHash,
+                baseSha: item.prepared.baseSha, at: item.prepared.at,
+            } : null,
+            publication: item.publication ? {
+                url: item.publication.url, at: item.publication.at,
+            } : null,
+            error: boundedText(item.error),
+        },
+    };
 }
 
 function startWork(item, kind) {
@@ -78,7 +103,10 @@ export class BoardStore {
     constructor(file, root) {
         this.file = file;
         this.root = root;
-        this.state = { version: 1, root, items: [], updatedAt: null, warning: null };
+        this.state = {
+            version: 1, root, items: [], updatedAt: null, warning: null,
+            scanGeneration: 0, scanRequestGeneration: 0,
+        };
         this.listeners = new Set();
         this.pending = Promise.resolve();
         this.progress = null;
@@ -100,6 +128,12 @@ export class BoardStore {
             if (state.version !== 1 || state.root !== this.root || !Array.isArray(state.items)) {
                 throw new Error("Staleness board state has an unsupported version or repository.");
             }
+            state.scanGeneration ??= 0;
+            state.scanRequestGeneration ??= state.scanGeneration;
+            if (!Number.isSafeInteger(state.scanGeneration) || state.scanGeneration < 0 ||
+                !Number.isSafeInteger(state.scanRequestGeneration) || state.scanRequestGeneration < state.scanGeneration) {
+                throw new Error("Staleness board state has invalid scan generations.");
+            }
             if ((this.transactionActive && !force) || revision !== this.localRevision) return this;
             const changed = contents !== this.diskContents;
             const recovered = this.syncError !== null;
@@ -120,7 +154,15 @@ export class BoardStore {
         const state = structuredClone(this.state);
         const counts = { stale: 0, aging: 0, fresh: 0, unknown: 0 };
         for (const item of state.items) counts[item.ageBand]++;
+        delete state.scanRequestGeneration;
         return { ...state, counts, progress: this.progress, ...(this.syncError ? { syncError: this.syncError } : {}) };
+    }
+
+    async beginScan() {
+        return this.transaction((state) => {
+            state.scanRequestGeneration = Math.max(state.scanRequestGeneration, state.scanGeneration) + 1;
+            return state.scanRequestGeneration;
+        });
     }
 
     subscribe(listener) {
@@ -246,8 +288,14 @@ export class BoardStore {
         return item;
     }
 
-    async sync({ items, warning }) {
+    async sync({ items, warning, generation }) {
         await this.transaction((state) => {
+            const acceptedGeneration = generation ?? state.scanRequestGeneration + 1;
+            if (!Number.isSafeInteger(acceptedGeneration) || acceptedGeneration <= 0) {
+                throw new Error("Scan generation must be a positive safe integer.");
+            }
+            if (acceptedGeneration !== state.scanRequestGeneration && generation !== undefined) return false;
+            if (generation === undefined) state.scanRequestGeneration = acceptedGeneration;
             state.items = items.map((item) => {
                 const previous = state.items.find((entry) => entry.id === item.id);
                 const same = previous?.fingerprint === item.fingerprint;
@@ -262,6 +310,8 @@ export class BoardStore {
             });
             state.updatedAt = new Date().toISOString();
             state.warning = warning;
+            state.scanGeneration = acceptedGeneration;
+            return true;
         });
         return this.snapshot();
     }

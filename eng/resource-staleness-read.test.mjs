@@ -18,13 +18,22 @@ const items = Array.from({ length: MAX_CANVAS_PAGE_SIZE + 3 }, (_, index) => ({
     lastChange: { sha: "a".repeat(40), date: "2026-10-26T00:00:00.000Z", subject: "x".repeat(10000) },
     review: {
         recommendation: "refresh",
+        at: "2026-10-26T00:00:00.000Z",
         rationale: "Long private review prose.",
         improvements: "Long improvement details.",
         capabilityEvidence: "Long evidence details.",
         stalenessAssessment: "Long assessment details.",
     },
-    prepared: { kind: "prepare-refresh", summary: "Do not include this full detail." },
-    pending: null,
+    childSessionId: "retained-child",
+    prepared: {
+        kind: "prepare-refresh", summary: "Do not include this full detail.",
+        diffHash: "d".repeat(64), baseSha: "b".repeat(40), at: "2026-10-26T00:00:00.000Z",
+    },
+    publication: { url: "https://github.com/github/awesome-copilot/pull/123", at: "2026-10-26T00:00:00.000Z" },
+    pending: {
+        token: "pending-token", kind: "publish", fingerprint: `fingerprint-${index}`,
+        at: "2026-10-26T00:00:00.000Z",
+    },
     error: null,
 }));
 const snapshot = {
@@ -56,12 +65,21 @@ test("canvas board summaries are paginated, bounded, and omit file lists and rev
     assert.equal(last.page.nextOffset, null);
 });
 
-test("canvas item detail returns one exact full item", () => {
+test("canvas item detail is allowlisted while retaining lifecycle identifiers and hashes", () => {
     const detail = canvasItemDetail(snapshot, items[0].id);
     assert.equal(detail.item.id, items[0].id);
     assert.deepEqual(detail.item.files, items[0].files);
-    assert.deepEqual(detail.item.review, items[0].review);
-    assert.equal(detail.item.prepared.summary, items[0].prepared.summary);
+    assert.equal(detail.item.recommendation, "refresh");
+    assert.equal(detail.item.review, undefined);
+    assert.equal(detail.item.rationale, undefined);
+    assert.equal(detail.item.childSessionId, "retained-child");
+    assert.equal(detail.item.pending.token, "pending-token");
+    assert.equal(detail.item.prepared.diffHash, "d".repeat(64));
+    assert.equal(detail.item.prepared.baseSha, "b".repeat(40));
+    assert.equal(detail.item.prepared.summary, undefined);
+    assert.deepEqual(detail.item.publication, items[0].publication);
+    assert.equal(JSON.stringify(detail).includes("Long private review prose"), false);
+    assert.equal(JSON.stringify(detail).includes("Do not include this full detail"), false);
     assert.throws(() => canvasItemDetail(snapshot, "missing"), /Resource not on this board/);
 });
 

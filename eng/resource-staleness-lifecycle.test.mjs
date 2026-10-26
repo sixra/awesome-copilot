@@ -137,6 +137,45 @@ test("load emits when clearing a reload error, but not when disk state is unchan
     assert.equal(emissions, 1);
 });
 
+test("an older provider scan cannot overwrite the latest inventory or its review and work state", async (t) => {
+    const directory = await localDirectory(t);
+    const store = await new BoardStore(path.join(directory, "state.json"), directory).load();
+    await store.sync({ items: [{ ...item, fingerprint: "current" }], warning: null });
+
+    let work = await store.queue(item.id, "review");
+    await store.recordSession(item.id, work.pending.token, "retained-child");
+    await store.result({ id: item.id, token: work.pending.token, review });
+    work = await store.queue(item.id, "prepare-refresh");
+    await store.result({
+        id: item.id, token: work.pending.token, summary: "Prepared content",
+        diffHash: "d".repeat(64), baseSha: "b".repeat(40),
+    });
+    work = await store.queue(item.id, "prepare-refresh");
+    const pendingToken = work.pending.token;
+
+    const olderProvider = await new BoardStore(store.file, directory).load();
+    const newerProvider = await new BoardStore(store.file, directory).load();
+    const oldScan = await olderProvider.beginScan();
+    const newScan = await newerProvider.beginScan();
+    assert.equal(newScan, oldScan + 1);
+    await newerProvider.sync({
+        items: [{ ...item, fingerprint: "current" }], warning: null, generation: newScan,
+    });
+    await olderProvider.load();
+    const beforeStaleCompletion = olderProvider.snapshot();
+
+    await olderProvider.sync({
+        items: [{ ...item, fingerprint: "older" }], warning: "older scan", generation: oldScan,
+    });
+    const afterStaleCompletion = olderProvider.snapshot();
+    assert.equal(afterStaleCompletion.scanGeneration, newScan);
+    assert.equal(afterStaleCompletion.items[0].fingerprint, beforeStaleCompletion.items[0].fingerprint);
+    assert.deepEqual(afterStaleCompletion.items[0].review, beforeStaleCompletion.items[0].review);
+    assert.deepEqual(afterStaleCompletion.items[0].prepared, beforeStaleCompletion.items[0].prepared);
+    assert.equal(afterStaleCompletion.items[0].pending.token, pendingToken);
+    assert.equal(afterStaleCompletion.warning, beforeStaleCompletion.warning);
+});
+
 test("published lifecycle blocks stale follow-up work and prompts verify target main ancestry", async (t) => {
     const directory = await localDirectory(t);
     const store = await new BoardStore(path.join(directory, "state.json"), directory).load();

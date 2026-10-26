@@ -346,7 +346,7 @@ test("work instructions require child reuse, concrete improvements and capabilit
     const preparedAssignment = preparedWork.split("CHILD ASSIGNMENT (")[1].split("END CHILD ASSIGNMENT")[0];
     assert.match(preparedAssignment, /git rev-parse HEAD to equal b{40}/);
     assert.match(preparedAssignment, /git diff --cached --binary to equal d{64}/);
-    assert.match(preparedAssignment, /leave all prepared edits\s+untouched/);
+    assert.match(preparedAssignment, /leave all prepared\s+edits\s+untouched/);
     assert.match(preparedWork, /Read the recorded review below/);
     const prepare = buildWorkPrompt({
         item: { ...item, pending: { kind: "prepare-refresh", token: "token-3" } },
@@ -663,7 +663,8 @@ test("failed batch dispatch releases every current token without automatic retry
 async function rendererFixture(items = [{
     ...resource, review: { ...review, improvements: "<img src=x onerror=alert(1)>" },
     childSessionId: "child-1", prepared: { summary: "Focused change", diffHash, baseSha },
-}], { holdBoardResponses = false } = {}) {
+}], { holdBoardResponses = false, holdPreviewResponses = false } = {}) {
+    let currentPreview = { id: resource.id, file: resource.id, size: 9, binary: false, truncated: false, content: "<script>" };
     let document;
     class Node {
         constructor(tag = "div") {
@@ -733,11 +734,12 @@ async function rendererFixture(items = [{
     node("oldest-count").value = "10";
     const state = {
         items,
-        counts: { stale: 1 }, updatedAt: "2026-10-22T00:00:00Z",
+        counts: { stale: 1 }, updatedAt: "2026-10-22T00:00:00Z", scanGeneration: 1,
     };
     const requests = [];
     const events = {};
     const pendingBoardResponses = [];
+    const pendingPreviewResponses = [];
     const context = vm.createContext({
         URL,
         document,
@@ -749,14 +751,22 @@ async function rendererFixture(items = [{
                     state.items.find((item) => item.id === id).pending = { kind: "review", at: "now" };
                 }
             }
-            const preview = { id: resource.id, file: resource.id, size: 9, binary: false, truncated: false, content: "<script>" };
             if (url.endsWith("get_board")) {
                 const snapshot = JSON.parse(JSON.stringify(state));
                 const response = { ok: true, json: async () => snapshot };
                 if (holdBoardResponses) return new Promise((resolve) => pendingBoardResponses.push(() => resolve(response)));
                 return response;
             }
-            return { ok: true, json: async () => url.endsWith("read_file") ? preview : state };
+            if (url.endsWith("read_file")) {
+                const preview = currentPreview;
+                const response = { ok: true, json: async () => preview };
+                if (holdPreviewResponses) {
+                    return new Promise((resolve) => pendingPreviewResponses.push(() => resolve(response)));
+                }
+                if (preview instanceof Error) throw preview;
+                return response;
+            }
+            return { ok: true, json: async () => state };
         },
     });
     vm.runInContext(await readFile(path.join(extensionDir, "public", "app.js"), "utf8"), context);
@@ -769,6 +779,13 @@ async function rendererFixture(items = [{
             release();
             return true;
         },
+        releasePreviewResponse: (index = 0) => {
+            const release = pendingPreviewResponses.splice(index, 1)[0];
+            if (!release) return false;
+            release();
+            return true;
+        },
+        setPreview: (value) => { currentPreview = value; },
         setHoldBoardResponses: (value) => { holdBoardResponses = value; },
     };
 }
@@ -794,6 +811,85 @@ test("post-mutation renderer snapshot cannot replace a newer SSE board", async (
     assert.equal(releaseBoardResponse(), true);
     await scan;
     assert.match(node("review-progress").textContent, /^1 with saved reviews/);
+});
+
+test("preview cache refreshes on completed scans without refetching progress snapshots", async () => {
+    const { node, state, emit, requests, setPreview } = await rendererFixture();
+    node("resources").children[0].children[1].click();
+    await new Promise((resolve) => setImmediate(resolve));
+    const contents = () => node("detail").children.find((entry) => entry.className === "file-contents")?.textContent;
+    assert.equal(contents(), "<script>");
+    assert.equal(requests.filter((entry) => entry.url.endsWith("read_file")).length, 1);
+
+    setPreview({ id: resource.id, file: resource.id, size: 10, binary: false, truncated: false, content: "Restored source" });
+    state.progress = { completed: 1, total: 2 };
+    emit();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(requests.filter((entry) => entry.url.endsWith("read_file")).length, 1);
+
+    state.progress = null;
+    state.scanGeneration++;
+    emit();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(contents(), "Restored source");
+    assert.equal(requests.filter((entry) => entry.url.endsWith("read_file")).length, 2);
+});
+
+test("preview errors are retried after a completed scan", async () => {
+    const { node, state, emit, requests, setPreview } = await rendererFixture(undefined, {
+        holdPreviewResponses: false,
+    });
+    setPreview(new Error("Preview unavailable"));
+    node("resources").children[0].children[1].click();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(node("detail").children.some((entry) => entry.textContent === "Preview unavailable"), true);
+    assert.equal(requests.filter((entry) => entry.url.endsWith("read_file")).length, 1);
+
+    setPreview({ id: resource.id, file: resource.id, size: 8, binary: false, truncated: false, content: "Available again" });
+    state.scanGeneration++;
+    emit();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(node("detail").children.find((entry) => entry.className === "file-contents")?.textContent, "Available again");
+    assert.equal(requests.filter((entry) => entry.url.endsWith("read_file")).length, 2);
+});
+
+test("stale in-flight preview responses cannot replace a newer scan preview", async () => {
+    const { node, state, emit, requests, releasePreviewResponse, setPreview } = await rendererFixture(undefined, {
+        holdPreviewResponses: true,
+    });
+    node("resources").children[0].children[1].click();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(requests.filter((entry) => entry.url.endsWith("read_file")).length, 1);
+
+    setPreview({ id: resource.id, file: resource.id, size: 12, binary: false, truncated: false, content: "New scan content" });
+    state.scanGeneration++;
+    emit();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(requests.filter((entry) => entry.url.endsWith("read_file")).length, 2);
+    assert.equal(releasePreviewResponse(1), true);
+    await new Promise((resolve) => setImmediate(resolve));
+    const contents = () => node("detail").children.find((entry) => entry.className === "file-contents")?.textContent;
+    assert.equal(contents(), "New scan content");
+
+    assert.equal(releasePreviewResponse(), true);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(contents(), "New scan content");
+});
+
+test("scan progress is busy during updates and clears when the final status is announced", async () => {
+    const { node, state, emit } = await rendererFixture();
+    const html = await readFile(path.join(extensionDir, "public", "index.html"), "utf8");
+    assert.match(html, /id="notice" role="status" aria-live="polite" aria-busy="false"/);
+
+    state.progress = { completed: 1, total: 3 };
+    emit();
+    assert.equal(node("notice").getAttribute("aria-busy"), "true");
+    assert.match(node("notice").textContent, /1\/3 resources/);
+
+    state.progress = null;
+    emit();
+    assert.equal(node("notice").getAttribute("aria-busy"), "false");
+    assert.match(node("notice").textContent, /Last scan/);
 });
 
 test("publication confirmation dialog labels its heading", async () => {

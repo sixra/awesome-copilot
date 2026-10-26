@@ -16,18 +16,20 @@ function defaultFile(item) {
         ?? item.files.find((file) => file.endsWith(".md")) ?? item.files[0];
 }
 
-function previewKey(item, file) {
-    return `${item.id}\0${file}\0${item.fingerprint}`;
+function previewKey(item, file, scanGeneration = board.scanGeneration ?? 0) {
+    return `${item.id}\0${file}\0${item.fingerprint}\0${scanGeneration}`;
 }
 
 async function loadPreview(item, file) {
-    const key = previewKey(item, file);
+    const scanGeneration = board.scanGeneration ?? 0;
+    const key = previewKey(item, file, scanGeneration);
     if (previews.has(key)) return;
     previews.set(key, { loading: true });
     try {
-        previews.set(key, { data: await api("read_file", { id: item.id, file }) });
+        const data = await api("read_file", { id: item.id, file });
+        if ((board.scanGeneration ?? 0) === scanGeneration) previews.set(key, { data });
     } catch (error) {
-        previews.set(key, { error: error.message });
+        if ((board.scanGeneration ?? 0) === scanGeneration) previews.set(key, { error: error.message });
     }
     if (selected === item.id) renderDetail();
 }
@@ -254,6 +256,7 @@ function renderDetailContent(detail) {
 function render() {
     const focusKey = document.activeElement?.getAttribute?.("data-focus-key");
     $("scan").disabled = busy || Boolean(board.progress);
+    $("notice").setAttribute("aria-busy", String(Boolean(board.progress)));
     $("notice").textContent = board.progress
         ? `Scanning local history: ${board.progress.completed}/${board.progress.total ?? "?"} resources...`
         : `${board.updatedAt ? `Last scan ${new Date(board.updatedAt).toLocaleString()}.` : "Scan to build the inventory."} No network reads or writes during scanning or review.${board.warning ? ` ${board.warning}` : ""}`;
