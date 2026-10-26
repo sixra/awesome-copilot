@@ -14,7 +14,7 @@ export const REPO = "github/awesome-copilot";
 export class BoardStore {
     constructor(file) {
         this.file = file;
-        this.state = { version: 1, reports: {}, selected: null };
+        this.state = { version: 1, snapshotSequence: 0, reports: {}, selected: null };
         this.listeners = new Set();
         this.chain = Promise.resolve();
     }
@@ -24,6 +24,10 @@ export class BoardStore {
             const state = JSON.parse(await readFile(this.file, "utf8"));
             if (state.version !== 1 || !state.reports || typeof state.reports !== "object") {
                 throw new Error("Unsupported duplicate board state. Preserve the file before repairing it.");
+            }
+            if (!Object.hasOwn(state, "snapshotSequence")) state.snapshotSequence = 0;
+            if (!Number.isSafeInteger(state.snapshotSequence) || state.snapshotSequence < 0) {
+                throw new Error("Invalid duplicate board snapshot sequence. Preserve the file before repairing it.");
             }
             this.state = state;
         } catch (error) {
@@ -37,6 +41,8 @@ export class BoardStore {
         const operation = this.chain.then(async () => {
             const next = structuredClone(this.state);
             const result = await fn(next);
+            if (next.snapshotSequence >= Number.MAX_SAFE_INTEGER) throw new Error("Duplicate board snapshot sequence is exhausted.");
+            next.snapshotSequence++;
             await mkdir(path.dirname(this.file), { recursive: true });
             const tmp = `${this.file}.${randomUUID()}.tmp`;
             await writeFile(tmp, JSON.stringify(next, null, 2), "utf8");
@@ -76,7 +82,7 @@ export class BoardStore {
     snapshot() {
         const report = this.state.reports[this.state.selected];
         return structuredClone({
-            repo: REPO, columns: COLUMNS, selected: this.state.selected,
+            repo: REPO, columns: COLUMNS, selected: this.state.selected, snapshotSequence: this.state.snapshotSequence,
             reports: Object.values(this.state.reports).map(({ number, title, url, state, importedAt }) => ({
                 number, title, url, state, importedAt,
             })).sort((a, b) => b.number - a.number),
@@ -105,7 +111,7 @@ export class BoardStore {
                     changed: Boolean(previous && !same),
                     revision: unchanged ? previous.revision : randomUUID(),
                     publication: previous?.publication ?? null,
-                    draft: same ? previous.draft : {
+                    draft: previous?.draft ?? {
                         title: `Consolidate duplicate resources: ${group.title}`.slice(0, 256),
                         body: `Source report: ${issue.html_url}\n\n## Resources\n\n${group.resources.map((resource) => `- \`${resource.path}\``).join("\n")}\n\n## Why flagged\n\n${group.reason}\n\n## Proposed resolution\n\n`,
                     },

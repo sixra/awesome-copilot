@@ -60,6 +60,7 @@ class FakeElement {
     dispatch(name, event = {}) {
         for (const callback of this.listeners.get(name) || []) callback({ type: name, preventDefault() {}, ...event });
     }
+    click() { this.dispatch("click"); }
 
     setAttribute(name, value) { this.attributes[name] = value; }
     getAttribute(name) { return this.attributes[name]; }
@@ -93,12 +94,12 @@ function sampleItem(id, revision, overrides = {}) {
     };
 }
 
-function snapshot(items) {
+function snapshot(items, snapshotSequence = 0) {
     return {
         selected: 1, repo: "github/awesome-copilot",
         reports: [{ number: 1, title: "Report", state: "open", url: "https://github.com/github/awesome-copilot/issues/1" }],
         columns: [{ id: "unreviewed", label: "Unreviewed" }, { id: "separate", label: "Separate" }, { id: "consolidate", label: "Consolidate" }],
-        items,
+        items, snapshotSequence,
     };
 }
 
@@ -267,6 +268,23 @@ test("card moves also send the revision and rejected stale saves preserve drafts
     assert.equal(vm.runInContext("opened.revision", h.context), "r1");
 });
 
+test("dropping a queued card in its current column does not clear its queue or revision", async () => {
+    const calls = [];
+    const h = await harness(async (url) => {
+        calls.push(url);
+        return response({});
+    });
+    const queued = sampleItem("a", "r1", { column: "separate", queueId: "review-queue" });
+    h.context.receive(snapshot([queued], 4));
+    const column = h.nodes.board.children.find((node) =>
+        node.className === "column" && node.children[0].textContent.startsWith("Separate"));
+    column.dispatch("drop", { dataTransfer: { getData: () => "a" } });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls.includes("/api/update"), false);
+    assert.equal(vm.runInContext("board.items[0].queueId", h.context), "review-queue");
+    assert.equal(vm.runInContext("board.items[0].revision", h.context), "r1");
+});
+
 test("save sends its submitted snapshot revision and preserves typing made while the request is pending", async () => {
     let resolveUpdate;
     let updateBody;
@@ -295,25 +313,28 @@ test("save sends its submitted snapshot revision and preserves typing made while
     assert.equal(vm.runInContext("opened.revision", h.context), "r2");
 });
 
-test("save response merges its group without replacing an unrelated newer board snapshot", async () => {
+test("ordered SSE keeps cross-report changes while save reconciliation preserves the editor", async () => {
     let resolveUpdate;
     const h = await harness(async (url, options, initial) => {
         if (url === "/api/board") return response(initial);
         if (url === "/api/update") return new Promise((resolve) => { resolveUpdate = resolve; });
         return response({});
     });
-    h.context.receive(snapshot([sampleItem("a", "r1"), sampleItem("b", "b1")]));
+    h.context.receive(snapshot([sampleItem("a", "r1"), sampleItem("b", "b1")], 3));
     h.context.show("a");
     h.nodes.note.value = "saved a";
     h.nodes.editor.dispatch("input", { target: h.nodes.note });
     const pending = h.context.save();
     await new Promise((resolve) => setImmediate(resolve));
 
-    h.context.receive(snapshot([sampleItem("a", "r1"), sampleItem("b", "b2", { note: "newer b" })]));
+    h.context.receive(snapshot([
+        sampleItem("a", "r2", { note: "saved a" }),
+        sampleItem("b", "b2", { note: "newer b" }),
+    ], 6));
     resolveUpdate(response(snapshot([
         sampleItem("a", "r2", { note: "saved a" }),
         sampleItem("b", "b1"),
-    ])));
+    ], 5)));
     await pending;
 
     assert.equal(vm.runInContext("board.items.find((item) => item.id === 'a').revision", h.context), "r2");
@@ -393,22 +414,92 @@ test("resource requests deduplicate only while pending, then refresh after succe
     assert.equal(h.nodes["viewer-panes"].children[0].children[1].textContent, "after refresh");
 });
 
-test("keyboard tab activation focuses the replacement selected tab", async () => {
-    const h = await harness();
+test("resource tabs reference existing panels, load lazily, and navigate accessibly", async () => {
+    let resourceRequests = 0;
+    const h = await harness(async (url) => {
+        if (url === "/api/resource") {
+            resourceRequests++;
+            return response({ content: "Resource contents", truncated: false });
+        }
+        return response({});
+    });
     h.context.receive(snapshot([sampleItem("a", "r1", {
         resources: [{ path: "agents/a.agent.md" }, { path: "agents/b.agent.md" }],
     })]));
     h.context.show("a");
-    const second = h.nodes["viewer-tabs"].children[1];
-    second.focus();
-    // Enter and Space activate native buttons by dispatching click.
-    second.dispatch("click");
-    assert.notEqual(h.document.activeElement, second);
-    assert.equal(h.document.activeElement, h.nodes["viewer-tabs"].children[1]);
-    assert.equal(h.document.activeElement.isConnected, true);
-    assert.equal(h.document.activeElement.getAttribute("aria-selected"), "true");
-    h.document.activeElement.dispatch("click");
-    assert.equal(h.document.activeElement, h.nodes["viewer-tabs"].children[1]);
+    let tabs = h.nodes["viewer-tabs"].children;
+    let panels = h.nodes["viewer-panes"].children;
+    assert.equal(panels.length, tabs.length);
+    assert.equal(tabs[0].getAttribute("role"), "tab");
+    for (const [index, tab] of tabs.entries()) {
+        const panel = panels.find((candidate) => candidate.id === tab.getAttribute("aria-controls"));
+        assert.ok(panel, `tab ${index} controls an existing panel`);
+        assert.equal(panel.getAttribute("role"), "tabpanel");
+        assert.equal(panel.getAttribute("aria-labelledby"), tab.id);
+        assert.equal(panel.hidden, index !== 0);
+    }
+    assert.equal(panels[0].getAttribute("role"), "tabpanel");
+    assert.equal(panels[0].getAttribute("aria-labelledby"), tabs[0].id);
+    assert.equal(tabs[0].tabIndex, 0);
+    assert.equal(tabs[1].tabIndex, -1);
+    assert.equal(resourceRequests, 1);
+
+    tabs[0].dispatch("keydown", { key: "ArrowRight" });
+    tabs = h.nodes["viewer-tabs"].children;
+    panels = h.nodes["viewer-panes"].children;
+    assert.equal(h.document.activeElement, tabs[1]);
+    assert.equal(tabs[1].getAttribute("aria-selected"), "true");
+    assert.equal(tabs[1].tabIndex, 0);
+    assert.equal(panels[0].hidden, true);
+    assert.equal(panels[1].hidden, false);
+    assert.equal(resourceRequests, 2);
+
+    tabs[1].dispatch("keydown", { key: "Home" });
+    tabs = h.nodes["viewer-tabs"].children;
+    assert.equal(tabs[0].getAttribute("aria-selected"), "true");
+    tabs[0].dispatch("keydown", { key: "End" });
+    tabs = h.nodes["viewer-tabs"].children;
+    assert.equal(tabs[1].getAttribute("aria-selected"), "true");
+    tabs[1].dispatch("keydown", { key: "ArrowLeft" });
+    tabs = h.nodes["viewer-tabs"].children;
+    panels = h.nodes["viewer-panes"].children;
+    assert.equal(tabs[0].getAttribute("aria-selected"), "true");
+    assert.equal(tabs[0].getAttribute("aria-controls"), panels[0].id);
+
+    h.nodes["side-by-side"].checked = true;
+    h.nodes["side-by-side"].dispatch("change");
+    panels = h.nodes["viewer-panes"].children;
+    assert.equal(h.nodes["viewer-tabs"].hidden, true);
+    for (const panel of panels) {
+        const headingId = panel.getAttribute("aria-labelledby");
+        const heading = h.document.ids.get(headingId);
+        assert.equal(panel.getAttribute("role"), "region");
+        assert.ok(heading && panel.children.includes(heading));
+        assert.notEqual(headingId, tabs[panels.indexOf(panel)].id);
+        assert.equal(panel.hidden, false);
+    }
+    assert.ok(resourceRequests >= 2);
+
+    h.nodes["side-by-side"].checked = false;
+    h.nodes["side-by-side"].dispatch("change");
+    tabs = h.nodes["viewer-tabs"].children;
+    panels = h.nodes["viewer-panes"].children;
+    for (const [index, panel] of panels.entries()) {
+        assert.equal(panel.getAttribute("role"), "tabpanel");
+        assert.equal(panel.getAttribute("aria-labelledby"), tabs[index].id);
+    }
+});
+
+test("receive rejects missing, invalid, and older snapshot sequences", async () => {
+    const h = await harness();
+    const current = snapshot([sampleItem("a", "r2", { note: "current" })], 8);
+    h.context.receive(current);
+    h.context.receive({ ...snapshot([sampleItem("a", "r1", { note: "missing sequence" })]), snapshotSequence: undefined });
+    h.context.receive({ ...snapshot([sampleItem("a", "r1", { note: "invalid sequence" })]), snapshotSequence: "9" });
+    h.context.receive(snapshot([sampleItem("a", "r1", { note: "older" })], 7));
+    assert.equal(vm.runInContext("board.snapshotSequence", h.context), 8);
+    assert.equal(vm.runInContext("board.items[0].revision", h.context), "r2");
+    assert.equal(vm.runInContext("board.items[0].note", h.context), "current");
 });
 
 function otherReport(items) {
@@ -468,13 +559,13 @@ test("late report A response cannot replace a newer selected report B", async ()
         if (url === "/api/update") return new Promise((resolve) => { settle = resolve; });
         return response({});
     });
-    h.context.receive(snapshot([sampleItem("a", "r1")]));
+    h.context.receive(snapshot([sampleItem("a", "r1")], 3));
     h.context.show("a");
     h.nodes.note.value = "submitted";
     h.nodes.editor.dispatch("input", { target: h.nodes.note });
     const pending = h.context.save();
-    h.context.receive(otherReport([sampleItem("a", "b1")]));
-    settle(response(snapshot([sampleItem("a", "r2", { note: "submitted" })])));
+    h.context.receive({ ...otherReport([sampleItem("a", "b1")]), snapshotSequence: 5 });
+    settle(response(snapshot([sampleItem("a", "r2", { note: "submitted" })], 4)));
     await pending;
     assert.equal(vm.runInContext("board.selected", h.context), 2);
     assert.equal(vm.runInContext("opened.revision", h.context), "r1");
@@ -503,11 +594,11 @@ test("a mismatched save snapshot cannot overwrite a newer board event", async ()
         if (url === "/api/update") return new Promise((resolve) => { settle = resolve; });
         return response({});
     });
-    h.context.receive(snapshot([sampleItem("a", "r1")]));
+    h.context.receive(snapshot([sampleItem("a", "r1")], 3));
     h.context.show("a");
     const pending = h.context.save();
-    h.context.receive(otherReport([sampleItem("a", "b9", { note: "newer B" })]));
-    settle(response(otherReport([sampleItem("a", "b1", { note: "stale B" })])));
+    h.context.receive({ ...otherReport([sampleItem("a", "b9", { note: "newer B" })]), snapshotSequence: 6 });
+    settle(response({ ...otherReport([sampleItem("a", "b1", { note: "stale B" })]), snapshotSequence: 5 }));
     await pending;
     assert.equal(vm.runInContext("board.items[0].revision", h.context), "b9");
     assert.equal(vm.runInContext("board.items[0].note", h.context), "newer B");

@@ -20,6 +20,15 @@ export function createGitHub(run = runGh) {
         "api", `repos/${REPO}/${suffix}`,
         ...(method ? ["--method", method, "--input", "-"] : []),
     ], payload ? JSON.stringify(payload) : undefined));
+    const hasWritePermission = async (login) => {
+        try {
+            const { permission } = await api(`collaborators/${encodeURIComponent(login)}/permission`);
+            return ["write", "maintain", "admin"].includes(permission);
+        } catch (error) {
+            if (/\b404\b/.test(error.message)) return false;
+            throw error;
+        }
+    };
     return {
         async list() {
             return JSON.parse(await run([
@@ -45,7 +54,16 @@ export function createGitHub(run = runGh) {
             const pages = JSON.parse(await run([
                 "api", `repos/${REPO}/issues?state=all&per_page=100`, "--paginate", "--slurp",
             ]));
-            return pages.flat().filter((issue) => !issue.pull_request && issue.body?.includes(marker));
+            const matches = pages.flat().filter((issue) => !issue.pull_request && issue.body?.includes(marker));
+            const permissionByAuthor = new Map();
+            const trusted = [];
+            for (const issue of matches) {
+                const login = issue.user?.login;
+                if (!login) continue;
+                if (!permissionByAuthor.has(login)) permissionByAuthor.set(login, hasWritePermission(login));
+                if (await permissionByAuthor.get(login)) trusted.push(issue);
+            }
+            return trusted;
         },
     };
 }

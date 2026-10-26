@@ -470,17 +470,23 @@ test("resource viewer reads only files listed in the opened group", async (t) =>
     await assert.rejects(act("read_resource", { number: 12, id: item.id, path: "agents/../../secret.md" }), /not part of this duplicate group/);
 });
 
-test("canvas updates require an expected revision in the schema and reject stale saves", async (t) => {
+test("local decision updates are UI-only and reject stale saves", async (t) => {
     const { canvas, act } = await loadExtension(t);
-    const schema = canvas.actions.find((action) => action.name === "update_group").inputSchema;
-    assert.ok(schema.required.includes("expectedRevision"));
-    assert.equal(schema.properties.expectedRevision.type, "string");
+    assert.ok(!canvas.actions.some((action) => ["update_group", "cancel_review"].includes(action.name)));
     await act("import_report", { number: 12 });
     const item = (await act("get_board")).items[0];
+    const opened = await canvas.open({ instanceId: "test-duplicate-board", input: {} });
+    const html = await (await fetch(opened.url)).text();
+    const token = /name="board-token" content="([^"]+)"/.exec(html)[1];
+    const update = (changes) => fetch(opened.url + "api/update", {
+        method: "POST",
+        headers: { "x-board-token": token, "Content-Type": "application/json" },
+        body: JSON.stringify(changes),
+    });
     const changes = { number: 12, id: item.id, column: "consolidate", note: "Saved", draft: item.draft };
-    await assert.rejects(act("update_group", changes), /Local triage changed/);
-    await act("update_group", { ...changes, expectedRevision: item.revision });
-    await assert.rejects(act("update_group", { ...changes, note: "Stale", expectedRevision: item.revision }), /Local triage changed/);
+    assert.equal((await update(changes)).status, 400);
+    assert.equal((await update({ ...changes, expectedRevision: item.revision })).status, 200);
+    assert.equal((await update({ ...changes, note: "Stale", expectedRevision: item.revision })).status, 400);
     assert.equal((await act("get_board")).items[0].note, "Saved");
 });
 

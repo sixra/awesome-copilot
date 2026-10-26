@@ -21,6 +21,9 @@ reports into actionable, local triage. It is not an installable marketplace plug
    Optional guidance focuses a re-review. AI results never change your decision
    or issue draft. Runtimes without background-task support report an error;
    there is no foreground fallback.
+   Local notes are not included in the background prompt. Report and resource
+   text remain untrusted evidence; prompt boundaries guide the comparison but
+   are not a guarantee against prompt injection.
 4. **Preview GitHub action** shows the exact destination and complete payload.
    A separate **Confirm and publish** click is required:
    - **Keep separate** checks only this group's `Reviewed` checkbox in an open
@@ -44,11 +47,13 @@ State is atomically saved under
 outside the checkout and extension directory. Multiple panels share the same
 session's reports and live updates; reloading the extension or resuming the session
 preserves decisions. A new conversation has separate state.
+Persisted snapshot sequence numbers keep delayed HTTP responses from replacing
+newer live updates.
 
 Reports are keyed by issue number; groups by a hash of their sorted resource
 paths, not display numbers or panel IDs. Renumbering a group preserves its local
 state. Changed titles, descriptions, or similarity evidence invalidate reviews
-and decisions while preserving notes and publication receipts. Removed groups
+and decisions while preserving notes, saved consolidation drafts, and publication receipts. Removed groups
 with publication records remain accessible for recovery; other removed groups
 disappear when the report is imported again. Other imported reports
 remain available. A report format the parser cannot safely understand is rejected
@@ -57,6 +62,7 @@ explicitly, without changing the saved state.
 Saving or moving a queued group cancels its local token. Failed background
 dispatch clears the queue and records the error. Failed or cancelled comparisons
 can be requested again.
+Dropping a group into its existing column does not change its queue or revision.
 
 Edits carry the group's loaded revision. A concurrent edit or changed report
 rejects a stale save instead of overwriting newer triage.
@@ -85,8 +91,11 @@ removed recovery entries. Network
 failures or a lost response never trigger an automatic retry. **Reconcile with
 GitHub** verifies the acceptance checkbox or searches all repository issues for
 the stable consolidation marker, then saves a local receipt without writing to
-GitHub. The marker prevents a later weekly report creating another tracking
-issue for the same paths. If no unique result is found, the error remains visible:
+GitHub. A marker match counts only when GitHub verifies that its author has
+write, maintain, or admin permission on this repository. Copied markers from
+untrusted authors cannot block a new consolidation or become its receipt.
+The verified marker prevents a later weekly report creating another tracking
+issue for the same paths. If no unique trusted result is found, the error remains visible:
 inspect GitHub and the saved state manually rather than retrying blindly.
 
 Reconciling an acceptance advances the saved report body and hash only when all
@@ -102,11 +111,14 @@ again before publishing another group's decision.
 | `import_report` | Import or refresh a report from GitHub. |
 | `select_report` | Switch between imported local reports. |
 | `read_resource` | Read a listed resource from `main` inside the canvas. |
-| `update_group` | Save a local decision, note, and issue draft with `expectedRevision`. |
 | `start_review` | Dispatch one native background comparison. |
 | `record_review` | Record a result matching the current queue token. |
 | `fail_review` | Record a failure matching the current queue token. |
-| `cancel_review` | Invalidate the local token; reject late results. |
+
+Decision/draft updates and review cancellation are available only through the
+authenticated loopback UI, not agent-callable canvas actions. The SDK does not
+provide a trusted caller-identity flag for distinguishing a maintainer from a
+background agent. UI updates still require `expectedRevision`.
 
 The loopback UI reuses the Open PR Board's authenticated HTTP/SSE server, has
 searchable kanban cards, native modal focus management, keyboard-operable decision

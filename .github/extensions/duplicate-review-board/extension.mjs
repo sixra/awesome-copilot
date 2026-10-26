@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
 import { startBoardServer, expectedError } from "../open-pr-board/lib/server.mjs";
-import { BoardStore, COLUMNS } from "./lib/state.mjs";
+import { BoardStore } from "./lib/state.mjs";
 import { createGitHub } from "./lib/github.mjs";
 import { Publisher } from "./lib/publish.mjs";
 import { buildReviewPrompt } from "./lib/review.mjs";
@@ -17,8 +17,6 @@ let session;
 const object = (properties = {}, required = []) => ({ type: "object", additionalProperties: false, properties, required });
 const identity = { number: { type: "integer", minimum: 1 }, id: { type: "string", pattern: "^[a-f0-9]{24}$" } };
 const reviewIdentity = { ...identity, queueId: { type: "string", minLength: 1 } };
-const draft = object({ title: { type: "string", minLength: 1, maxLength: 256 }, body: { type: "string", maxLength: 24000 } }, ["title", "body"]);
-
 async function startReview(number, id, instanceId, guidance = "") {
     if (typeof guidance !== "string" || guidance.length > 4000) throw new Error("Guidance must be at most 4000 characters.");
     const item = await store.queue(number, id);
@@ -98,10 +96,6 @@ session = await joinSession({
                 ...identity, path: { type: "string", minLength: 1, maxLength: 300 },
             }, ["number", "id", "path"]), operations.resource),
             action("select_report", "Switch to a previously imported local report, without accessing GitHub.", object({ number: identity.number }, ["number"]), operations.select),
-            action("update_group", "Save a local decision, note, and tracking-issue draft. Never writes to GitHub.", object({
-                ...identity, column: { type: "string", enum: COLUMNS.map((column) => column.id) },
-                note: { type: "string", maxLength: 8000 }, draft, expectedRevision: { type: "string", minLength: 1 },
-            }, ["number", "id", "column", "note", "draft", "expectedRevision"]), operations.update),
             action("start_review", "Dispatch a read-only comparison through a background agent only; never review in the foreground.", object({
                 ...identity, guidance: { type: "string", maxLength: 4000 },
             }, ["number", "id"]), (input, ctx) => startReview(input.number, input.id, ctx.instanceId, input.guidance)),
@@ -112,7 +106,6 @@ session = await joinSession({
             action("fail_review", "Record an explicit background-review failure for the matching queue token.", object({
                 ...reviewIdentity, error: { type: "string", minLength: 1, maxLength: 4000 },
             }, ["number", "id", "queueId", "error"]), (input) => store.finish(input.number, input.id, input.queueId, input)),
-            action("cancel_review", "Cancel a local review request; late worker results are rejected.", object(identity, ["number", "id"]), operations.cancel),
         ],
         open: async (ctx) => {
             if (!store) throw new CanvasError("not_ready", "The board is still starting. Retry opening it.");

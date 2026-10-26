@@ -8,10 +8,17 @@ export function resourcePath(value) {
 
 function splitTableRow(line) {
     const trimmed = line.trim();
-    if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return null;
+    if (!trimmed) return null;
+    const startsWithPipe = trimmed.startsWith("|");
+    const lastIndex = trimmed.length - 1;
+    let trailingSlashes = 0;
+    for (let previous = lastIndex - 1; previous >= 0 && trimmed[previous] === "\\"; previous--) trailingSlashes++;
+    const endsWithPipe = trimmed.endsWith("|") && trailingSlashes % 2 === 0;
+    const start = startsWithPipe ? 1 : 0;
+    const end = trimmed.length - (endsWithPipe ? 1 : 0);
     const cells = [];
     let cell = "";
-    for (let index = 1; index < trimmed.length - 1; index++) {
+    for (let index = start; index < end; index++) {
         const character = trimmed[index];
         if (character === "|") {
             let slashes = 0;
@@ -26,6 +33,12 @@ function splitTableRow(line) {
     }
     cells.push(cell.trim());
     return cells;
+}
+
+function isTableEnd(line) {
+    return /^\*\*Why flagged:\*\*(?:[ \t]|$)/.test(line.trim()) ||
+        /^---[ \t]*$/.test(line.trim()) ||
+        /^<\/details>[ \t]*$/.test(line.trim());
 }
 
 function resourceTable(section, groupNumber) {
@@ -47,7 +60,11 @@ function resourceTable(section, groupNumber) {
     const resources = [];
     for (let index = headerIndex + 2; index < lines.length; index++) {
         const line = lines[index];
-        if (!line.trim().startsWith("|")) break;
+        if (isTableEnd(line)) break;
+        if (!line.trim()) {
+            const nextContent = lines.slice(index + 1).find((nextLine) => nextLine.trim());
+            if (!nextContent || isTableEnd(nextContent)) break;
+        }
         const cells = splitTableRow(line);
         if (!cells || cells.length !== 3) {
             throw new Error(`Group ${groupNumber} has an unsupported resource table. Nothing was imported.`);

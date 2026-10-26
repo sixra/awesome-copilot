@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 const token = document.querySelector('meta[name="board-token"]').content;
-let board = { items: [], reports: [], columns: [], selected: null };
+let board = { items: [], reports: [], columns: [], selected: null, snapshotSequence: 0 };
 let discovered = [];
 let opened;
 let preview;
@@ -8,7 +8,6 @@ let dirty = false;
 let publishing = false;
 let viewing;
 let dialogOpener;
-let boardGeneration = 0;
 const contents = new Map();
 
 function loadResource(item, file) {
@@ -26,31 +25,56 @@ function renderViewer(item) {
     const split = $("side-by-side").checked;
     $("viewer-tabs").hidden = split;
     $("viewer-panes").classList.toggle("split", split);
-    $("viewer-tabs").replaceChildren(...item.resources.map((resource) => {
+    $("viewer-tabs").replaceChildren(...item.resources.map((resource, index) => {
         const tab = element("button", resource.path.split("/").at(-1) === "SKILL.md" ? resource.path.split("/").at(-2) : resource.path.split("/").at(-1));
         tab.type = "button";
+        tab.id = `viewer-tab-${index}`;
         tab.setAttribute("role", "tab");
         tab.setAttribute("aria-selected", String(resource.path === viewing));
+        tab.setAttribute("aria-controls", `viewer-panel-${index}`);
+        tab.tabIndex = resource.path === viewing ? 0 : -1;
         tab.title = resource.path;
-        tab.addEventListener("click", () => {
+        const activate = () => {
             if (!editorItem()) return;
             viewing = resource.path;
             renderViewer(item);
             [...$("viewer-tabs").children].find((node) => node.getAttribute("aria-selected") === "true")?.focus({ preventScroll: true });
+        };
+        tab.addEventListener("click", activate);
+        tab.addEventListener("keydown", (event) => {
+            const tabs = [...$("viewer-tabs").children];
+            const current = tabs.indexOf(tab);
+            const next = {
+                ArrowRight: (current + 1) % tabs.length,
+                ArrowLeft: (current - 1 + tabs.length) % tabs.length,
+                Home: 0,
+                End: tabs.length - 1,
+            }[event.key];
+            if (next === undefined) return;
+            event.preventDefault();
+            tabs[next]?.click();
         });
         return tab;
     }));
-    const shown = split ? item.resources : item.resources.filter((resource) => resource.path === viewing);
-    $("viewer-panes").replaceChildren(...shown.map((resource) => {
+    $("viewer-panes").replaceChildren(...item.resources.map((resource, index) => {
         const pane = element("article", undefined, "pane");
-        const body = element("pre", "Loading...");
-        pane.append(element("h4", resource.path), body);
-        loadResource(item, resource.path).then((result) => {
-            body.textContent = result.content + (result.truncated ? "\n\n[Truncated. Open on GitHub for the full file.]" : "");
-        }).catch((error) => {
-            body.textContent = `Could not load: ${error.message}`;
-            body.classList.add("error");
-        });
+        pane.id = `viewer-panel-${index}`;
+        pane.hidden = !split && resource.path !== viewing;
+        const heading = element("h4", resource.path);
+        heading.id = `viewer-heading-${index}`;
+        pane.setAttribute("role", split ? "region" : "tabpanel");
+        pane.setAttribute("aria-labelledby", split ? heading.id : `viewer-tab-${index}`);
+        if (!split) pane.tabIndex = 0;
+        const body = element("pre", pane.hidden ? "Select this resource to load its contents." : "Loading...");
+        pane.append(heading, body);
+        if (!pane.hidden) {
+            loadResource(item, resource.path).then((result) => {
+                body.textContent = result.content + (result.truncated ? "\n\n[Truncated. Open on GitHub for the full file.]" : "");
+            }).catch((error) => {
+                body.textContent = `Could not load: ${error.message}`;
+                body.classList.add("error");
+            });
+        }
         return pane;
     }));
 }
@@ -200,41 +224,24 @@ function render() {
     if (focus && !focus.element.isConnected) focusBoardControl(focus);
 }
 
-function receive(snapshot, savedEdit) {
-    if (savedEdit && snapshot.selected !== savedEdit.number) {
-        if (boardGeneration === savedEdit.boardGeneration) receive(snapshot);
-        return;
-    }
-    let nextSnapshot = snapshot;
-    if (savedEdit && boardGeneration !== savedEdit.boardGeneration) {
-        if (board.selected !== savedEdit.number) return;
-        const liveItem = board.items.find((item) => item.id === savedEdit.id);
-        const updatedItem = snapshot.items.find((item) => item.id === savedEdit.id);
-        if (opened?.number !== savedEdit.number || opened.id !== savedEdit.id ||
-            liveItem?.revision !== savedEdit.revision || !updatedItem) return;
-        nextSnapshot = {
-            ...board,
-            items: board.items.map((item) => item.id === savedEdit.id ? updatedItem : item),
-        };
-    }
-    board = nextSnapshot;
-    boardGeneration++;
+function receive(snapshot) {
+    if (!Number.isSafeInteger(snapshot.snapshotSequence) || snapshot.snapshotSequence < 0) return;
+    const snapshotSequence = snapshot.snapshotSequence;
+    if (snapshotSequence < board.snapshotSequence) return;
+    board = snapshot;
     render();
-    if (savedEdit && board.selected === savedEdit.number && opened?.number === savedEdit.number && opened.id === savedEdit.id) {
-        const item = board.items.find((entry) => entry.id === opened.id);
-        if (item && opened.revision === savedEdit.revision) {
-            opened.revision = item.revision;
-            opened.conflict = false;
-            dirty = !sameValues(editorValues(), savedEdit.values);
-            renderConflict();
-        }
-    }
 }
 
 async function move(item, column) {
+    const current = board.items.find((entry) => entry.id === item.id);
+    if (!current) return;
+    if (current.column === column) {
+        message("Group is already in this column. No changes made.");
+        return;
+    }
     receive(await api("update", {
-        number: board.selected, id: item.id, expectedRevision: item.revision,
-        column, note: item.note, draft: item.draft,
+        number: board.selected, id: current.id, expectedRevision: current.revision,
+        column, note: current.note, draft: current.draft,
     }));
     message("Local decision saved. GitHub is unchanged.");
 }
@@ -386,14 +393,14 @@ let savingEdit;
 
 async function save() {
     requireEditorItem();
-    const edit = { number: opened.number, id: opened.id, revision: opened.revision, boardGeneration };
+    const edit = { number: opened.number, id: opened.id, revision: opened.revision };
     const values = editorValues();
     savingEdit = { ...edit, values };
     try {
         const snapshot = await api("update", { ...edit, expectedRevision: edit.revision, ...values });
         const updated = snapshot.selected === edit.number && snapshot.items.find((item) => item.id === edit.id);
         if (updated) savingEdit.responseRevision = updated.revision;
-        receive(snapshot, { ...edit, values });
+        receive(snapshot);
         if (board.selected === edit.number && opened?.number === edit.number && opened.id === edit.id) {
             message(dirty ? "Saved submitted changes. Newer typing is still unsaved." :
                 "Saved locally. GitHub is unchanged.", false, "detail-message");
