@@ -58,6 +58,7 @@ authenticated `gh` CLI.
   still return to Unreviewed. A successful refresh retries a failed open preview.
   Feedback completed for an older head is recorded only in history, preserving any
   review queue, completed review, or manual bucket already created for the newer head.
+  Any retained review, queue, or manual bucket belonging to the older head is cleared.
   Feedback requests also carry the displayed SHA and are rejected if polling has
   already discovered a newer head before dispatch.
   Only one GitHub action can run per PR at a time.

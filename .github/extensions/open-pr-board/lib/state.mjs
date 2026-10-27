@@ -288,7 +288,24 @@ export class BoardStore {
         });
         const obsoleteFeedback = (recorded.kind === "comment" || recorded.kind === "request-changes") &&
             recorded.headRefOid && item.headRefOid && recorded.headRefOid !== item.headRefOid;
-        if (!obsoleteFeedback) item.decision = recorded;
+        if (!obsoleteFeedback) {
+            item.decision = recorded;
+        } else {
+            if (item.review && item.review.headRefOid !== item.headRefOid) item.review = null;
+            if (item.manualColumn && item.manualHeadRefOid !== item.headRefOid) {
+                item.manualColumn = null;
+                item.manualHeadRefOid = null;
+            }
+            if (item.queueId && item.queueHeadRefOid !== item.headRefOid) {
+                item.queueId = null;
+                item.queueHeadRefOid = null;
+            }
+            if (item.reviewStatus === "queued" && !item.queueId) {
+                item.reviewStatus = item.review ? "reviewed" : "none";
+            } else if (item.reviewStatus === "reviewed" && !item.review) {
+                item.reviewStatus = "none";
+            }
+        }
         this.state.history = this.state.history.slice(0, HISTORY_LIMIT);
         return this.commit();
     }

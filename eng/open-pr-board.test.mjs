@@ -167,6 +167,44 @@ for (const kind of ["comment", "request-changes"]) {
       }
     });
   }
+
+  for (const oldState of ["queued", "reviewed", "manual"]) {
+    test(`obsolete ${kind} feedback clears the old head's ${oldState} state`, async (t) => {
+      const store = await createStore(t);
+      const { queued } = await store.markQueued([1]);
+      if (oldState === "reviewed") {
+        await store.recordReviews([{ number: 1, queueId: queued[0].queueId, recommendation: "request-changes" }]);
+      } else if (oldState === "manual") {
+        await store.moveItem(1, "close", "first");
+      }
+      const pending = deferred();
+      const action = applyDecisionOnGitHub({
+        store, number: 1, kind, comment: "Feedback on first", headRefOid: "first",
+        github: { submitPullRequestReview: async () => { await pending.promise; return { status: "submitted" }; } },
+        refresh: () => store.syncPullRequests([pr("second")]),
+      });
+      await store.syncPullRequests([pr("second")]);
+      pending.resolve();
+      await action;
+      assert.equal(store.snapshot().items[0].column, "unreviewed");
+      assert.equal(store.getItem(1).review, null);
+      assert.equal(store.getItem(1).manualColumn, null);
+      assert.equal(store.getItem(1).queueId, null);
+      assert.equal(store.state.history[0].kind, kind);
+    });
+  }
+
+  test(`obsolete ${kind} feedback clears an old review while preserving the new head's queue`, async (t) => {
+    const store = await createStore(t);
+    const old = await store.markQueued([1]);
+    await store.recordReviews([{ number: 1, queueId: old.queued[0].queueId, recommendation: "request-changes" }]);
+    await store.syncPullRequests([pr("second")]);
+    const current = await store.markQueued([1]);
+    await store.recordDecision(1, { kind, headRefOid: "first" });
+    assert.equal(store.getItem(1).review, null);
+    assert.equal(store.getItem(1).queueId, current.queued[0].queueId);
+    assert.equal(store.snapshot().items[0].column, "reviewing");
+  });
 }
 
 test("approval and auto-merge are pinned to the reviewed commit", async () => {
