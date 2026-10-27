@@ -229,7 +229,18 @@ test("HTTP work and preview failures expose safe summaries without raw stacks", 
         method: "POST", headers, body: JSON.stringify({ id: "agents/missing.agent.md", kind: "review" }),
     });
     assert.equal(workResponse.status, 400);
-    assert.match((await workResponse.json()).error, /Resource not on this board/);
+    const missingNotice = await workResponse.json();
+    assert.match(missingNotice.error, /Resource not on this board/);
+    assert.equal(missingNotice.handoff, false);
+
+    await writeFile(path.join(root, ...resourceId.split("/")), "Changed after scan.\n");
+    const changedResponse = await fetch(new URL("api/request_work", opened.url), {
+        method: "POST", headers, body: JSON.stringify({ id: resourceId, kind: "review" }),
+    });
+    const changedNotice = await changedResponse.json();
+    assert.equal(changedResponse.status, 400);
+    assert.match(changedNotice.error, /Scan again/);
+    assert.equal(changedNotice.handoff, false);
 
     const previewResponse = await fetch(new URL("api/read_file", opened.url), {
         method: "POST", headers, body: JSON.stringify({ id: resourceId, file: "outside.txt" }),

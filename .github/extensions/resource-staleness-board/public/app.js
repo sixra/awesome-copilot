@@ -31,7 +31,7 @@ async function loadPreview(item, file) {
         const data = await api("read_file", { id: item.id, file });
         if ((board.scanGeneration ?? 0) === scanGeneration) previews.set(key, { data });
     } catch (error) {
-        if ((board.scanGeneration ?? 0) === scanGeneration) previews.set(key, { error: error.message });
+        if ((board.scanGeneration ?? 0) === scanGeneration) previews.set(key, { error: error.message, handoff: error.handoff !== false });
     }
     if (selected === item.id) renderDetail();
 }
@@ -66,7 +66,7 @@ function renderContents(detail, item) {
         detail.append(element("p", "Loading..."));
     } else if (state.error) {
         const warning = element("p", state.error, "warning");
-        warning.setAttribute("data-agent-error", "");
+        if (state.handoff !== false) warning.setAttribute("data-agent-error", "");
         detail.append(warning);
     } else if (state.data.binary) {
         detail.append(element("p", `Binary file (${state.data.size.toLocaleString()} bytes); no text preview.`));
@@ -96,7 +96,8 @@ async function api(action, input) {
         ...(input === undefined ? {} : { body: JSON.stringify(input) }),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `Request failed (${response.status}).`);
+    if (!response.ok) throw Object.assign(new Error(result.error || `Request failed (${response.status}).`),
+        { handoff: result.handoff !== false });
     if (action === "get_board") {
         if (requestedBoardVersion !== boardVersion) return board;
         board = result;
@@ -123,7 +124,7 @@ async function run(operation, refreshBoard = true) {
         await operation();
         if (refreshBoard) await api("get_board");
     } catch (error) {
-        showError(error.message, true);
+        showError(error.message, error.handoff !== false);
     } finally {
         busy = false;
         render(focusKey);

@@ -73,7 +73,7 @@ function renderViewer(item) {
             }).catch((error) => {
                 body.textContent = `Could not load: ${error.message}`;
                 body.classList.add("error");
-                body.setAttribute("data-agent-error", "");
+                if (error.handoff !== false) body.setAttribute("data-agent-error", "");
             });
         }
         return pane;

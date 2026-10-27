@@ -431,6 +431,19 @@ test("partial decision failures retain a repair handoff without retrying the act
   assert.match(context.notices[0].text, /local receipt failed/);
 });
 
+test("failed post-reset reloads retain handoff without repeating reset", async () => {
+  const { context, nodes } = await createUI();
+  context.nextRequest = deferred();
+  vm.runInContext("globalThis.notices = []; toast = (text, options) => notices.push({text, options});", context);
+  const button = nodes.get("reset-button");
+  await button.listeners.click({ currentTarget: button });
+  const resetting = button.listeners.click({ currentTarget: button });
+  context.nextRequest.resolve({ warning: "Board cleared but open PR reload failed." });
+  await resetting;
+  assert.equal(context.notices[0].options.error, true);
+  assert.notEqual(context.notices[0].options.handoff, false);
+});
+
 test("all decision buttons stay disabled while an action is pending", async () => {
   const { ui, context, nodes } = await createUI();
   ui.select(1);

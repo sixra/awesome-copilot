@@ -417,6 +417,20 @@ test("closing a dialog restores its opener or a visible fallback", async () => {
     assert.equal(h.document.activeElement.id, "search");
 });
 
+test("viewer failures preserve expected-notice eligibility", async () => {
+    for (const handoff of [false, true]) {
+        const h = await harness(async url => url === "/api/resource"
+            ? response({ error: "Group not found. Refresh the report.", handoff }, false)
+            : response({}));
+        h.context.receive(snapshot([sampleItem("a", "r1")]));
+        h.context.show("a");
+        await new Promise(resolve => setImmediate(resolve));
+        const warning = h.nodes["viewer-panes"].children[0].children[1];
+        assert.match(warning.textContent, /Group not found/);
+        assert.equal(warning.getAttribute("data-agent-error"), handoff ? "" : undefined);
+    }
+});
+
 test("resource requests deduplicate only while pending, then refresh after success or failure", async () => {
     let requests = 0;
     let settle;

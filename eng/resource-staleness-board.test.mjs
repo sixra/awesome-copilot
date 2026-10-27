@@ -756,7 +756,7 @@ async function rendererFixture(items = [{
         fetch: async (url, options) => {
             requests.push({ url, options });
             if (actionError && !url.endsWith("get_board") && !url.endsWith("read_file")) {
-                return { ok: false, json: async () => ({ error: actionError }) };
+                return { ok: false, json: async () => typeof actionError === "string" ? { error: actionError } : actionError };
             }
             if (url.endsWith("request_work")) {
                 const input = JSON.parse(options.body);
@@ -859,6 +859,15 @@ test("shared renderer notices mark only actual action and sync failures", async 
     emit();
     node("publish-confirm").click();
     assert.match(node("error").textContent, /Prepared changes changed/);
+    assert.equal(node("error").getAttribute("data-agent-error"), undefined);
+});
+
+test("expected API prerequisites remain visible without repair handoff", async () => {
+    const { node, setActionError } = await rendererFixture();
+    setActionError({ error: "The resource changed. Scan again.", handoff: false });
+    await node("scan").click();
+    assert.equal(node("error").hidden, false);
+    assert.match(node("error").textContent, /Scan again/);
     assert.equal(node("error").getAttribute("data-agent-error"), undefined);
 });
 

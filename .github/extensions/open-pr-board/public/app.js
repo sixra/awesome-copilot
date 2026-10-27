@@ -36,6 +36,7 @@ let board = null;
 let selectedNumber = null;
 let detail = null;
 let detailError = null;
+let detailErrorHandoff = true;
 let activeTab = "review";
 let filterText = "";
 let pendingConfirm = null;
@@ -141,7 +142,8 @@ async function api(path, { method = "GET", body } = {}) {
         body: body ? JSON.stringify(body) : undefined,
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+    if (!response.ok) throw Object.assign(new Error(data.error || `Request failed (${response.status})`),
+        { handoff: data.handoff !== false });
     return data;
 }
 
@@ -156,7 +158,7 @@ async function run(button, work, successMessage) {
         if (successMessage) toast(typeof successMessage === "function" ? successMessage(result) : successMessage);
         return result;
     } catch (error) {
-        toast(error.message, { error: true });
+        toast(error.message, { error: true, handoff: error.handoff !== false });
         return null;
     } finally {
         if (button) {
@@ -304,7 +306,7 @@ function renderBoard() {
                     try {
                         await api("/api/move", { method: "POST", body: { number, column: column.id } });
                     } catch (error) {
-                        toast(error.message, { error: true });
+                        toast(error.message, { error: true, handoff: error.handoff !== false });
                     }
                 },
             },
@@ -387,6 +389,7 @@ async function bulkAction(columnId, kind) {
     renderBoard();
     let completed = 0;
     const failures = [];
+    let handoff = false;
     try {
         if (kind === "rereview") {
             const result = await api("/api/review", { method: "POST", body: { numbers: items.map((item) => item.number) } });
@@ -397,7 +400,7 @@ async function bulkAction(columnId, kind) {
             try {
                 const current = columnItems(columnId).find((current) => current.number === item.number);
                 if (!current || current.headRefOid !== item.headRefOid) {
-                    throw new Error("PR moved, changed, or was already actioned; review it again.");
+                    throw Object.assign(new Error("PR moved, changed, or was already actioned; review it again."), { handoff: false });
                 }
                 decisionsInFlight.add(item.number);
                 const result = await api("/api/decision", {
@@ -405,17 +408,21 @@ async function bulkAction(columnId, kind) {
                 });
                 completed++;
                 if (selectedNumber === item.number) closeDrawer();
-                if (result.warning) failures.push(`#${item.number}: ${result.warning}`);
+                if (result.warning) {
+                    failures.push(`#${item.number}: ${result.warning}`);
+                    handoff = true;
+                }
             } catch (error) {
                 failures.push(`#${item.number}: ${error.message}`);
+                handoff ||= error.handoff !== false;
             } finally {
                 decisionsInFlight.delete(item.number);
             }
         }
         toast(`${label}: ${completed}/${items.length} actions submitted.${failures.length ? ` Attention needed: ${failures.join(" ")}` : ""}`,
-            { error: failures.length > 0 });
+            { error: failures.length > 0, handoff });
     } catch (error) {
-        toast(error.message, { error: true });
+        toast(error.message, { error: true, handoff: error.handoff !== false });
     } finally {
         bulkBusy = false;
         renderBoard();
@@ -588,7 +595,7 @@ function renderDrawerBody() {
         return;
     }
     if (detailError) {
-        el.drawerBody.replaceChildren(h("p", { class: "notice", "data-agent-error": "" }, detailError));
+        el.drawerBody.replaceChildren(h("p", { class: "notice", ...(detailErrorHandoff ? { "data-agent-error": "" } : {}) }, detailError));
         return;
     }
     if (!detail || detail.number !== item.number) {
@@ -648,6 +655,7 @@ async function loadDetail(number, { force = false } = {}) {
     } catch (error) {
         if (generation !== detailGeneration || selectedNumber !== number) return;
         detailError = error.message;
+        detailErrorHandoff = error.handoff !== false;
     }
     if (selectedNumber === number) renderDrawerBody();
 }
@@ -773,7 +781,7 @@ el.reset.addEventListener("click", async (event) => {
     const result = await run(event.currentTarget, () => api("/api/reset", { method: "POST" }));
     if (!result) return;
     closeDrawer();
-    if (result.warning) toast(result.warning, { error: true, handoff: false });
+    if (result.warning) toast(result.warning, { error: true });
     else toast("Board reset. Local reviews and history cleared; GitHub was not changed.");
 });
 

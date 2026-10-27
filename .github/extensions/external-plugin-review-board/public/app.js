@@ -74,7 +74,8 @@ async function api(method, url, body) {
         body: body ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
+    if (!res.ok) throw Object.assign(new Error(data.error ?? `Request failed (${res.status})`),
+        { handoff: data.handoff !== false });
     return data;
 }
 
@@ -267,6 +268,7 @@ async function bulkAction(columnId, kind) {
     renderDrawer();
     let completed = 0;
     const failures = [];
+    let handoff = false;
     try {
         if (kind === "rereview") {
             const result = await api("POST", "/api/review", { numbers: items.map((item) => item.number) });
@@ -276,19 +278,20 @@ async function bulkAction(columnId, kind) {
         for (const item of items) {
             try {
                 if (!columnItems(columnId, kind).some((current) => current.number === item.number)) {
-                    throw new Error("Item moved, was queued, or was already actioned; review it again.");
+                    throw Object.assign(new Error("Item moved, was queued, or was already actioned; review it again."), { handoff: false });
                 }
                 await api("POST", "/api/decision", { ...item, kind });
                 completed++;
                 if (selected === item.number) closeDrawer();
             } catch (error) {
                 failures.push(`#${item.number}: ${error.message}`);
+                handoff ||= error.handoff !== false;
             }
         }
         toast(`${label}: ${completed}/${items.length} commands posted.${failures.length ? ` Failed: ${failures.join(" ")}` : ""}`,
-            { error: failures.length > 0 });
+            { error: failures.length > 0, handoff });
     } catch (error) {
-        toast(error.message, { error: true });
+        toast(error.message, { error: true, handoff: error.handoff !== false });
     } finally {
         bulkBusy = false;
         renderBoard();
@@ -371,7 +374,7 @@ async function moveItem(number, column) {
             ? `Cleared the AI review for #${number}; it will be included in the next review.`
             : `Cleared the AI review for #${number}; intake must complete before it can be reviewed again.`);
     } catch (error) {
-        toast(error.message, { error: true });
+        toast(error.message, { error: true, handoff: error.handoff !== false });
         renderBoard();
     }
 }
@@ -456,7 +459,7 @@ function renderTab(item) {
         return;
     }
     if (detail.error) {
-        ui.drawerBody.replaceChildren(h("p", { class: "notice", "data-agent-error": "" }, `Couldn't load issue: ${detail.error}`));
+        ui.drawerBody.replaceChildren(h("p", { class: "notice", ...(detail.handoff !== false ? { "data-agent-error": "" } : {}) }, `Couldn't load issue: ${detail.error}`));
         return;
     }
     if (activeTab === "issue") {
@@ -577,7 +580,7 @@ async function loadDetail(number, { force = false } = {}) {
         const data = await api(force ? "POST" : "GET", `/api/issue/${number}`);
         details.set(number, data);
     } catch (error) {
-        details.set(number, { error: error.message });
+        details.set(number, { error: error.message, handoff: error.handoff !== false });
     }
     if (selected === number) renderDrawer();
 }
@@ -729,7 +732,7 @@ async function decide(kind) {
             if (selected === number) closeDrawer();
         }
     } catch (error) {
-        toast(error.message, { error: true });
+        toast(error.message, { error: true, handoff: error.handoff !== false });
     } finally {
         decisionBusy = false;
         if (selected === number) resetConfirm();
@@ -781,7 +784,7 @@ ui.refresh.addEventListener("click", () =>
             toast(`Refreshed: ${parts.join(", ")}`);
             if (selected != null && activeTab !== "review") loadDetail(selected, { force: true });
         } catch (error) {
-            toast(error.message, { error: true });
+            toast(error.message, { error: true, handoff: error.handoff !== false });
         }
     }),
 );
@@ -792,7 +795,7 @@ ui.review.addEventListener("click", () =>
             const result = await api("POST", "/api/review", {});
             toast(result.message);
         } catch (error) {
-            toast(error.message, { error: true });
+            toast(error.message, { error: true, handoff: error.handoff !== false });
         }
     }),
 );
@@ -847,7 +850,7 @@ ui.rereviewPanel.addEventListener("submit", async (event) => {
         toast(result.message);
         if (selected === number) closeDrawer();
     } catch (error) {
-        toast(error.message, { error: true });
+        toast(error.message, { error: true, handoff: error.handoff !== false });
     } finally {
         ui.rereviewStart.disabled = false;
     }

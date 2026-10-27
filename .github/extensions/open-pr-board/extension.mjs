@@ -16,6 +16,7 @@ import * as gh from "./lib/github.mjs";
 import { applyDecisionOnGitHub } from "./lib/decisions.mjs";
 import { buildReviewPrompt, buildRereviewPrompt, REVIEW_FIELDS_SCHEMA } from "./lib/review-prompt.mjs";
 import { startBoardServer, expectedError } from "./lib/server.mjs";
+import { expectedNotice } from "./lib/errors.mjs";
 
 const CANVAS_ID = "open-pr-board";
 const DEFAULT_REPO = "github/awesome-copilot";
@@ -108,7 +109,7 @@ async function getPullRequest(store, number, { force = false } = {}) {
 
 function requireItem(store, number) {
     const item = store.getItem(number);
-    if (!item) throw new Error(`Pull request #${number} is not on the board. Refresh first.`);
+    if (!item) throw expectedNotice(`Pull request #${number} is not on the board. Refresh first.`);
     return item;
 }
 
@@ -233,7 +234,8 @@ function routesFor(instanceId, store) {
                         level: "warning",
                         ephemeral: true,
                     });
-                    throw expectedError(String(error?.message ?? "Request failed"), 400);
+                    throw Object.assign(expectedError(String(error?.message ?? "Request failed"), 400),
+                        { handoff: error.handoff !== false });
                 }
             },
         ]),

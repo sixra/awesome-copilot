@@ -5,6 +5,7 @@ import { once } from "node:events";
 import { request as httpRequest } from "node:http";
 import { test } from "node:test";
 import vm from "node:vm";
+import { fileURLToPath } from "node:url";
 import { createErrorHandoffRuntime, installErrorHandoff, redactError } from "./canvas-error-handoff/runtime.mjs";
 
 async function fixture(t, { send = async () => {}, policy = "script-src 'self'", streamed = false } = {}) {
@@ -530,6 +531,41 @@ test("board toasts distinguish workflow guidance from handled failures without h
         const context = vm.createContext({
             el: { toasts }, ui: { toasts }, setTimeout() {},
             h: (tag, attrs, ...children) => ({ tag, attrs, children }),
+        });
+
+        test("PR and plugin HTTP responses and API clients preserve expected-notice classification", async t => {
+            const { expectedNotice } = await import("../.github/extensions/open-pr-board/lib/errors.mjs");
+            for (const board of ["open-pr-board", "external-plugin-review-board"]) {
+                const { startBoardServer } = await import(`../.github/extensions/${board}/lib/server.mjs`);
+                const server = await startBoardServer({
+                    publicDir: fileURLToPath(new URL(`../.github/extensions/${board}/public/`, import.meta.url)),
+                    api: {
+                        snapshot: () => ({}), subscribe: () => () => {},
+                        routes: { "POST /api/notice": () => {
+                            throw Object.assign(expectedNotice("Item changed. Refresh first."), { status: 400, publicMessage: "Item changed. Refresh first." });
+                        } },
+                    },
+                });
+                t.after(() => server.close());
+                const html = await (await fetch(server.url)).text();
+                const token = /name="board-token" content="([^"]+)"/.exec(html)[1];
+                const response = await fetch(new URL("api/notice", server.url), {
+                    method: "POST", headers: { "X-Board-Token": token, "Content-Type": "application/json" }, body: "{}",
+                });
+                const notice = await response.json();
+                assert.equal(response.status, 400);
+                assert.equal(notice.handoff, false);
+                const source = await readFile(new URL(`../.github/extensions/${board}/public/app.js`, import.meta.url), "utf8");
+                const start = source.indexOf("async function api(");
+                const end = source.indexOf("\n}", start) + 2;
+                const context = vm.createContext({
+                    TOKEN: token, token,
+                    fetch: async () => ({ ok: false, status: 400, json: async () => notice }),
+                });
+                vm.runInContext(source.slice(start, end), context);
+                const call = board === "open-pr-board" ? () => context.api("/api/notice") : () => context.api("POST", "/api/notice");
+                await assert.rejects(call, error => error.handoff === false && /Refresh first/.test(error.message));
+            }
         });
         vm.runInContext(source.slice(start, end), context);
         context.toast("Required feedback is missing", { error: true, handoff: false });

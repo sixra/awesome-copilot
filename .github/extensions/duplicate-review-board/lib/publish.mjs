@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { acceptGroup, digest, parseReport } from "./report.mjs";
-import { expectedNotice } from "./state.mjs";
+import { expectedNotice } from "../../open-pr-board/lib/errors.mjs";
 
 function adoptAcceptance(report, body, sourceHash) {
     if (report.sourceHash !== sourceHash) return;

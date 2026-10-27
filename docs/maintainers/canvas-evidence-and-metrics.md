@@ -62,6 +62,9 @@ warnings keep their existing presentation without offering repair handoffs.
 Expected API notices carry `handoff: false` through the response and renderer so
 fetch capture cannot turn a recoverable conflict into a repair request. Actual
 partial failures, including failed local receipts after a GitHub action, remain eligible.
+Detail-view catches preserve this classification too, including stale items and
+resources changed since scanning. A failed reload after reset remains eligible;
+handoff never repeats the reset.
 
 Clicking **Send to agent** requests one child project session in
 `github/awesome-copilot` to investigate and attempt a fix. The tray displays the

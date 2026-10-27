@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { digest, parseReport } from "./report.mjs";
+import { expectedNotice } from "../../open-pr-board/lib/errors.mjs";
 
 export const COLUMNS = [
     { id: "unreviewed", label: "Unreviewed" },
@@ -10,10 +11,6 @@ export const COLUMNS = [
     { id: "deferred", label: "Needs insight" },
 ];
 export const REPO = "github/awesome-copilot";
-
-export function expectedNotice(message) {
-    return Object.assign(new Error(message), { handoff: false });
-}
 
 export class BoardStore {
     constructor(file) {

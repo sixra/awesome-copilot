@@ -315,7 +315,8 @@ function routesFor(instanceId) {
                         level: "warning",
                         ephemeral: true,
                     });
-                    throw expectedError(String(error?.message ?? "Request failed"), 400);
+                    throw Object.assign(expectedError(String(error?.message ?? "Request failed"), 400),
+                        { handoff: error.handoff !== false });
                 }
             },
         ]),
