@@ -5,7 +5,7 @@ const DECISION_KINDS = ["approve", "request-changes", "comment", "close"];
 const MAX_COMMENT_LENGTH = 60000;
 const decisionsInFlight = new Set();
 
-export async function applyDecisionOnGitHub({ store, number, kind, comment, refresh, github = gh }) {
+export async function applyDecisionOnGitHub({ store, number, kind, comment, headRefOid, refresh, github = gh }) {
     if (!DECISION_KINDS.includes(kind)) throw new Error(`Unknown decision "${kind}".`);
     const key = `${store.repo}#${number}`;
     if (decisionsInFlight.has(key)) throw expectedNotice(`#${number} already has a GitHub action in progress.`);
@@ -14,6 +14,11 @@ export async function applyDecisionOnGitHub({ store, number, kind, comment, refr
         const item = store.getItem(number);
         if (!item) throw expectedNotice(`Pull request #${number} is not on the board. Refresh first.`);
         if (item.decision) throw expectedNotice(`#${number} was already actioned (${item.decision.kind}).`);
+        const actionHeadRefOid = item.headRefOid ?? null;
+        if ((kind === "comment" || kind === "request-changes") &&
+            (!headRefOid || headRefOid !== actionHeadRefOid)) {
+            throw expectedNotice("PR changed since it was displayed; review the current commit before submitting feedback.");
+        }
 
         const body = String(comment ?? "").trim().slice(0, MAX_COMMENT_LENGTH);
         if ((kind === "request-changes" || kind === "comment") && !body) {
@@ -22,7 +27,10 @@ export async function applyDecisionOnGitHub({ store, number, kind, comment, refr
 
         let result;
         if (kind === "approve") {
-            result = await github.approveAndEnableAutoMerge(store.repo, number, { body, headRefOid: item.headRefOid });
+            if (!headRefOid || headRefOid !== item.headRefOid) {
+                throw expectedNotice("PR changed since it was displayed; refresh and review it again before approving.");
+            }
+            result = await github.approveAndEnableAutoMerge(store.repo, number, { body, headRefOid });
         } else if (kind === "close") {
             result = await github.closePullRequest(store.repo, number, { body });
         } else {
@@ -31,7 +39,7 @@ export async function applyDecisionOnGitHub({ store, number, kind, comment, refr
 
         const warnings = result.warning ? [result.warning] : [];
         try {
-            await store.recordDecision(number, { kind, comment: body, status: result.status });
+            await store.recordDecision(number, { kind, comment: body, status: result.status, headRefOid: actionHeadRefOid });
         } catch (error) {
             warnings.push(`GitHub was updated, but the board could not record the action: ${error.message}`);
         }
