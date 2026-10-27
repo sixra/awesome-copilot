@@ -88,7 +88,7 @@ touching GitHub.
 
 | Action           | Purpose                                                                 |
 | ---------------- | ----------------------------------------------------------------------- |
-| `get_board`      | Current buckets, counts, and per-PR state.                              |
+| `get_board`      | Current buckets, counts, per-PR commit SHA, and approval staleness.     |
 | `refresh`        | Re-fetch open pull requests from GitHub.                                |
 | `start_review`   | Queue a review pass and return the review instructions.                 |
 | `start_rereview` | Queue a re-review of one PR with optional guidance.                     |

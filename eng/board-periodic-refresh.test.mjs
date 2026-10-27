@@ -37,7 +37,7 @@ function item(number) {
     };
 }
 
-async function loadBoard(t, id, { getIssueDetail } = {}) {
+async function loadBoard(t, id, { getIssueDetail, getPullRequestDetail } = {}) {
     const workspacePath = await mkdtemp(path.join(os.tmpdir(), "board-polling-"));
     t.after(() => rm(workspacePath, { recursive: true, force: true }));
     const isPR = id === "open-pr-board";
@@ -86,6 +86,7 @@ async function loadBoard(t, id, { getIssueDetail } = {}) {
             // Any unexpected GitHub operation (especially a write) fails the test.
             exports = { listOpenPullRequests: list, listBoardIssues: list };
             if (getIssueDetail) exports.getIssueDetail = getIssueDetail;
+            if (getPullRequestDetail) exports.getPullRequestDetail = getPullRequestDetail;
         } else {
             exports = await import(specifier.startsWith(".") ? new URL(specifier, url).href : specifier);
         }
@@ -115,26 +116,47 @@ async function readFrame(reader, eventName) {
     return text;
 }
 
-test("plugin server cache cannot be repopulated by a detail request invalidated by refresh", async (t) => {
+test("PR agent board summaries provide provenance for manual approval choices", async (t) => {
+    const board = await loadBoard(t, "open-pr-board");
+    const before = (await board.action("get_board")).items.find((entry) => entry.number === 2);
+    assert.equal(before.headRefOid, "first");
+    await board.action("move_item", { number: 2, column: "approve", headRefOid: before.headRefOid });
+    const current = (await board.action("get_board")).items.find((entry) => entry.number === 2);
+    assert.equal(current.approvalStale, false);
+    board.setFetch(async () => [1, 2, 3, 4].map((number) => ({ ...item(number), headRefOid: "second" })));
+    await board.action("refresh");
+    const updated = (await board.action("get_board")).items.find((entry) => entry.number === 2);
+    assert.equal(updated.headRefOid, "second");
+    assert.equal(updated.approvalStale, true);
+});
+
+for (const id of ["open-pr-board", "external-plugin-review-board"]) {
+test(`${id}: server cache cannot be repopulated by a detail request invalidated by refresh`, async (t) => {
     let finish;
     let calls = 0;
-    const board = await loadBoard(t, "external-plugin-review-board", {
-        getIssueDetail: () => {
+    const isPR = id === "open-pr-board";
+    const board = await loadBoard(t, id, {
+        [isPR ? "getPullRequestDetail" : "getIssueDetail"]: () => {
             calls++;
             if (calls === 1) return new Promise((resolve) => { finish = resolve; });
             return { bodyHtml: "new", comments: [] };
         },
     });
-    const old = board.action("get_issue", { number: 1 });
+    const action = isPR ? "get_pr" : "get_issue";
+    const field = isPR ? "pullRequest" : "issue";
+    const old = board.action(action, { number: 1 });
     await board.action("refresh");
+    const latest = await board.action(action, { number: 1 });
+    assert.equal(latest[field].bodyHtml, "new");
     finish({ bodyHtml: "old", comments: [] });
     await old;
-    const latest = await board.action("get_issue", { number: 1 });
-    assert.equal(latest.issue.bodyHtml, "new");
+    const reopened = await board.action(action, { number: 1 });
+    assert.equal(reopened[field].bodyHtml, "new");
     assert.equal(calls, 2, "Reopening an unselected issue fetches fresh details");
-    await board.action("get_issue", { number: 1 });
+    await board.action(action, { number: 1 });
     assert.equal(calls, 2, "The fresh result remains cached");
 });
+}
 
 for (const id of ["open-pr-board", "external-plugin-review-board"]) {
     test(`${id}: scheduled refresh preserves state, shares manual fetches, recovers, and stops on close`,
