@@ -580,6 +580,44 @@ test("board toasts distinguish workflow guidance from handled failures without h
                         } },
                     },
                 });
+
+                test("review and plugin decision guards classify stale state without hiding GitHub failures", async () => {
+                    const { expectedNotice } = await import("../.github/extensions/open-pr-board/lib/errors.mjs");
+                    for (const board of ["open-pr-board", "external-plugin-review-board"]) {
+                        const source = await readFile(new URL(`../.github/extensions/${board}/extension.mjs`, import.meta.url), "utf8");
+                        const extract = name => {
+                            const start = source.indexOf(`async function ${name}(`);
+                            return source.slice(start, source.indexOf("\n}", start) + 2);
+                        };
+                        let item;
+                        const store = { getItem: () => item, state: { repo: "github/awesome-copilot" } };
+                        const context = vm.createContext({
+                            expectedNotice, store, requireItem: () => item,
+                            isReadyForApproval: labels => labels?.includes("ready-for-review"),
+                            reviewBlockedReason: () => "Intake pending.",
+                        });
+                        vm.runInContext(extract("startRereview"), context);
+                        for (const state of [{ decision: { kind: "approve" } }, { reviewStatus: "queued" },
+                            ...(board === "external-plugin-review-board" ? [{ pendingDecision: {} }, { labels: [] }] : [])]) {
+                            item = { number: 42, ...state };
+                            await assert.rejects(() => context.startRereview({ store, number: 42 }),
+                                error => error.handoff === false);
+                        }
+                        if (board !== "external-plugin-review-board") continue;
+                        context.assertNoPendingFixesRequest = () => {};
+                        context.stripCommand = text => text;
+                        vm.runInContext(extract("postDecisionCommand"), context);
+                        item = { number: 42 };
+                        for (const status of [{ state: "CLOSED" }, { state: "OPEN", labels: [] }]) {
+                            context.gh = { getIssueStatus: async () => status };
+                            await assert.rejects(() => context.postDecisionCommand({ number: 42, kind: "approve" }),
+                                error => error.handoff === false);
+                        }
+                        context.gh = { getIssueStatus: async () => { throw new Error("GitHub offline"); } };
+                        await assert.rejects(() => context.postDecisionCommand({ number: 42, kind: "approve" }),
+                            error => error.handoff !== false && error.message === "GitHub offline");
+                    }
+                });
                 t.after(() => server.close());
                 const html = await (await fetch(server.url)).text();
                 const token = /name="board-token" content="([^"]+)"/.exec(html)[1];

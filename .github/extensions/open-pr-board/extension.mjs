@@ -153,8 +153,8 @@ async function startReview({ store, numbers, instanceId, send }) {
 
 async function startRereview({ store, number, guidance, instanceId, send }) {
     const item = requireItem(store, Number(number));
-    if (item.decision) throw new Error(`#${item.number} was already actioned (${item.decision.kind}).`);
-    if (item.reviewStatus === "queued") throw new Error(`#${item.number} is already queued for review.`);
+    if (item.decision) throw expectedNotice(`#${item.number} was already actioned (${item.decision.kind}).`);
+    if (item.reviewStatus === "queued") throw expectedNotice(`#${item.number} is already queued for review.`);
     const text = String(guidance ?? "")
         .trim()
         .slice(0, MAX_GUIDANCE_LENGTH);

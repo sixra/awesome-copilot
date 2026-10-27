@@ -444,6 +444,20 @@ test("failed post-reset reloads retain handoff without repeating reset", async (
   assert.notEqual(context.notices[0].options.handoff, false);
 });
 
+test("drawer bucket changes retain expected-notice classification and restore selection", async () => {
+  const { ui, context, nodes } = await createUI();
+  ui.select(1);
+  vm.runInContext('board.items[0].column = "unreviewed"; globalThis.notices = []; toast = (text, options) => notices.push({text, options});', context);
+  context.nextRequest = deferred();
+  const select = nodes.get("drawer-column");
+  select.value = "close";
+  const moving = select.listeners.change({ target: select });
+  context.nextRequest.reject(Object.assign(new Error("Already actioned."), { handoff: false }));
+  await moving;
+  assert.equal(select.value, "unreviewed");
+  assert.equal(context.notices[0].options.handoff, false);
+});
+
 test("all decision buttons stay disabled while an action is pending", async () => {
   const { ui, context, nodes } = await createUI();
   ui.select(1);

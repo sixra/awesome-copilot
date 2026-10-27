@@ -13,6 +13,7 @@ import { BoardStore, isReadyForApproval, reviewBlockedReason, RECOMMENDATIONS } 
 import * as gh from "./lib/github.mjs";
 import { buildReviewPrompt, buildRereviewPrompt, REVIEW_FIELDS_SCHEMA } from "./lib/review-prompt.mjs";
 import { startBoardServer, expectedError } from "./lib/server.mjs";
+import { expectedNotice } from "../open-pr-board/lib/errors.mjs";
 import { assertNoPendingFixesRequest, confirmRequestFixes } from "./lib/request-fixes.mjs";
 
 const CANVAS_ID = "external-plugin-review-board";
@@ -131,11 +132,11 @@ const MAX_GUIDANCE_LENGTH = 4000;
 
 async function startRereview({ number, guidance, instanceId, send }) {
     const item = store.getItem(Number(number));
-    if (item.decision) throw new Error(`#${item.number} was already actioned (${item.decision.kind}).`);
-    if (item.pendingDecision) throw new Error(`#${item.number} has a posted command awaiting workflow confirmation.`);
-    if (item.reviewStatus === "queued") throw new Error(`#${item.number} is already queued for review.`);
+    if (item.decision) throw expectedNotice(`#${item.number} was already actioned (${item.decision.kind}).`);
+    if (item.pendingDecision) throw expectedNotice(`#${item.number} has a posted command awaiting workflow confirmation.`);
+    if (item.reviewStatus === "queued") throw expectedNotice(`#${item.number} is already queued for review.`);
     if (!isReadyForApproval(item.labels ?? [])) {
-        throw new Error(`#${item.number}: ${reviewBlockedReason(item.labels)}`);
+        throw expectedNotice(`#${item.number}: ${reviewBlockedReason(item.labels)}`);
     }
     const text = String(guidance ?? "").trim().slice(0, MAX_GUIDANCE_LENGTH);
     const snapshots = await store.markQueued([item.number], { rereviewGuidance: text || null });
@@ -168,7 +169,7 @@ function stripCommand(text, command) {
 }
 
 async function postDecision({ number, kind, comment }) {
-    if (decisionsInFlight.has(number)) throw new Error(`#${number} already has a GitHub action in progress.`);
+    if (decisionsInFlight.has(number)) throw expectedNotice(`#${number} already has a GitHub action in progress.`);
     decisionsInFlight.add(number);
     try {
         return await postDecisionCommand({ number, kind, comment });
@@ -180,18 +181,18 @@ async function postDecision({ number, kind, comment }) {
 async function postDecisionCommand({ number, kind, comment }) {
     if (kind !== "approve" && kind !== "reject") throw new Error(`Unknown decision "${kind}".`);
     const item = store.getItem(number);
-    if (item.decision) throw new Error(`#${number} was already actioned (${item.decision.kind}).`);
-    if (item.pendingDecision) throw new Error(`#${number} already has a posted command awaiting workflow confirmation. Refresh the board.`);
+    if (item.decision) throw expectedNotice(`#${number} was already actioned (${item.decision.kind}).`);
+    if (item.pendingDecision) throw expectedNotice(`#${number} already has a posted command awaiting workflow confirmation. Refresh the board.`);
     assertNoPendingFixesRequest(item, number);
 
     const status = await gh.getIssueStatus(store.state.repo, number);
-    if (status.state !== "OPEN") throw new Error(`#${number} is ${status.state.toLowerCase()}. Refresh the board.`);
+    if (status.state !== "OPEN") throw expectedNotice(`#${number} is ${status.state.toLowerCase()}. Refresh the board.`);
     if (kind === "approve" && !isReadyForApproval(status.labels)) {
-        throw new Error(`#${number} is pending intake or is no longer ready-for-review, so /approve would be ignored.`);
+        throw expectedNotice(`#${number} is pending intake or is no longer ready-for-review, so /approve would be ignored.`);
     }
 
     const text = stripCommand(comment, kind);
-    if (kind === "reject" && !text) throw new Error("Reject decisions require a non-empty reason.");
+    if (kind === "reject" && !text) throw expectedNotice("Reject decisions require a non-empty reason.");
     const body = kind === "approve" ? (text ? `/approve\n\n${text}` : "/approve") : text ? `/reject ${text}` : "/reject";
     const commentUrl = await gh.postComment(store.state.repo, number, body);
     const pendingDecision = { kind, comment: text, body, commentUrl, at: new Date().toISOString() };
@@ -208,7 +209,7 @@ async function postDecisionCommand({ number, kind, comment }) {
 async function postFreeformComment({ number, body }) {
     const text = gh.normalizeFreeformComment(body);
     store.getItem(number);
-    if (decisionsInFlight.has(number)) throw new Error(`#${number} already has a GitHub action in progress.`);
+    if (decisionsInFlight.has(number)) throw expectedNotice(`#${number} already has a GitHub action in progress.`);
     decisionsInFlight.add(number);
     try {
         const commentUrl = await gh.postComment(store.state.repo, number, text);
@@ -224,16 +225,16 @@ async function postFreeformComment({ number, body }) {
 async function postRequestFixes({ number, comment }) {
     const body = gh.buildRequestFixesCommand(comment);
     const item = store.getItem(number);
-    if (item.decision) throw new Error(`#${number} was already actioned (${item.decision.kind}).`);
-    if (item.pendingDecision) throw new Error(`#${number} already has a posted command awaiting workflow confirmation. Refresh the board.`);
+    if (item.decision) throw expectedNotice(`#${number} was already actioned (${item.decision.kind}).`);
+    if (item.pendingDecision) throw expectedNotice(`#${number} already has a posted command awaiting workflow confirmation. Refresh the board.`);
     assertNoPendingFixesRequest(item, number);
-    if (decisionsInFlight.has(number)) throw new Error(`#${number} already has a GitHub action in progress.`);
+    if (decisionsInFlight.has(number)) throw expectedNotice(`#${number} already has a GitHub action in progress.`);
     decisionsInFlight.add(number);
     try {
         const status = await gh.getIssueStatus(store.state.repo, number);
-        if (status.state !== "OPEN") throw new Error(`#${number} is ${status.state.toLowerCase()}. Refresh the board.`);
+        if (status.state !== "OPEN") throw expectedNotice(`#${number} is ${status.state.toLowerCase()}. Refresh the board.`);
         if (status.labels.includes("requires-submitter-fixes")) {
-            throw new Error(`#${number} is already waiting on submitter fixes.`);
+            throw expectedNotice(`#${number} is already waiting on submitter fixes.`);
         }
         const commentUrl = await gh.postComment(store.state.repo, number, body);
         const pendingFixesRequest = { body, commentUrl, at: new Date().toISOString() };

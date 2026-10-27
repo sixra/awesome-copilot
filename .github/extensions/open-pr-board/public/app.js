@@ -825,7 +825,7 @@ el.drawerColumn.addEventListener("change", async (event) => {
         await api("/api/move", { method: "POST", body: { number: item.number, column } });
         if (selectedNumber === item.number) closeDrawer();
     } catch (error) {
-        toast(error.message, { error: true });
+        toast(error.message, { error: true, handoff: error.handoff !== false });
         event.target.value = item.column;
     }
 });
