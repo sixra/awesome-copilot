@@ -48,6 +48,59 @@ node --test eng/canvas-smoke-test.test.mjs
 
 Exit codes: `0` pass or skipped, `1` contribution problems, `2` infrastructure error.
 
+### Optional error handoff
+
+Repository-local canvases under `.github/extensions/` offer a
+**Send to agent** action for handled errors. The error tray is additive: existing
+messages, fallback UI, retries and recovery controls remain available. Dismiss
+only removes the tray entry; it does not retry the operation or start an agent.
+Public canvases under `extensions/` do not include this feature.
+
+Clicking **Send to agent** requests one child project session in
+`github/awesome-copilot` to investigate and attempt a fix. The tray displays the
+bounded, redacted diagnostic text before sending. Context includes the extension
+source directory, canvas, operation and allow-listed repository/item identifiers,
+not request bodies, headers, environment variables, raw stacks, URL query strings
+or fragments. Common credentials and private keys are redacted on both sides.
+Review the displayed text before sending; do not include sensitive data in errors.
+The child is instructed not to commit, push, publish a PR, change credentials or
+repeat a destructive/remote operation.
+
+The supported extension API joins the current session; it does not directly
+create app child sessions. Consequently the handoff sends a request to the parent
+agent using `session.send`, and the parent uses `create_session` and reports the
+actual returned child ID (or a creation error) through the canvas's
+`record_error_handoff` action. **Message admission is not success.** While the
+parent is busy or waiting for approval, the tray remains pending. After two
+minutes without confirmation, it tells the user to inspect the parent
+conversation; it never automatically creates another child. Dispatch failures,
+child-creation failures and uncertain receipts remain visible rather than showing
+a successful handoff. Closing the canvas invalidates its outstanding receipts.
+
+Implementation lives in `eng/canvas-error-handoff/runtime.mjs`. Each applicable
+repository-local canvas includes a generated `error-handoff.mjs` copy so its
+extension remains self-contained. The synchronization script only targets
+`.github/extensions/`. Make changes in the canonical module, then regenerate:
+
+```bash
+node eng/sync-canvas-error-handoff.mjs
+node eng/sync-canvas-error-handoff.mjs --check
+node --test eng/canvas-error-handoff.test.mjs
+```
+
+Canvas entrypoints configure the helper with their supported SDK `createCanvas`
+and `joinSession` functions; HTTP servers use its `createServer` wrapper. Only
+registered canvas documents gain the client script. Other HTML, artifact previews,
+downloads, SSE and API responses retain their original delivery behavior. Existing
+CSPs, including nonce-only and inline-only script policies, are preserved.
+
+The client detects failed same-origin fetches and existing visible error surfaces.
+For errors without a semantic error selector, mark only the failure state with
+`data-agent-error` (clear it on recovery), or call
+`window.canvasErrorHandoff?.report(message, operation)`. Do not mark success
+toasts, entire documents, user content, or containers containing credentials.
+Additional error surfaces in these boards should use the marker or reporting API.
+
 ## Weekly operating metrics
 
 `.github/workflows/review-metrics.yml` runs every Monday at 14:00 UTC and on demand. `eng/review-metrics.mjs` collects read-only data and then:

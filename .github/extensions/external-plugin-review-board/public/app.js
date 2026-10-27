@@ -456,7 +456,7 @@ function renderTab(item) {
         return;
     }
     if (detail.error) {
-        ui.drawerBody.replaceChildren(h("p", { class: "notice" }, `Couldn't load issue: ${detail.error}`));
+        ui.drawerBody.replaceChildren(h("p", { class: "notice", "data-agent-error": "" }, `Couldn't load issue: ${detail.error}`));
         return;
     }
     if (activeTab === "issue") {

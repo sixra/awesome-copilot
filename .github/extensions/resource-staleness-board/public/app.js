@@ -65,7 +65,9 @@ function renderContents(detail, item) {
     } else if (state.loading) {
         detail.append(element("p", "Loading..."));
     } else if (state.error) {
-        detail.append(element("p", state.error, "warning"));
+        const warning = element("p", state.error, "warning");
+        warning.setAttribute("data-agent-error", "");
+        detail.append(warning);
     } else if (state.data.binary) {
         detail.append(element("p", `Binary file (${state.data.size.toLocaleString()} bytes); no text preview.`));
     } else {
@@ -212,7 +214,11 @@ function renderDetailContent(detail) {
     detail.append(element("h2", item.id));
     detail.append(element("p", `${item.ageBand} | ${item.age ?? "?"} days since meaningful change | ${item.files.length} file(s)`));
     if (item.lastChange) detail.append(element("code", `${item.lastChange.date.slice(0, 10)} / ${item.lastChange.sha.slice(0, 12)}`));
-    if (item.error) detail.append(element("p", item.error, "warning"));
+    if (item.error) {
+        const warning = element("p", item.error, "warning");
+        warning.setAttribute("data-agent-error", "");
+        detail.append(warning);
+    }
     if (item.pending) detail.append(element("p", `Waiting for child: ${item.pending.kind}. Queued ${item.pending.at}.`, "badge"));
     if (item.childSessionId) section("Retained child session", item.childSessionId);
     if (item.review) {

@@ -253,6 +253,8 @@ function refreshReview(item) {
         $(id).disabled = suspended;
     }
     if (suspended) return;
+    if (item.reviewError) $("review-result").setAttribute("data-agent-error", "");
+    else $("review-result").removeAttribute("data-agent-error");
     $("review-result").textContent = item.queueId ? "Queued for a background agent. You can keep triaging." :
         item.reviewError || (item.review ? `${item.review.recommendation}\n\n${item.review.rationale}` : "No comparison yet.");
     $("review").disabled = Boolean(item.queueId || item.publication);

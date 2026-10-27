@@ -3,7 +3,11 @@ import os from "node:os";
 import { readResourceFile } from "./lib/preview.mjs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
+import { CanvasError } from "@github/copilot-sdk/extension";
+import { joinSession as sdkJoinSession, createCanvas as sdkCreateCanvas } from "@github/copilot-sdk/extension";
+import { configureErrorHandoff } from "./error-handoff.mjs";
+const { joinSession, createCanvas } = configureErrorHandoff({ joinSession: sdkJoinSession, createCanvas: sdkCreateCanvas });
+import { createServer } from "./error-handoff.mjs";
 import { startBoardServer, expectedError } from "../open-pr-board/lib/server.mjs";
 import {
     BoardStore, WORK_KINDS, RECOMMENDATIONS, DEFAULT_CANVAS_PAGE_SIZE, MAX_CANVAS_PAGE_SIZE,
@@ -269,6 +273,7 @@ session = await joinSession({
                     }
                 };
                 server = await startBoardServer({
+                    serverFactory: createServer,
                     publicDir,
                     api: {
                         snapshot: () => store.snapshot(),

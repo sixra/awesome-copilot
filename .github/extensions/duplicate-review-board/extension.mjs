@@ -1,6 +1,10 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
+import { CanvasError } from "@github/copilot-sdk/extension";
+import { joinSession as sdkJoinSession, createCanvas as sdkCreateCanvas } from "@github/copilot-sdk/extension";
+import { configureErrorHandoff } from "./error-handoff.mjs";
+const { joinSession, createCanvas } = configureErrorHandoff({ joinSession: sdkJoinSession, createCanvas: sdkCreateCanvas });
+import { createServer } from "./error-handoff.mjs";
 import { startBoardServer, expectedError } from "../open-pr-board/lib/server.mjs";
 import { BoardStore } from "./lib/state.mjs";
 import { createGitHub } from "./lib/github.mjs";
@@ -144,6 +148,7 @@ session = await joinSession({
                 // This loopback token is not a trusted caller identity: same-user local agents can fetch the page and token.
                 // Keep human confirmation as UI workflow, not authorization; the SDK exposes no authenticated caller context.
                 panel = await startBoardServer({
+                    serverFactory: createServer,
                     publicDir,
                     api: {
                         snapshot: () => store.snapshot(), subscribe: (listener) => store.subscribe(listener), routes: wrapped,

@@ -588,7 +588,7 @@ function renderDrawerBody() {
         return;
     }
     if (detailError) {
-        el.drawerBody.replaceChildren(h("p", { class: "notice" }, detailError));
+        el.drawerBody.replaceChildren(h("p", { class: "notice", "data-agent-error": "" }, detailError));
         return;
     }
     if (!detail || detail.number !== item.number) {

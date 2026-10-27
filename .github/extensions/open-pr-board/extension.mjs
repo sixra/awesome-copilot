@@ -7,7 +7,10 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
+import { CanvasError } from "@github/copilot-sdk/extension";
+import { joinSession as sdkJoinSession, createCanvas as sdkCreateCanvas } from "@github/copilot-sdk/extension";
+import { configureErrorHandoff } from "./error-handoff.mjs";
+const { joinSession, createCanvas } = configureErrorHandoff({ joinSession: sdkJoinSession, createCanvas: sdkCreateCanvas });
 import { BoardStore, RECOMMENDATIONS } from "./lib/state.mjs";
 import * as gh from "./lib/github.mjs";
 import { applyDecisionOnGitHub } from "./lib/decisions.mjs";
