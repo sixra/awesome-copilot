@@ -216,7 +216,10 @@ function renderDetailContent(detail) {
     if (item.lastChange) detail.append(element("code", `${item.lastChange.date.slice(0, 10)} / ${item.lastChange.sha.slice(0, 12)}`));
     if (item.error) {
         const warning = element("p", item.error, "warning");
-        warning.setAttribute("data-agent-error", "");
+        if (item.error !== "Cancelled locally. The child may still be running; its result will be rejected." &&
+            item.error !== "Content changed; review and prepared changes were invalidated.") {
+            warning.setAttribute("data-agent-error", "");
+        }
         detail.append(warning);
     }
     if (item.pending) detail.append(element("p", `Waiting for child: ${item.pending.kind}. Queued ${item.pending.at}.`, "badge"));

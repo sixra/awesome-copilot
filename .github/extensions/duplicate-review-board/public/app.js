@@ -73,6 +73,7 @@ function renderViewer(item) {
             }).catch((error) => {
                 body.textContent = `Could not load: ${error.message}`;
                 body.classList.add("error");
+                body.setAttribute("data-agent-error", "");
             });
         }
         return pane;
@@ -93,6 +94,8 @@ async function api(name, body) {
 function message(text, error = false, target = "message") {
     $(target).textContent = text;
     $(target).classList.toggle("error", error);
+    if (error) $(target).setAttribute("data-agent-error", "");
+    else $(target).removeAttribute("data-agent-error");
 }
 
 async function run(button, work, target = "message") {
@@ -253,7 +256,7 @@ function refreshReview(item) {
         $(id).disabled = suspended;
     }
     if (suspended) return;
-    if (item.reviewError) $("review-result").setAttribute("data-agent-error", "");
+    if (item.reviewError && item.reviewError !== "Review cancelled locally. Late results will be rejected.") $("review-result").setAttribute("data-agent-error", "");
     else $("review-result").removeAttribute("data-agent-error");
     $("review-result").textContent = item.queueId ? "Queued for a background agent. You can keep triaging." :
         item.reviewError || (item.review ? `${item.review.recommendation}\n\n${item.review.rationale}` : "No comparison yet.");

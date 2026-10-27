@@ -202,7 +202,7 @@ test("redaction removes common credentials, URL userinfo, queries and fragments"
     const raw = 'Authorization: Bearer abcdef password="hello world" cookie=session-secret ' +
         "https://user:pass@example.com/api?sig=private#token ghp_1234567890abcdefghijklmnopqrstuvwxyz " +
         "-----BEGIN PRIVATE KEY-----\nprivate\n-----END PRIVATE KEY-----";
-    const safe = redactError(raw);
+    const safe = redactError(raw.replace("cookie=session-secret ", "cookie=session-secret\n"));
     for (const secret of ["abcdef", "hello world", "session-secret", "user:pass", "sig=private", "#token", "ghp_", "\nprivate\n"]) assert.ok(!safe.includes(secret), secret);
     assert.match(safe, /https:\/\/example.com\/api/);
     assert.ok(redactError("x".repeat(5000)).length <= 3000);
@@ -215,20 +215,45 @@ test("redaction covers compound credential field names", () => {
     assert.match(safe, /aws_secret_access_key=\[redacted\]/);
 });
 
+test("redaction removes entire multi-cookie headers and stays bounded on adversarial keys", () => {
+    for (const header of ["Cookie", "Set-Cookie", '"Cookie"']) {
+        const safe = redactError(`${header}: theme=dark; sid=SESSION_VALUE; auth=AUTH_VALUE\nRequest failed.`);
+        assert.doesNotMatch(safe, /SESSION_VALUE|AUTH_VALUE|theme=dark/);
+        assert.match(safe, /Request failed/);
+    }
+    const start = performance.now();
+    assert.ok(redactError("key".repeat(100000)).length <= 3000);
+    assert.ok(performance.now() - start < 1000, "redaction should not backtrack on long key-like input");
+});
+
 function browserFixture(outcomes = [{ status: "created", sessionId: "child-one" }]) {
     const calls = [];
     class Element {
         constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; this.style = {}; this.attrs = {}; this.textContent = ""; }
-        append(...nodes) { this.children.push(...nodes); for (const node of nodes) node.parent = this; }
+        append(...nodes) { for (const node of nodes) { node.remove(); this.children.push(node); node.parent = this; } }
+        prepend(node) { node.remove(); this.children.unshift(node); node.parent = this; }
+        get parentElement() { return this.parent; }
         setAttribute(key, value) { this.attrs[key] = value; }
         getAttribute(key) { return this.attrs[key]; }
-        getClientRects() { return [1]; }
-        closest(selector) { return selector === "[data-canvas-error-handoff]" && (this.dataset.canvasErrorHandoff !== undefined || this.parent?.closest(selector)) ? this : null; }
-        remove() { if (this.parent) this.parent.children = this.parent.children.filter(item => item !== this); }
+        getClientRects() { return this.hidden ? [] : [1]; }
+        closest(selector) {
+            if (selector === "[data-canvas-error-handoff]") return this.dataset.canvasErrorHandoff !== undefined ? this : this.parent?.closest(selector);
+            if (this.excluded && selector.includes(".markdown")) return this;
+            if (this.hidden && selector.includes("[hidden]")) return this;
+            return this.parent?.closest(selector) || null;
+        }
+        remove() { if (this.parent) this.parent.children = this.parent.children.filter(item => item !== this); this.parent = null; }
         get firstElementChild() { return this.children[0]; }
     }
     const body = new Element("body");
-    const document = { body, createElement: tag => new Element(tag), querySelectorAll: () => [], addEventListener() {} };
+    const errors = [];
+    const modals = [];
+    let observe;
+    const document = {
+        body, createElement: tag => new Element(tag),
+        querySelectorAll: selector => selector.startsWith("dialog[open]") ? modals.filter(node => node.open) : errors,
+        addEventListener() {},
+    };
     const window = {
         fetch: async (url, options) => {
             calls.push({ url, options });
@@ -240,11 +265,11 @@ function browserFixture(outcomes = [{ status: "created", sessionId: "child-one" 
     const sandbox = vm.createContext({
         window, document, URL, URLSearchParams, crypto: { randomUUID },
         location: { pathname: "/", hash: "#canvas-error-handoff=browser-token", href: "http://127.0.0.1/", origin: "http://127.0.0.1" },
-        MutationObserver: class { observe() {} },
+        MutationObserver: class { constructor(callback) { observe = callback; } observe() {} },
         requestAnimationFrame: fn => fn(), setTimeout: fn => { fn(); },
     });
     vm.runInContext(`(${installErrorHandoff.toString()})({endpoint:"/.canvas-error-handoff",selectors:".error"}, ${redactError.toString()})`, sandbox);
-    return { window, body, calls };
+    return { window, body, calls, errors, modals, Element, scan: () => observe([{ target: body }]) };
 }
 
 test("browser error handling preserves original errors and only sends on one explicit click", async () => {
@@ -260,8 +285,68 @@ test("browser error handling preserves original errors and only sends on one exp
     await button.onclick();
     await first;
     assert.equal(f.calls.filter(call => call.url.endsWith("/start")).length, 1);
+    assert.equal(f.calls[0].options.headers["X-Canvas-Error-Handoff-Token"], "browser-token");
     assert.equal(button.textContent, "Sent to agent");
     assert.match(row.children[3].textContent, /Child session created: child-one/);
+});
+
+test("the same message retains one handoff across operations and dismissal", async () => {
+    const f = browserFixture();
+    f.window.canvasErrorHandoff.report("Request failed", "GET /api/update");
+    f.window.canvasErrorHandoff.report("Request failed", "Publish");
+    const row = f.body.children[0].children[0];
+    assert.equal(f.body.children[0].children.length, 1);
+    assert.match(row.children[0].textContent, /^GET \/api\/update:/);
+    await row.children[1].onclick();
+    row.children[2].onclick();
+    f.window.canvasErrorHandoff.report("Request failed", "Unrelated click");
+    assert.equal(f.body.children.length, 0);
+    assert.equal(f.calls.length, 1);
+});
+
+test("capture excludes rendered content and the inline tray follows modal interaction scope", () => {
+    const f = browserFixture();
+    const userContent = new f.Element("p");
+    userContent.excluded = true;
+    userContent.textContent = "User-authored error";
+    f.errors.push(userContent);
+    f.scan();
+    assert.equal(f.body.children.length, 0);
+    const error = new f.Element("p");
+    error.textContent = "Board operation failed";
+    f.errors.push(error);
+    f.scan();
+    const tray = f.body.children[0];
+    assert.equal(tray.style.position, "relative");
+    assert.equal(tray.style.bottom, undefined);
+    const userModal = new f.Element("dialog");
+    userModal.open = true;
+    userModal.excluded = true;
+    f.modals.push(userModal);
+    f.scan();
+    assert.equal(tray.parentElement, f.body);
+    const drawer = new f.Element("aside");
+    drawer.open = true;
+    const retry = new f.Element("button");
+    drawer.append(retry);
+    f.body.append(drawer);
+    f.modals.push(drawer);
+    f.scan();
+    assert.equal(tray.parentElement, drawer);
+    assert.equal(drawer.children.at(-1), retry);
+    const dialog = new f.Element("dialog");
+    dialog.open = true;
+    f.body.append(dialog);
+    f.modals.push(dialog);
+    f.scan();
+    assert.equal(tray.parentElement, dialog);
+    dialog.open = false;
+    f.scan();
+    assert.equal(tray.parentElement, drawer);
+    drawer.open = false;
+    f.scan();
+    assert.equal(tray.parentElement, f.body);
+    assert.equal(f.calls.length, 0);
 });
 
 test("browser surfaces failed handoff rather than claiming success or automatically retrying", async () => {

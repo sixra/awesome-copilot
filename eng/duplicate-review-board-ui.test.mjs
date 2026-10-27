@@ -152,6 +152,18 @@ function boardButtons(harness) {
     return harness.document.querySelectorAll('[data-focus-role="title"]');
 }
 
+test("review cancellation remains visible without an error handoff marker", async () => {
+    const h = await harness();
+    const cancelled = "Review cancelled locally. Late results will be rejected.";
+    h.context.refreshReview(sampleItem("a", "r1", { reviewError: cancelled }));
+    assert.equal(h.nodes["review-result"].textContent, cancelled);
+    assert.equal(h.nodes["review-result"].getAttribute("data-agent-error"), undefined);
+    h.context.refreshReview(sampleItem("a", "r1", { reviewError: "Background task failed." }));
+    assert.equal(h.nodes["review-result"].getAttribute("data-agent-error"), "");
+    h.context.refreshReview(sampleItem("a", "r1", { reviewError: cancelled }));
+    assert.equal(h.nodes["review-result"].getAttribute("data-agent-error"), undefined);
+});
+
 test("hide published keeps unconfirmed publication intents visible and snapshot rerender restores group focus", async () => {
     const h = await harness();
     const items = [

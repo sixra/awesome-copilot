@@ -811,6 +811,20 @@ async function rendererFixture(items = [{
     };
 }
 
+test("cancellation and content invalidation notices do not offer repair handoffs", async () => {
+    for (const error of [
+        "Cancelled locally. The child may still be running; its result will be rejected.",
+        "Content changed; review and prepared changes were invalidated.",
+        "Child task failed.",
+    ]) {
+        const { node } = await rendererFixture([{ ...resource, error }]);
+        node("resources").children[0].children[1].click();
+        const notice = node("detail").children.find(entry => entry.textContent === error);
+        assert.ok(notice, "notice remains visible");
+        assert.equal(notice.getAttribute("data-agent-error"), error === "Child task failed." ? "" : undefined);
+    }
+});
+
 test("initial renderer snapshot cannot replace a newer SSE board", async () => {
     const item = { ...resource, review: null };
     const { node, state, emit, releaseBoardResponse } = await rendererFixture([item], { holdBoardResponses: true });

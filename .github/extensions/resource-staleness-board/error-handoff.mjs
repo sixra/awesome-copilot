@@ -6,12 +6,14 @@ const ENDPOINT = "/.canvas-error-handoff";
 const MAX_BODY = 12000;
 
 export function redactError(value) {
-    return String(value ?? "")
+    return String(value ?? "").slice(0, 12000)
         .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^-]*PRIVATE KEY-----|$)/g, "[redacted private key]")
         .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]+|AKIA[A-Z0-9]{16})\b/g, "[redacted token]")
         .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted token]")
         .replace(/\b(?:Bearer|Basic)\s+\S+/gi, "[redacted authorization]")
-        .replace(/(([A-Za-z0-9_-]*(?:password|passwd|secret|token|key|authorization|cookie|credential)[A-Za-z0-9_-]*|connection[-_ ]?string)\s*["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, "$1[redacted]")
+        .replace(/\b(?:set-cookie|cookie)\s*["']?\s*[:=]\s*[^\r\n]*/gi, "[redacted cookie]")
+        .replace(/(?<![A-Za-z0-9_-])((?:connection[-_ ]?string|[A-Za-z0-9_-]{1,128})\s*["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
+            (match, field) => /password|passwd|secret|token|key|authorization|cookie|credential|connection[-_ ]?string/i.test(field) ? `${field}[redacted]` : match)
         .replace(/https?:\/\/[^\s<>"']+/gi, value => {
             try {
                 const url = new URL(value);
@@ -45,24 +47,31 @@ export function installErrorHandoff(config, redact) {
         if (!response.ok) throw new Error(result.error || `Handoff failed (${response.status}).`);
         return result;
     };
+    function mountTray() {
+        if (!tray) return;
+        const modal = [...document.querySelectorAll('dialog[open], #drawer.open')]
+            .filter(node => node.getClientRects().length && !node.closest('[hidden], [inert], [aria-hidden=true], .markdown, .file-contents')).at(-1);
+        const target = modal || document.body;
+        if (tray.parentElement !== target) target.prepend(tray);
+    }
     function report(message, operation = lastOperation) {
         const safeMessage = redact(message);
         const safeOperation = redact(operation).slice(0, 160);
         if (!safeMessage.trim()) return;
-        const key = `${safeOperation}\n${safeMessage}`;
+        const key = safeMessage;
         if (records.has(key)) return;
         if (!tray) {
             tray = document.createElement("aside");
             tray.dataset.canvasErrorHandoff = "";
             tray.setAttribute("aria-label", "Canvas error handoff");
             Object.assign(tray.style, {
-                position: "fixed", bottom: "12px", right: "12px", zIndex: "2147483647",
-                maxWidth: "400px", maxHeight: "45vh", overflow: "auto",
+                position: "relative", flex: "0 1 auto", minHeight: "0",
+                maxHeight: "25vh", overflow: "auto",
                 padding: "12px", border: "1px solid currentColor", borderRadius: "8px",
                 background: "Canvas", color: "CanvasText", font: "13px system-ui",
                 boxShadow: "0 2px 12px #0004",
             });
-            document.body.append(tray);
+            mountTray();
         }
         const row = document.createElement("section");
         const text = document.createElement("p");
@@ -154,9 +163,10 @@ export function installErrorHandoff(config, redact) {
     let scheduled = false;
     const scan = () => {
         scheduled = false;
+        mountTray();
         for (const node of document.querySelectorAll(selector)) {
             if (node.closest("[data-canvas-error-handoff]") || !node.getClientRects().length ||
-                node.closest("[hidden], [aria-hidden=true]")) continue;
+                node.closest("[hidden], [aria-hidden=true], .markdown, .file-contents")) continue;
             const message = node.textContent.trim();
             if (message) report(message);
         }
@@ -393,6 +403,6 @@ Message admission is NOT creation. Do not claim success or retry creation after 
     return runtime;
 }
 
-const runtime = createErrorHandoffRuntime({}, ".github/extensions/resource-staleness-board", "[data-agent-error], [role=alert], .error, .is-error, .error-banner, .flash-error, .answer-error, .rec-error, .question-error, .camera-error, .gate-error, .dv-error, .empty-state-error, .toast.error, .action-feedback.error");
+const runtime = createErrorHandoffRuntime({}, ".github/extensions/resource-staleness-board", "[data-agent-error], .toast.error");
 export const { configure: configureErrorHandoff, joinSession, createCanvas, createServer } = runtime;
 export default runtime.http;

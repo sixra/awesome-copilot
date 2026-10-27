@@ -52,7 +52,9 @@ Exit codes: `0` pass or skipped, `1` contribution problems, `2` infrastructure e
 
 Repository-local canvases under `.github/extensions/` offer a
 **Send to agent** action for handled errors. The error tray is additive: existing
-messages, fallback UI, retries and recovery controls remain available. Dismiss
+messages, fallback UI, retries and recovery controls remain available. The tray
+uses normal document flow, moves into an active dialog/drawer's interaction scope,
+and does not overlay decision controls. Dismiss
 only removes the tray entry; it does not retry the operation or start an agent.
 Public canvases under `extensions/` do not include this feature.
 
@@ -61,7 +63,8 @@ Clicking **Send to agent** requests one child project session in
 bounded, redacted diagnostic text before sending. Context includes the extension
 source directory, canvas, operation and allow-listed repository/item identifiers,
 not request bodies, headers, environment variables, raw stacks, URL query strings
-or fragments. Common credentials and private keys are redacted on both sides.
+or fragments. Common credentials, complete Cookie/Set-Cookie fields and private
+keys are redacted on both sides, with bounded input processing.
 Review the displayed text before sending; do not include sensitive data in errors.
 The child is instructed not to commit, push, publish a PR, change credentials or
 repeat a destructive/remote operation.
@@ -98,7 +101,11 @@ registered canvas documents gain the client script. Other HTML, artifact preview
 downloads, SSE and API responses retain their original delivery behavior. Existing
 CSPs, including nonce-only and inline-only script policies, are preserved.
 
-The client detects failed same-origin fetches and existing visible error surfaces.
+The client detects failed same-origin fetches and explicitly marked board-owned
+error surfaces (including error toasts), excluding rendered Markdown/file content.
+Cancellation and content-invalidation notices are not repair errors. Identical
+redacted messages share one handoff for the document lifetime, even after dismissal;
+the first operation is retained as context.
 For errors without a semantic error selector, mark only the failure state with
 `data-agent-error` (clear it on recovery), or call
 `window.canvasErrorHandoff?.report(message, operation)`. Do not mark success
