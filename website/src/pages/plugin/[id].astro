@@ -6,6 +6,7 @@ import { searchIndex } from "../../lib/site-data";
 import { formatLastUpdated, readResourceMarkdown } from "../../lib/detail-page";
 import { finalizePluginReadme, renderPluginReadme } from "../../lib/plugin-readme";
 import { externalRepoUrl, type ExternalSource } from "../../lib/external-source";
+import { buildVSCodePluginInstallUrl } from "../../lib/plugin-install";
 
 const GITHUB_TREE = "https://github.com/github/awesome-copilot/tree/main";
 
@@ -79,13 +80,14 @@ const githubUrl = item.external
   ? externalRepoUrl(item.source, [item.repository, item.homepage, GITHUB_TREE])
   : `${GITHUB_TREE}/${item.path}`;
 
-const installCommand = `copilot plugin install ${item.id}@awesome-copilot`;
+const installCommand = `copilot plugin install ${item.name}@awesome-copilot`;
+const vscodeInstallUrl = buildVSCodePluginInstallUrl(item.name);
 
 // Deep link handled by the Copilot app's `ghapp://` protocol handler. The
 // marketplace-qualified source is encoded because the `@` separator is not
 // safe unescaped in a query value.
 const appInstallUrl = `ghapp://plugins/install?source=${encodeURIComponent(
-  `${item.id}@awesome-copilot`,
+  `${item.name}@awesome-copilot`,
 )}`;
 
 const lastUpdated = formatLastUpdated(item.lastUpdated);
@@ -112,6 +114,7 @@ const siblingOf = (sibling?: PluginItem) =>
     githubUrl={githubUrl}
     installCommand={installCommand}
     appInstallUrl={appInstallUrl}
+    vscodeInstallUrl={vscodeInstallUrl}
     lastUpdated={lastUpdated}
     previous={siblingOf(previous)}
     next={siblingOf(next)}
