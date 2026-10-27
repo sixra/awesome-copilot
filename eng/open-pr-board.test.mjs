@@ -32,7 +32,7 @@ test("approval passes the board's commit SHA to the GitHub helper", async (t) =>
   const store = await createStore(t);
   let options;
   await applyDecisionOnGitHub({
-    store, number: 1, kind: "approve", comment: "Reviewed.", refresh: async () => {},
+    store, number: 1, kind: "approve", comment: "Reviewed.", headRefOid: "first", refresh: async () => {},
     github: {
       approveAndEnableAutoMerge: async (repo, number, input) => {
         options = input;
@@ -41,6 +41,20 @@ test("approval passes the board's commit SHA to the GitHub helper", async (t) =>
     },
   });
   assert.deepEqual(options, { body: "Reviewed.", headRefOid: "first" });
+});
+
+test("approval rejects a missing or previously displayed SHA after a scheduled sync without writing", async (t) => {
+  const store = await createStore(t);
+  await store.syncPullRequests([pr("second")]);
+  let writes = 0;
+  for (const headRefOid of [undefined, "", "first"]) {
+    await assert.rejects(applyDecisionOnGitHub({
+      store, number: 1, kind: "approve", headRefOid, refresh: async () => {},
+      github: { approveAndEnableAutoMerge: async () => { writes++; } },
+    }), /changed since it was displayed/);
+  }
+  assert.equal(writes, 0);
+  assert.equal(store.getItem(1).decision, null);
 });
 
 test("approval and auto-merge are pinned to the reviewed commit", async () => {
@@ -322,15 +336,62 @@ async function createUI() {
       select(number) {
         selectedNumber = number;
         board = { columns: [], items: [1, 2].map(number => ({
-          number, title: "Example", labels: [], createdAt: "2026-10-01", column: "unreviewed",
+          number, title: "Example", labels: [], createdAt: "2026-10-01", column: "unreviewed", headRefOid: "first",
         })) };
       },
-      state: () => ({ detail, detailError, activeTab }),
+      state: () => ({ detail, detailError, activeTab, previewHeadRefOid }),
       render: renderDrawerBody,
     };
   `, context);
   return { context, ui: context.ui, nodes, tabs, document };
 }
+
+test("a refreshed PR head reloads the preview and blocks approval until the new detail arrives", async () => {
+  const { context, ui, nodes } = await createUI();
+  const requests = [];
+  const messages = [];
+  context.notify = (message) => messages.push(message);
+  vm.runInContext("toast = notify", context);
+  ui.select(1);
+  context.nextRequest = deferred();
+  const initial = ui.loadDetail(1);
+  context.nextRequest.resolve({ headRefOid: "first", files: [{ filename: "old.js" }] });
+  await initial;
+  assert.equal(ui.state().previewHeadRefOid, "first");
+  nodes.get("decision-comment").value = "Keep this feedback";
+  context.nextRequest = deferred();
+  const pending = context.nextRequest;
+  context.applySnapshot({
+    columns: [], items: [{ number: 1, title: "New head", labels: [], headRefOid: "second" }],
+  });
+  assert.equal(ui.state().detail, null);
+  assert.equal(ui.state().previewHeadRefOid, null);
+  await ui.submitDecision(nodes.get("decision-approve"), "approve");
+  assert.match(messages[0], /preview is loading or changed/);
+  assert.equal(nodes.get("decision-comment").value, "Keep this feedback");
+  pending.resolve({ headRefOid: "second", files: [{ filename: "new.js" }] });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ui.state().previewHeadRefOid, "second");
+  assert.equal(ui.state().detail.files[0].filename, "new.js");
+  context.request = async (...args) => { requests.push(args); throw new Error("stop after request"); };
+  vm.runInContext("api = request", context);
+  await ui.submitDecision(nodes.get("decision-approve"), "approve");
+  await ui.submitDecision(nodes.get("decision-approve"), "approve");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0][1].body.headRefOid, "second");
+});
+
+test("a cached preview from another commit cannot authorize approval", async () => {
+  const { context, ui } = await createUI();
+  ui.select(1);
+  context.nextRequest = deferred();
+  const pending = ui.loadDetail(1);
+  context.nextRequest.resolve({ headRefOid: "older", files: [] });
+  await pending;
+  assert.equal(ui.state().previewHeadRefOid, null);
+  assert.equal(ui.state().detail, null);
+  assert.match(ui.state().detailError, /changed while loading/);
+});
 
 test("older PR detail responses and errors cannot overwrite a newer selected PR", async () => {
   const { context, ui } = await createUI();

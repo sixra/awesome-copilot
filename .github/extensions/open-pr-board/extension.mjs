@@ -215,7 +215,10 @@ function routesFor(instanceId, store) {
         "GET /api/pr/:number": ({ number }) => getPullRequest(store, number),
         "POST /api/pr/:number": ({ number }) => getPullRequest(store, number, { force: true }),
         "POST /api/decision": ({ body }) =>
-            applyDecisionOnGitHub({ store, number: Number(body.number), kind: body.kind, comment: body.comment, refresh }),
+            applyDecisionOnGitHub({
+                store, number: Number(body.number), kind: body.kind, comment: body.comment,
+                headRefOid: body.headRefOid, refresh,
+            }),
     };
     // Board errors are user-facing messages (gh failures, "already actioned", ...); surface only the
     // message text, never the stack, and log the full error for debugging.

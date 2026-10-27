@@ -46,8 +46,10 @@ authenticated `gh` CLI.
 - **GitHub actions** — submit feedback, request changes, close a PR, or approve it and
   enable auto-merge with a merge commit. Each action needs two clicks to confirm and
   is also recorded in local board history. Approval is pinned to the board's commit
-  SHA, and auto-merge requires that same head commit. If the head changes, refresh
-  and review the new commit before approving again.
+  SHA displayed by the client, and auto-merge requires that same head commit.
+  A changed head automatically reloads an open preview; approval is unavailable until
+  that preview has loaded. Bulk approval skips stale AI reviews. If the head changes,
+  review the new commit before approving again.
   Only one GitHub action can run per PR at a time.
 - **Reset board** — after a second click to confirm, clear every local AI review,
   queued review, manual move, recorded action, and history entry, then reload open PRs.

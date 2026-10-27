@@ -42,6 +42,8 @@ Open it by asking Copilot to "open the plugin review board" (canvas id `external
   Fast-track never overrides an existing review or a bucket you chose; drag a card to *Unreviewed* to opt it
   out and have it reviewed normally. Cards show *First party* / *Third party* pills from the intake labels.
 - **Details panel** shows the AI review, the rendered issue body, and all comments.
+  Successful refreshes invalidate cached issue details and reload the selected body/comments
+  tab without changing staged feedback.
   Clicking outside the panel or successfully submitting an item action closes it;
   failed actions leave it open so you can correct or retry them.
 - **Quick actions** post `/approve` (with an optional note) or `/reject <reason>` straight to the issue
