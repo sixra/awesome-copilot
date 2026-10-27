@@ -164,6 +164,21 @@ test("review cancellation remains visible without an error handoff marker", asyn
     assert.equal(h.nodes["review-result"].getAttribute("data-agent-error"), undefined);
 });
 
+test("guidance and reconnect styling do not authorize repair handoffs", async () => {
+    const h = await harness();
+    h.context.message("Connection interrupted. Reconnecting...", true, "message", false);
+    assert.equal(h.nodes.message.error, true);
+    assert.equal(h.nodes.message.getAttribute("data-agent-error"), undefined);
+    const guidance = Object.assign(new Error("Find and select a report first."), { handoff: false });
+    await h.context.run(h.nodes.import, async () => { throw guidance; });
+    assert.equal(h.nodes.message.textContent, guidance.message);
+    assert.equal(h.nodes.message.getAttribute("data-agent-error"), undefined);
+    await h.context.run(h.nodes.import, async () => { throw new Error("Request failed."); });
+    assert.equal(h.nodes.message.getAttribute("data-agent-error"), "");
+    h.context.message("Connected.");
+    assert.equal(h.nodes.message.getAttribute("data-agent-error"), undefined);
+});
+
 test("hide published keeps unconfirmed publication intents visible and snapshot rerender restores group focus", async () => {
     const h = await harness();
     const items = [

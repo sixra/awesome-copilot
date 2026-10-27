@@ -19,8 +19,7 @@ export function redactError(value) {
         .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted token]")
         .replace(/\b(?:Bearer|Basic)\s+\S+/gi, "[redacted authorization]")
         .replace(/\b(?:set-cookie|cookie)\s*["']?\s*[:=]\s*[^\r\n]*/gi, "[redacted cookie]")
-        .replace(/(?<![A-Za-z0-9_-])((?:connection[-_ ]?string|[A-Za-z0-9_-]{1,128})\s*["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
-            (match, field) => /password|passwd|secret|token|key|authorization|cookie|credential|connection[-_ ]?string/i.test(field) ? `${field}[redacted]` : match)
+        .replace(/(?<![A-Za-z0-9_-])((?:connection[-_ ]?string|[A-Za-z0-9_-]{0,64}(?:password|passwd|secret|token|key|authorization|cookie|credential)[A-Za-z0-9_-]{0,64})\s*["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, "$1[redacted]")
         .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
         .replace(/^\s+at\s+.*$/gm, "")
         .slice(0, 3000);

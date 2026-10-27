@@ -228,6 +228,22 @@ test("URL queries are removed before embedded credentials can split the URL", as
     assert.doesNotMatch(prompts[0], /still-sensitive|access_token|ghp_example/);
 });
 
+test("sensitive assignments remain visible to redaction inside prefixes and JSON containers", async t => {
+    const prompts = [];
+    const f = await fixture(t, { send: async value => prompts.push(value.prompt) });
+    for (const raw of [
+        "Request failed: accessToken=SYNTHETIC_SECRET",
+        '{"details":{"token":"SYNTHETIC_SECRET"}}',
+    ]) {
+        const once = redactError(raw);
+        assert.doesNotMatch(once, /SYNTHETIC_SECRET/);
+        assert.doesNotMatch(redactError(once), /SYNTHETIC_SECRET/);
+        await f.post("start", { ...f.body(), error: raw });
+    }
+    assert.equal(prompts.length, 2);
+    for (const prompt of prompts) assert.doesNotMatch(prompt, /SYNTHETIC_SECRET/);
+});
+
 test("redaction removes entire multi-cookie headers and stays bounded on adversarial keys", () => {
     for (const header of ["Cookie", "Set-Cookie", '"Cookie"']) {
         const safe = redactError(`${header}: theme=dark; sid=SESSION_VALUE; auth=AUTH_VALUE\nRequest failed.`);

@@ -687,6 +687,7 @@ async function rendererFixture(items = [{
         }
         setAttribute(name, value) { this[name] = value; }
         getAttribute(name) { return this[name]; }
+        removeAttribute(name) { delete this[name]; }
         querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
         querySelectorAll(selector) {
             const [, attribute, value] = selector.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/) ?? [];
@@ -833,6 +834,32 @@ test("initial renderer snapshot cannot replace a newer SSE board", async () => {
     assert.equal(releaseBoardResponse(), true);
     await new Promise((resolve) => setImmediate(resolve));
     assert.match(node("review-progress").textContent, /^1 with saved reviews/);
+});
+
+test("shared renderer notices mark only actual action and sync failures", async () => {
+    const { node, state, emit, disconnect, setActionError } = await rendererFixture();
+    disconnect();
+    assert.equal(node("error").hidden, false);
+    assert.equal(node("error").getAttribute("data-agent-error"), undefined);
+    emit();
+    assert.equal(node("error").hidden, true);
+    setActionError("Scan failed.");
+    await node("scan").click();
+    assert.equal(node("error").getAttribute("data-agent-error"), "");
+    state.syncError = "Sync failed.";
+    emit();
+    assert.equal(node("error").getAttribute("data-agent-error"), "");
+    delete state.syncError;
+    emit();
+    assert.equal(node("error").getAttribute("data-agent-error"), undefined);
+    node("resources").children[0].children[1].click();
+    const actions = node("detail").children.find(entry => entry.children?.some(child => child.textContent === "Publish PR..."));
+    actions.children.find(entry => entry.textContent === "Publish PR...").click();
+    state.items[0].prepared.diffHash = "changed";
+    emit();
+    node("publish-confirm").click();
+    assert.match(node("error").textContent, /Prepared changes changed/);
+    assert.equal(node("error").getAttribute("data-agent-error"), undefined);
 });
 
 test("post-mutation renderer snapshot cannot replace a newer SSE board", async () => {

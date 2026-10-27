@@ -57,6 +57,8 @@ uses normal document flow, moves into an active dialog/drawer's interaction scop
 and does not overlay decision controls. Dismiss
 only removes the tray entry; it does not retry the operation or start an agent.
 Public canvases under `extensions/` do not include this feature.
+Expected reconnect notices, local validation guidance and content-invalidation
+warnings keep their existing presentation without offering repair handoffs.
 
 Clicking **Send to agent** requests one child project session in
 `github/awesome-copilot` to investigate and attempt a fix. The tray displays the

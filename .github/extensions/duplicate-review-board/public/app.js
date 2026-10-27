@@ -91,17 +91,17 @@ async function api(name, body) {
     return result;
 }
 
-function message(text, error = false, target = "message") {
+function message(text, error = false, target = "message", handoff = error) {
     $(target).textContent = text;
     $(target).classList.toggle("error", error);
-    if (error) $(target).setAttribute("data-agent-error", "");
+    if (handoff) $(target).setAttribute("data-agent-error", "");
     else $(target).removeAttribute("data-agent-error");
 }
 
 async function run(button, work, target = "message") {
     button.disabled = true;
     try { await work(); }
-    catch (error) { message(error.message, true, target); }
+    catch (error) { message(error.message, true, target, error.handoff !== false); }
     finally {
         button.disabled = false;
         if (opened && $("detail").open) {
@@ -302,7 +302,7 @@ function editorItem() {
 
 function requireEditorItem() {
     const item = editorItem();
-    if (!item) throw new Error("This editor is paused. Select its source report again to continue; your edits are preserved.");
+    if (!item) throw Object.assign(new Error("This editor is paused. Select its source report again to continue; your edits are preserved."), { handoff: false });
     return item;
 }
 
@@ -418,7 +418,7 @@ async function save() {
             if (current && current.revision !== edit.revision) {
                 opened.conflict = true;
                 renderConflict();
-                message("This group changed while saving. Resolve the conflict before saving again.", true, "detail-message");
+                message("This group changed while saving. Resolve the conflict before saving again.", true, "detail-message", false);
             }
         }
         throw error;
@@ -435,7 +435,7 @@ $("discover").addEventListener("click", () => run($("discover"), async () => {
 }));
 $("import").addEventListener("click", () => run($("import"), async () => {
     const number = Number($("reports").value);
-    if (!number) throw new Error("Find and select a report first.");
+    if (!number) throw Object.assign(new Error("Find and select a report first."), { handoff: false });
     receive(await api("import", { number }));
     message(`Imported report #${number}. Unchanged local decisions were preserved.`);
 }));
@@ -501,7 +501,7 @@ $("resume-report").addEventListener("click", () => run($("resume-report"), async
 }, "detail-message"));
 $("review").addEventListener("click", () => run($("review"), async () => {
     requireEditorItem();
-    if (dirty) throw new Error("Save local edits before asking for a comparison.");
+    if (dirty) throw Object.assign(new Error("Save local edits before asking for a comparison."), { handoff: false });
     await api("review", { ...opened, guidance: $("guidance").value });
     message("Comparison queued for a background agent.", false, "detail-message");
 }, "detail-message"));
@@ -511,7 +511,7 @@ $("cancel-review").addEventListener("click", () => run($("cancel-review"), async
 }, "detail-message"));
 $("preview").addEventListener("click", () => run($("preview"), async () => {
     requireEditorItem();
-    if (dirty) throw new Error("Save local edits before previewing.");
+    if (dirty) throw Object.assign(new Error("Save local edits before previewing."), { handoff: false });
     preview = await api("preview", opened);
     $("target").textContent = `Target: ${preview.target}`;
     $("publish-title").textContent = preview.title;
@@ -539,6 +539,6 @@ $("reconcile").addEventListener("click", () => run($("reconcile"), async () => {
 
 const events = new EventSource(`/events?token=${encodeURIComponent(token)}`);
 events.addEventListener("board", (event) => receive(JSON.parse(event.data)));
-events.addEventListener("error", () => message("Connection interrupted. Local state is saved; reconnecting...", true));
+events.addEventListener("error", () => message("Connection interrupted. Local state is saved; reconnecting...", true, "message", false));
 events.addEventListener("open", () => message("Connected. Triage is local until you confirm a GitHub action."));
 api("board").then(receive).catch((error) => message(error.message, true));

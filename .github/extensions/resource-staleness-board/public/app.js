@@ -106,17 +106,24 @@ async function api(action, input) {
     return result;
 }
 
+function showError(message, handoff = false) {
+    $("error").textContent = message;
+    $("error").hidden = false;
+    if (handoff) $("error").setAttribute("data-agent-error", "");
+    else $("error").removeAttribute("data-agent-error");
+}
+
 async function run(operation, refreshBoard = true) {
     const focusKey = document.activeElement?.getAttribute?.("data-focus-key");
     busy = true;
     $("error").hidden = true;
+    $("error").removeAttribute("data-agent-error");
     render();
     try {
         await operation();
         if (refreshBoard) await api("get_board");
     } catch (error) {
-        $("error").textContent = error.message;
-        $("error").hidden = false;
+        showError(error.message, true);
     } finally {
         busy = false;
         render(focusKey);
@@ -282,11 +289,11 @@ function render(restoreFocusKey) {
         : `${board.updatedAt ? `Last scan ${new Date(board.updatedAt).toLocaleString()}.` : "Scan to build the inventory."} No network reads or writes during scanning or review.${board.warning ? ` ${board.warning}` : ""}`;
     if (displayedSyncError && !board.syncError && $("error").textContent === displayedSyncError) {
         $("error").hidden = true;
+        $("error").removeAttribute("data-agent-error");
     }
     displayedSyncError = board.syncError ?? null;
     if (board.syncError) {
-        $("error").textContent = board.syncError;
-        $("error").hidden = false;
+        showError(board.syncError, true);
     }
     $("counts").replaceChildren(...["stale", "aging", "fresh", "unknown"].map((key) =>
         element("span", `${board.counts[key] ?? 0} ${key}`, `count ${key}`)));
@@ -346,8 +353,7 @@ $("publish-confirm").addEventListener("click", () => {
     const item = board.items.find((entry) => entry.id === confirmation?.id);
     $("confirm").close();
     if (!item || item.prepared?.diffHash !== confirmation.diffHash) {
-        $("error").textContent = "Prepared changes changed while confirmation was open. Inspect the latest diff first.";
-        $("error").hidden = false;
+        showError("Prepared changes changed while confirmation was open. Inspect the latest diff first.");
         return;
     }
     work(item, "publish", true);
@@ -356,13 +362,15 @@ const events = new EventSource(`/events?token=${encodeURIComponent(token)}`);
 events.addEventListener("board", (event) => {
     board = JSON.parse(event.data);
     boardVersion++;
-    if ($("error").textContent === CONNECTION_ERROR) $("error").hidden = true;
+    if ($("error").textContent === CONNECTION_ERROR) {
+        $("error").hidden = true;
+        $("error").removeAttribute("data-agent-error");
+    }
     render();
 });
 events.onerror = () => {
     if ($("error").hidden) {
-        $("error").textContent = CONNECTION_ERROR;
-        $("error").hidden = false;
+        showError(CONNECTION_ERROR);
     }
 };
 run(() => api("get_board"), false);
