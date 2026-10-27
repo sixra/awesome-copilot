@@ -371,7 +371,7 @@ export class BoardStore {
     check(id, token, state) {
         const item = this.item(id, state);
         if (!item.pending || item.pending.token !== token || item.pending.fingerprint !== item.fingerprint) {
-            throw new Error("Stale work token. The resource changed or this request was cancelled.");
+            throw expectedNotice("Stale work token. The resource changed or this request was cancelled.");
         }
         return item;
     }

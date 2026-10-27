@@ -242,6 +242,14 @@ test("HTTP work and preview failures expose safe summaries without raw stacks", 
     assert.match(changedNotice.error, /Scan again/);
     assert.equal(changedNotice.handoff, false);
 
+    const staleResponse = await fetch(new URL("api/cancel_work", opened.url), {
+        method: "POST", headers, body: JSON.stringify({ id: resourceId, token: "stale-token" }),
+    });
+    const staleNotice = await staleResponse.json();
+    assert.equal(staleResponse.status, 400);
+    assert.match(staleNotice.error, /Stale work token/);
+    assert.equal(staleNotice.handoff, false);
+
     const previewResponse = await fetch(new URL("api/read_file", opened.url), {
         method: "POST", headers, body: JSON.stringify({ id: resourceId, file: "outside.txt" }),
     });

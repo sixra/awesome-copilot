@@ -311,6 +311,48 @@ test("quoted credential redaction handles escaped quotes and truncated values", 
     for (const prompt of prompts) assert.doesNotMatch(prompt, /SYNTHETIC_SECRET/);
 });
 
+test("encoded JSON diagnostics redact nested credentials with bounded depth", async t => {
+    const prompts = [];
+    const f = await fixture(t, { send: async value => prompts.push(value.prompt) });
+    let encoded = JSON.stringify({ token: "SYNTHETIC_CREDENTIAL_VALUE" });
+    for (let depth = 0; depth < 5; depth++) {
+        encoded = JSON.stringify({ message: encoded });
+        const once = redactError(encoded);
+        assert.doesNotMatch(once, /SYNTHETIC_CREDENTIAL_VALUE/);
+        assert.doesNotMatch(redactError(once), /SYNTHETIC_CREDENTIAL_VALUE/);
+        await f.post("start", { ...f.body(), error: encoded });
+    }
+    for (const prompt of prompts) assert.doesNotMatch(prompt, /SYNTHETIC_CREDENTIAL_VALUE/);
+    let nested = { token: "SYNTHETIC_CREDENTIAL_VALUE" };
+    for (let depth = 0; depth < 30; depth++) nested = { message: nested };
+    assert.doesNotMatch(redactError(JSON.stringify(nested)), /SYNTHETIC_CREDENTIAL_VALUE/);
+});
+
+test("post-write plugin receipt failures remain eligible even if the issue disappears", async () => {
+    const source = await readFile(new URL("../.github/extensions/external-plugin-review-board/extension.mjs", import.meta.url), "utf8");
+    const { expectedNotice } = await import("../.github/extensions/open-pr-board/lib/errors.mjs");
+    for (const name of ["postDecisionCommand", "postRequestFixes"]) {
+        let writes = 0;
+        const receiptFailure = async () => { throw expectedNotice("Issue is not on the board. Refresh first."); };
+        const context = vm.createContext({
+            expectedNotice, assertNoPendingFixesRequest() {}, stripCommand: value => value,
+            isReadyForApproval: () => true, decisionsInFlight: new Set(),
+            store: { state: { repo: "github/awesome-copilot" }, getItem: () => ({}),
+                recordPendingDecision: receiptFailure, recordPendingFixesRequest: receiptFailure },
+            gh: {
+                buildRequestFixesCommand: () => "/request-fixes details",
+                getIssueStatus: async () => ({ state: "OPEN", labels: ["ready-for-review"] }),
+                postComment: async () => { writes++; return "https://github.com/example/comment"; },
+            },
+        });
+        const start = source.indexOf(`async function ${name}(`);
+        vm.runInContext(source.slice(start, source.indexOf("\n}", start) + 2), context);
+        await assert.rejects(() => context[name]({ number: 42, kind: "approve", comment: "Details" }),
+            error => error.handoff !== false && /GitHub was updated/.test(error.message));
+        assert.equal(writes, 1);
+    }
+});
+
 function browserFixture(outcomes = [{ status: "created", sessionId: "child-one" }]) {
     const calls = [];
     const timers = new Map();

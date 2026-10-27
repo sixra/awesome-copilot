@@ -6,7 +6,25 @@ const ENDPOINT = "/.canvas-error-handoff";
 const MAX_BODY = 12000;
 
 export function redactError(value) {
-    return String(value ?? "").slice(0, 12000)
+    const raw = String(value ?? "").slice(0, 12000);
+    function sanitizeJson(value, depth = 0) {
+        if (depth >= 16) return "[redacted nested diagnostic]";
+        if (typeof value === "string") {
+            let parsed;
+            try { parsed = JSON.parse(value); }
+            catch { return value; }
+            return JSON.stringify(sanitizeJson(parsed, depth + 1));
+        }
+        if (Array.isArray(value)) return value.map(item => sanitizeJson(item, depth + 1));
+        if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) =>
+            [key, /password|passwd|secret|token|key|authorization|cookie|credential|connection[-_ ]?string/i.test(key)
+                ? "[redacted]" : sanitizeJson(item, depth + 1)]));
+        return value;
+    }
+    let diagnostic = raw;
+    try { diagnostic = JSON.stringify(sanitizeJson(JSON.parse(raw))); }
+    catch { /* Non-JSON diagnostics use the bounded text redactor below. */ }
+    return diagnostic
         .replace(/https?:\/\/[^\s<>"']+/gi, value => {
             try {
                 const url = new URL(value);

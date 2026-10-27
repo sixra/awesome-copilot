@@ -196,7 +196,11 @@ async function postDecisionCommand({ number, kind, comment }) {
     const body = kind === "approve" ? (text ? `/approve\n\n${text}` : "/approve") : text ? `/reject ${text}` : "/reject";
     const commentUrl = await gh.postComment(store.state.repo, number, body);
     const pendingDecision = { kind, comment: text, body, commentUrl, at: new Date().toISOString() };
-    await store.recordPendingDecision(number, pendingDecision);
+    try {
+        await store.recordPendingDecision(number, pendingDecision);
+    } catch (error) {
+        throw new Error(`GitHub was updated, but the board could not record the decision: ${error.message}. Refresh and inspect GitHub before retrying.`, { cause: error });
+    }
     for (const delay of [1000, 2000, 4000]) {
         await sleep(delay);
         const resolved = await resolvePendingDecisions([number]);
@@ -238,7 +242,11 @@ async function postRequestFixes({ number, comment }) {
         }
         const commentUrl = await gh.postComment(store.state.repo, number, body);
         const pendingFixesRequest = { body, commentUrl, at: new Date().toISOString() };
-        await store.recordPendingFixesRequest(number, pendingFixesRequest);
+        try {
+            await store.recordPendingFixesRequest(number, pendingFixesRequest);
+        } catch (error) {
+            throw new Error(`GitHub was updated, but the board could not record the fixes request: ${error.message}. Refresh and inspect GitHub before retrying.`, { cause: error });
+        }
         detailCache.delete(number);
         const confirmed = await confirmRequestFixes({
             number,

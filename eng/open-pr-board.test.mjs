@@ -444,6 +444,18 @@ test("failed post-reset reloads retain handoff without repeating reset", async (
   assert.notEqual(context.notices[0].options.handoff, false);
 });
 
+test("stale approvals remain expected notices while GitHub failures remain eligible", async () => {
+  const { approveAndEnableAutoMerge } = await import("../.github/extensions/open-pr-board/lib/github.mjs");
+  await assert.rejects(() => approveAndEnableAutoMerge("github/awesome-copilot", 42),
+    error => error.handoff === false);
+  await assert.rejects(() => approveAndEnableAutoMerge("github/awesome-copilot", 42, { headRefOid: "old" },
+    async () => JSON.stringify({ state: "open", head: { sha: "new" } })),
+  error => error.handoff === false);
+  await assert.rejects(() => approveAndEnableAutoMerge("github/awesome-copilot", 42, { headRefOid: "old" },
+    async () => { throw new Error("Offline"); }),
+  error => error.handoff !== false && error.message === "Offline");
+});
+
 test("drawer bucket changes retain expected-notice classification and restore selection", async () => {
   const { ui, context, nodes } = await createUI();
   ui.select(1);
