@@ -74,7 +74,7 @@ const extensionSourceUrl = (ext: ExtensionItem) =>
     : ext.sourceUrl ?? ext.installUrl ?? undefined;
 
 const appInstallUrl = (ext: ExtensionItem) =>
-  ext.pluginName
+  !ext.external && ext.pluginName
     ? `ghapp://plugins/install?source=${encodeURIComponent(
         `${ext.pluginName}@awesome-copilot`,
       )}`

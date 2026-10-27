@@ -220,15 +220,10 @@ export function ExtensionDetail({
         </section>
       ) : null}
 
-      {installUrl || vscodeInstallUrl || installCommand ? (
+      {installUrl || installCommand ? (
         <section className={styles.articleSection}>
           <h2 className={styles.articleHeading}>Install</h2>
           {installCommand ? <InstallCommand command={installCommand} /> : null}
-          {vscodeInstallUrl ? (
-            <p>
-              <a href={vscodeInstallUrl}>Install {item.name} in VS Code</a>.
-            </p>
-          ) : null}
           {installUrl ? (
             <p>
               Or{" "}

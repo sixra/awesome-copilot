@@ -108,7 +108,8 @@ Plugin records use their manifest name; canvas records use their owning
 plugin keep source-only actions. Source and README URLs retain their HTTP(S)
 sanitization.
 
-Run the focused checks, then the browser regression against a built preview:
+The dependency-free URI tests run in the website preview CI build. Run them
+locally, then check representative catalog and detail links against a built preview:
 
 ```bash
 node --test website/scripts/plugin-install.test.mjs
@@ -116,8 +117,9 @@ npm run website:build
 node website/scripts/plugin-install-regression.mjs
 ```
 
-The browser regression uses `SITE_BASE_URL` as described above and does not
-launch the application or install plugins.
+The browser regression covers local and external plugins, canvas owner mapping,
+and source-only eligibility. It uses `SITE_BASE_URL` as described above and does
+not launch the application or install plugins.
 
 ## Reading headers and catalog pagination
 
