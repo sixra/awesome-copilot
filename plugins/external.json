@@ -1795,6 +1795,33 @@
     }
   },
   {
+    "name": "statuslines",
+    "description": "A checkout-aware session dashboard for Copilot CLI: group pull requests and linked issues by branch/worktree, show local changes and upstream/base divergence, monitor CI and reviews, and summarize subagent progress in one composable footer.",
+    "version": "1.0.0",
+    "author": {
+      "name": "Jon Gallant",
+      "url": "https://github.com/jongio"
+    },
+    "repository": "https://github.com/jongio/skills",
+    "homepage": "https://jongio.github.io/skills/statuslines/",
+    "license": "MIT",
+    "keywords": [
+      "copilot",
+      "copilot-cli",
+      "statusline",
+      "pr-statusline",
+      "issue-statusline",
+      "subagent-statusline",
+      "worktree-statusline"
+    ],
+    "source": {
+      "source": "github",
+      "repo": "jongio/skills",
+      "path": "extensions",
+      "sha": "83e185a6b7f62881e407b55f760610c2480bae8d"
+    }
+  },
+  {
     "name": "stripe",
     "description": "Accept payments and grow your business. Stripe's agent plugin includes best practices, upgrade guidance, and our MCP server.",
     "version": "0.1.2",
