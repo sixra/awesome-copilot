@@ -92,6 +92,8 @@ Receipts remain visible until explicitly dismissed; new diagnostics do not evict
 Handoff POSTs also require a random per-instance capability token delivered only
 in the canvas URL fragment, not HTTP-served HTML or scripts. Origin and Host headers alone cannot
 authorize a handoff, and one instance cannot read or submit another's requests.
+Registered `127.0.0.1` and `localhost` URLs are supported, with the Origin required
+to match the exact registered Host and the connection still restricted to loopback.
 The token is never included in diagnostic prompts and expires when the canvas closes.
 
 Implementation lives in `eng/canvas-error-handoff/runtime.mjs`. Each applicable

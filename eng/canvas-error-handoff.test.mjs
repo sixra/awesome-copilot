@@ -8,7 +8,7 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 import { createErrorHandoffRuntime, installErrorHandoff, redactError } from "./canvas-error-handoff/runtime.mjs";
 
-async function fixture(t, { send = async () => {}, policy = "script-src 'self'", streamed = false } = {}) {
+async function fixture(t, { send = async () => {}, policy = "script-src 'self'", streamed = false, hostname = "127.0.0.1" } = {}) {
     let options;
     const runtime = createErrorHandoffRuntime({
         createCanvas(value) { options = value; return value; },
@@ -46,7 +46,7 @@ async function fixture(t, { send = async () => {}, policy = "script-src 'self'",
     const origin = `http://127.0.0.1:${server.address().port}`;
     runtime.createCanvas({
         id: "board", displayName: "Board", actions: [{ name: "retry", handler() {} }],
-        open: async () => ({ title: "Board", url: `${origin}/?token=original-secret` }),
+        open: async () => ({ title: "Board", url: `http://${hostname}:${server.address().port}/?token=original-secret` }),
         onClose: async () => {},
     });
     const open = await options.open({ instanceId: "panel-one", input: { repo: "github/awesome-copilot", token: "never-send", number: 42 } });
@@ -200,6 +200,40 @@ test("URL-fragment tokens protect dispatch and status without exposing secrets i
     assert.equal(sent, 1);
     await f.options.onClose({ instanceId: "panel-one" });
     assert.equal((await fetch(client)).status, 403);
+});
+
+test("registered localhost canvases authorize matching origins and reject hostname substitution", async t => {
+    let sent = 0;
+    const f = await fixture(t, { hostname: "localhost", send: async () => sent++ });
+    const host = new URL(f.open.url).host;
+    const localRequest = (route, { method = "GET", headers = {}, body } = {}) => new Promise((resolve, reject) => {
+        const request = httpRequest(`${f.origin}${route}`, { method, headers: { Host: host, ...headers } }, response => {
+            let text = "";
+            response.setEncoding("utf8");
+            response.on("data", chunk => { text += chunk; });
+            response.on("end", () => resolve({ status: response.statusCode, text }));
+        });
+        request.on("error", reject);
+        request.end(body);
+    });
+    assert.match((await localRequest("/")).text, /client\.js/);
+    assert.equal((await localRequest("/.canvas-error-handoff/client.js?instanceId=panel-one")).status, 200);
+    const body = f.body();
+    const headers = {
+        Origin: `http://${host}`, "Content-Type": "application/json",
+        "X-Canvas-Error-Handoff": "1", "X-Canvas-Error-Handoff-Token": f.token,
+    };
+    const post = (route, payload, extra = {}) => localRequest(`/.canvas-error-handoff/${route}`, {
+        method: "POST", headers: { ...headers, ...extra }, body: JSON.stringify(payload),
+    });
+    assert.equal((await post("start", body, { Origin: f.origin })).status, 403);
+    assert.equal((await f.post("start", body)).status, 403);
+    assert.equal((await post("start", body)).status, 200);
+    assert.equal(sent, 1);
+    f.action.handler({ instanceId: "panel-one", input: { requestId: body.id, status: "created", sessionId: "localhost-child" } });
+    assert.equal(JSON.parse((await post("status", { id: body.id })).text).sessionId, "localhost-child");
+    await f.options.onClose({ instanceId: "panel-one" });
+    assert.equal((await post("status", { id: body.id })).status, 403);
 });
 
 test("redaction removes common credentials, URL userinfo, queries and fragments", () => {

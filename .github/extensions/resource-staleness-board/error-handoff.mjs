@@ -240,8 +240,9 @@ export function createErrorHandoffRuntime(sdk, source, selectors) {
         const url = new URL(req.url, "http://localhost");
         if (!url.pathname.startsWith(ENDPOINT)) return false;
         const address = req.socket.localAddress;
-        const host = `127.0.0.1:${req.socket.localPort}`;
-        if (!["127.0.0.1", "::ffff:127.0.0.1"].includes(address) || req.headers.host !== host) {
+        const host = req.headers.host;
+        const allowedHosts = [`127.0.0.1:${req.socket.localPort}`, `localhost:${req.socket.localPort}`];
+        if (!["127.0.0.1", "::ffff:127.0.0.1"].includes(address) || !allowedHosts.includes(host)) {
             json(res, 403, { error: "Untrusted canvas host." });
             return true;
         }
