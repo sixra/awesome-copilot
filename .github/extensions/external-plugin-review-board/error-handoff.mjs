@@ -12,7 +12,7 @@ export function redactError(value) {
         if (typeof value === "string") {
             let parsed;
             try { parsed = JSON.parse(value); }
-            catch { return sanitizeEmbeddedJson(value, depth + 1); }
+            catch { return sanitizeText(sanitizeEmbeddedJson(value, depth + 1)); }
             return JSON.stringify(sanitizeJson(parsed, depth + 1));
         }
         if (Array.isArray(value)) return value.map(item => sanitizeJson(item, depth + 1));
@@ -57,10 +57,8 @@ export function redactError(value) {
         }
         return output + text.slice(cursor);
     }
-    let diagnostic;
-    try { diagnostic = JSON.stringify(sanitizeJson(JSON.parse(raw))); }
-    catch { diagnostic = sanitizeEmbeddedJson(raw); }
-    return diagnostic
+    function sanitizeText(text) {
+        return text
         .replace(/https?:\/\/[^\s<>"']+/gi, value => {
             try {
                 const url = new URL(value);
@@ -72,12 +70,18 @@ export function redactError(value) {
         .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^-]*PRIVATE KEY-----|$)/g, "[redacted private key]")
         .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]+|AKIA[A-Z0-9]{16})\b/g, "[redacted token]")
         .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted token]")
+        .replace(/\b(?:proxy-authorization|authorization)\s*["']?\s*[:=]\s*[^\r\n]*/gi, "[redacted authorization]")
         .replace(/\b(?:Bearer|Basic)\s+\S+/gi, "[redacted authorization]")
         .replace(/\b(?:set-cookie|cookie)\s*["']?\s*[:=]\s*[^\r\n]*/gi, "[redacted cookie]")
         .replace(/(?<![A-Za-z0-9_-])((?:connection[-_ ]?string|[A-Za-z0-9_-]{0,64}(?:password|passwd|secret|token|key|authorization|cookie|credential)[A-Za-z0-9_-]{0,64})\s*["']?\s*[:=]\s*)(?:"(?:\\[\s\S]|[^"\\])*(?:"|\\?$)|'(?:\\[\s\S]|[^'\\])*(?:'|\\?$)|[^\s,;]+)/gi, "$1[redacted]")
         .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
         .replace(/^\s+at\s+.*$/gm, "")
         .slice(0, 3000);
+    }
+    let diagnostic;
+    try { diagnostic = JSON.stringify(sanitizeJson(JSON.parse(raw))); }
+    catch { diagnostic = sanitizeEmbeddedJson(raw); }
+    return sanitizeText(diagnostic);
 }
 
 // Serialized into the canvas, so this function must remain self-contained.
@@ -181,7 +185,9 @@ export function installErrorHandoff(config, redact) {
                     instanceId: config.instanceId,
                 }, deadline);
                 while (result.status === "pending" && Date.now() < deadline) {
-                    status.textContent = "Waiting for the agent to confirm child-session creation...";
+                    status.textContent = result.dispatchError
+                        ? `Dispatch could not be confirmed: ${redact(result.dispatchError)} Waiting for a child-session receipt; no prompt will be resent.`
+                        : "Waiting for the agent to confirm child-session creation...";
                     await new Promise(resolve => setTimeout(resolve, Math.min(1500, Math.max(0, deadline - Date.now()))));
                     result = await request("/status", { id }, deadline);
                 }
@@ -377,7 +383,7 @@ Message admission is NOT creation. Do not claim success or retry creation after 
                 try {
                     await session.send({ prompt });
                 } catch (error) {
-                    if (item.status === "pending") Object.assign(item, { status: "failed", error: redactError(error.message) });
+                    if (item.status === "pending") item.dispatchError = redactError(error.message);
                 }
             } else if (item.instanceId !== page.instanceId) throw new Error("Handoff belongs to another canvas instance.");
             json(res, 200, publicResult(item));
@@ -387,7 +393,11 @@ Message admission is NOT creation. Do not claim success or retry creation after 
         return true;
     }
     function publicResult(item) {
-        return { status: item.status, ...(item.sessionId ? { sessionId: item.sessionId } : {}), ...(item.error ? { error: item.error } : {}) };
+        return {
+            status: item.status, ...(item.sessionId ? { sessionId: item.sessionId } : {}),
+            ...(item.error ? { error: item.error } : {}),
+            ...(item.status === "pending" && item.dispatchError ? { dispatchError: item.dispatchError } : {}),
+        };
     }
     class HandoffResponse extends http.ServerResponse {
         writeHead(status, ...args) {
@@ -426,7 +436,7 @@ Message admission is NOT creation. Do not claim success or retry creation after 
                 const code = `(${installErrorHandoff.toString()})(${config}, ${redactError.toString()});`;
                 const script = this.handoffInline ? `<script>${code}</script>` :
                     `<script src="${ENDPOINT}/client.js?instanceId=${encodeURIComponent(this.handoffPage.instanceId)}"${this.handoffNonce ? ` nonce="${this.handoffNonce}"` : ""} defer></script>`;
-                chunk = chunk.toString().replace(/<\/body>/i, `${script}</body>`);
+                chunk = chunk.toString().replace(/<\/body>/i, () => `${script}</body>`);
             }
             return super.end(chunk, ...args);
         }

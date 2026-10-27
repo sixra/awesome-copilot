@@ -198,4 +198,5 @@ test("bulk approvals send the displayed commit and refuse stale AI reviews", asy
     assert.equal(ui.calls.length, 1);
     assert.equal(ui.calls[0][1].body.headRefOid, "displayed");
     assert.match(ui.messages.at(-1).text, /changed since its AI review/);
+    assert.equal(ui.messages.at(-1).options.handoff, false);
 });

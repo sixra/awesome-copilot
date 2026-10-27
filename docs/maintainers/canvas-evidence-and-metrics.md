@@ -71,8 +71,9 @@ Clicking **Send to agent** requests one child project session in
 bounded, redacted diagnostic text before sending. Context includes the extension
 source directory, canvas, operation and allow-listed repository/item identifiers,
 not request bodies, headers, environment variables, raw stacks, URL query strings
-or fragments. Common credentials, complete Cookie/Set-Cookie fields and private
-keys are redacted on both sides, with bounded input processing.
+or fragments. Common credentials, complete Authorization/Proxy-Authorization and
+Cookie/Set-Cookie fields, and private keys are redacted on both sides, with bounded
+input processing. Decoded JSON string fields are redacted before reserialization.
 JSON diagnostics, including prefixed JSON and JSON encoded inside string fields,
 are inspected with a bounded nesting depth before text redaction. Incomplete
 embedded JSON is conservatively replaced rather than forwarded.
@@ -90,7 +91,10 @@ minutes from the initial dispatch without confirmation (including stalled networ
 requests or response bodies), it tells the user to inspect the parent
 conversation; it never automatically creates another child. Dispatch failures,
 child-creation failures and uncertain receipts remain visible rather than showing
-a successful handoff. Closing the canvas invalidates its outstanding receipts.
+a successful handoff. A transport rejection is an uncertain dispatch, not a
+definitive creation failure: the tray keeps polling within the same deadline and
+accepts a matching child receipt without resending the prompt.
+Closing the canvas invalidates its outstanding receipts.
 Receipts remain visible until explicitly dismissed; new diagnostics do not evict them.
 Handoff POSTs also require a random per-instance capability token delivered only
 in the canvas URL fragment, not HTTP-served HTML or scripts. Origin and Host headers alone cannot

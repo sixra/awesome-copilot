@@ -500,7 +500,7 @@ test("a refreshed PR head reloads the preview and blocks approval until the new 
   const { context, ui, nodes } = await createUI();
   const requests = [];
   const messages = [];
-  context.notify = (message) => messages.push(message);
+  context.notify = (message, options) => messages.push({ message, options });
   vm.runInContext("toast = notify", context);
   ui.select(1);
   context.nextRequest = deferred();
@@ -517,7 +517,8 @@ test("a refreshed PR head reloads the preview and blocks approval until the new 
   assert.equal(ui.state().detail, null);
   assert.equal(ui.state().previewHeadRefOid, null);
   await ui.submitDecision(nodes.get("decision-approve"), "approve");
-  assert.match(messages[0], /preview is loading or changed/);
+  assert.match(messages[0].message, /preview is loading or changed/);
+  assert.equal(messages[0].options.handoff, false);
   assert.equal(nodes.get("decision-comment").value, "Keep this feedback");
   pending.resolve({ headRefOid: "second", files: [{ filename: "new.js" }] });
   await new Promise((resolve) => setImmediate(resolve));

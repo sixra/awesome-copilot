@@ -407,7 +407,7 @@ async function bulkAction(columnId, kind) {
                     throw Object.assign(new Error("PR moved, changed, or was already actioned; review it again."), { handoff: false });
                 }
                 if (kind === "approve" && (current.manualColumn === "approve" ? current.approvalStale : current.reviewStale)) {
-                    throw new Error("PR changed since its AI review or manual approval choice; review the current commit before approving.");
+                    throw Object.assign(new Error("PR changed since its AI review or manual approval choice; review the current commit before approving."), { handoff: false });
                 }
                 decisionsInFlight.add(item.number);
                 const result = await api("/api/decision", {
@@ -748,7 +748,7 @@ async function submitDecision(button, kind) {
     const item = currentItem();
     if (!item || bulkBusy || decisionsInFlight.has(item.number)) return;
     if (kind === "approve" && (!previewHeadRefOid || previewHeadRefOid !== item.headRefOid)) {
-        toast("PR preview is loading or changed; review the current commit before approving.", { error: true });
+        toast("PR preview is loading or changed; review the current commit before approving.", { error: true, handoff: false });
         return;
     }
     if (!armConfirm(button, kind)) return;

@@ -107,19 +107,20 @@ test("streamed canvas HTML is enhanced and nonce/inline-only CSPs remain intact"
     }
 });
 
-test("inline configuration cannot terminate its script and preserves the instance ID", async t => {
-    const instanceId = '</script><img src=x onerror="injected()">';
+for (const instanceId of ['</script><img src=x onerror="injected()">', "panel$`x$&$'$$"]) {
+test(`inline configuration is inserted literally: ${instanceId}`, async t => {
     const f = await fixture(t, { policy: "script-src 'unsafe-inline'", instanceId });
     const html = await (await fetch(f.open.url)).text();
     assert.equal((html.match(/<\/script>/gi) || []).length, 1);
     assert.doesNotMatch(html, /<img/);
-    assert.match(html, /\\u003c\/script>/);
+    if (instanceId.includes("<")) assert.match(html, /\\u003c\/script>/);
     const script = /<script>([\s\S]*?)<\/script>/i.exec(html)[1];
     let captured;
     vm.runInNewContext(script.replace(`(${installErrorHandoff.toString()})`, "(capture)"),
         { capture: config => { captured = config; } });
     assert.equal(captured.instanceId, instanceId);
 });
+}
 
 test("handoff dispatch is opt-in and deduplicated; success requires the real child ID", async t => {
     const prompts = [];
@@ -171,12 +172,25 @@ test("a confirmed receipt survives a later transport rejection", async t => {
     assert.deepEqual((await f.post("status", { id: body.id })).value, { status: "created", sessionId: "real-child" });
 });
 
+test("uncertain dispatch remains visible and accepts a later definitive receipt without resending", async t => {
+    let sends = 0;
+    const f = await fixture(t, { send: async () => { sends++; throw new Error("Connection lost after admission"); } });
+    const body = f.body();
+    const first = await f.post("start", body);
+    assert.equal(first.value.status, "pending");
+    assert.match(first.value.dispatchError, /Connection lost/);
+    assert.equal((await f.post("start", body)).value.status, "pending");
+    assert.equal(sends, 1);
+    f.action.handler({ instanceId: "panel-one", input: { requestId: body.id, status: "created", sessionId: "late-real-child" } });
+    assert.deepEqual((await f.post("status", { id: body.id })).value, { status: "created", sessionId: "late-real-child" });
+});
+
 test("dispatch and child-creation failures are visible, never success-shaped", async t => {
     const f = await fixture(t, { send: async () => { throw new Error("dispatch failed; password=secret"); } });
     const result = await f.post("start", f.body());
-    assert.equal(result.value.status, "failed");
-    assert.match(result.value.error, /dispatch failed/);
-    assert.doesNotMatch(result.value.error, /password=secret/);
+    assert.equal(result.value.status, "pending");
+    assert.match(result.value.dispatchError, /dispatch failed/);
+    assert.doesNotMatch(result.value.dispatchError, /password=secret/);
     const g = await fixture(t);
     const body = g.body();
     await g.post("start", body);
@@ -367,6 +381,27 @@ test("encoded JSON diagnostics redact nested credentials with bounded depth", as
     let nested = { token: "SYNTHETIC_CREDENTIAL_VALUE" };
     for (let depth = 0; depth < 30; depth++) nested = { message: nested };
     assert.doesNotMatch(redactError(JSON.stringify(nested)), /SYNTHETIC_CREDENTIAL_VALUE/);
+});
+
+test("decoded JSON strings redact entire credentials and authorization headers before serialization", async t => {
+    const prompts = [];
+    const f = await fixture(t, { send: async value => prompts.push(value.prompt) });
+    for (const diagnostic of [
+        "Authorization: token SYNTHETIC_CREDENTIAL",
+        "Authorization: Digest username=user, response=SYNTHETIC_CREDENTIAL",
+        'Request failed: password="first SYNTHETIC_SECRET_SUFFIX"',
+        "Request failed: token='first SYNTHETIC_SECRET_SUFFIX'",
+    ]) {
+        for (const error of [diagnostic, JSON.stringify({ message: diagnostic }),
+            JSON.stringify({ message: JSON.stringify({ message: diagnostic }) })]) {
+            const once = redactError(error);
+            assert.doesNotMatch(once, /SYNTHETIC_/);
+            assert.doesNotMatch(redactError(once), /SYNTHETIC_/);
+            await f.post("start", { ...f.body(), error: once });
+        }
+    }
+    assert.equal(prompts.length, 12);
+    for (const prompt of prompts) assert.doesNotMatch(prompt, /SYNTHETIC_/);
 });
 
 test("post-write plugin receipt failures remain eligible even if the issue disappears", async () => {
@@ -599,6 +634,25 @@ test("capture excludes rendered content and the inline tray follows modal intera
     f.scan();
     assert.equal(tray.parentElement, f.body);
     assert.equal(f.calls.length, 0);
+});
+
+test("browser polls after uncertain dispatch and reports the matching actual child", async () => {
+    let confirm;
+    const f = browserFixture([
+        { status: "pending", dispatchError: "Connection lost after admission" },
+        () => new Promise(resolve => { confirm = () => resolve({
+            ok: true, json: async () => ({ status: "created", sessionId: "late-real-child" }),
+        }); }),
+    ]);
+    f.window.canvasErrorHandoff.report("Operation failed");
+    const row = f.body.children[0].children[0];
+    const sent = row.children[1].onclick();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.match(row.children[3].textContent, /Dispatch could not be confirmed.*no prompt will be resent/);
+    confirm();
+    await sent;
+    assert.match(row.children[3].textContent, /Child session created: late-real-child/);
+    assert.equal(f.calls.filter(call => call.url.endsWith("/start")).length, 1);
 });
 
 test("browser surfaces failed handoff rather than claiming success or automatically retrying", async () => {
