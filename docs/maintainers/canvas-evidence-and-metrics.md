@@ -73,8 +73,9 @@ source directory, canvas, operation and allow-listed repository/item identifiers
 not request bodies, headers, environment variables, raw stacks, URL query strings
 or fragments. Common credentials, complete Cookie/Set-Cookie fields and private
 keys are redacted on both sides, with bounded input processing.
-JSON diagnostics, including JSON encoded inside string fields, are inspected with
-a bounded nesting depth before text redaction.
+JSON diagnostics, including prefixed JSON and JSON encoded inside string fields,
+are inspected with a bounded nesting depth before text redaction. Incomplete
+embedded JSON is conservatively replaced rather than forwarded.
 Review the displayed text before sending; do not include sensitive data in errors.
 The child is instructed not to commit, push, publish a PR, change credentials or
 repeat a destructive/remote operation.

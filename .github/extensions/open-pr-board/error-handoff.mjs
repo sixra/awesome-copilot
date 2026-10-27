@@ -12,7 +12,7 @@ export function redactError(value) {
         if (typeof value === "string") {
             let parsed;
             try { parsed = JSON.parse(value); }
-            catch { return value; }
+            catch { return sanitizeEmbeddedJson(value, depth + 1); }
             return JSON.stringify(sanitizeJson(parsed, depth + 1));
         }
         if (Array.isArray(value)) return value.map(item => sanitizeJson(item, depth + 1));
@@ -21,9 +21,45 @@ export function redactError(value) {
                 ? "[redacted]" : sanitizeJson(item, depth + 1)]));
         return value;
     }
-    let diagnostic = raw;
+    function sanitizeEmbeddedJson(text, nesting = 0) {
+        if (nesting >= 16) return "[redacted nested diagnostic]";
+        // Inspect embedded JSON without repeatedly parsing every suffix of a diagnostic.
+        let output = "";
+        let cursor = 0;
+        for (let start = 0; start < text.length; start++) {
+            if (text[start] !== "{" && text[start] !== "[") continue;
+            let depth = 0;
+            let quoted = false;
+            let escaped = false;
+            let end = start;
+            for (; end < text.length; end++) {
+                const char = text[end];
+                if (quoted) {
+                    if (escaped) escaped = false;
+                    else if (char === "\\") escaped = true;
+                    else if (char === '"') quoted = false;
+                } else if (char === '"') quoted = true;
+                else if (char === "{" || char === "[") depth++;
+                else if ((char === "}" || char === "]") && --depth === 0) break;
+            }
+            if (end === text.length) {
+                output += text.slice(cursor, start) + "[redacted incomplete JSON diagnostic]";
+                cursor = text.length;
+                break;
+            }
+            const fragment = text.slice(start, end + 1);
+            let sanitized = fragment;
+            try { sanitized = JSON.stringify(sanitizeJson(JSON.parse(fragment), nesting + 1)); }
+            catch { /* Ordinary bracketed text still uses text redaction below. */ }
+            output += text.slice(cursor, start) + sanitized;
+            cursor = end + 1;
+            start = end;
+        }
+        return output + text.slice(cursor);
+    }
+    let diagnostic;
     try { diagnostic = JSON.stringify(sanitizeJson(JSON.parse(raw))); }
-    catch { /* Non-JSON diagnostics use the bounded text redactor below. */ }
+    catch { diagnostic = sanitizeEmbeddedJson(raw); }
     return diagnostic
         .replace(/https?:\/\/[^\s<>"']+/gi, value => {
             try {
@@ -341,7 +377,7 @@ Message admission is NOT creation. Do not claim success or retry creation after 
                 try {
                     await session.send({ prompt });
                 } catch (error) {
-                    Object.assign(item, { status: "failed", error: redactError(error.message) });
+                    if (item.status === "pending") Object.assign(item, { status: "failed", error: redactError(error.message) });
                 }
             } else if (item.instanceId !== page.instanceId) throw new Error("Handoff belongs to another canvas instance.");
             json(res, 200, publicResult(item));

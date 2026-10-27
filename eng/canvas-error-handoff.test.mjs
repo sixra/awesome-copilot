@@ -154,6 +154,23 @@ test("handoff dispatch is opt-in and deduplicated; success requires the real chi
     }), /already settled/);
 });
 
+test("a confirmed receipt survives a later transport rejection", async t => {
+    let rejectSend;
+    let admitted;
+    const admission = new Promise(resolve => { admitted = resolve; });
+    const f = await fixture(t, { send: () => {
+        admitted();
+        return new Promise((resolve, reject) => { rejectSend = reject; });
+    } });
+    const body = f.body();
+    const response = f.post("start", body);
+    await admission;
+    f.action.handler({ instanceId: "panel-one", input: { requestId: body.id, status: "created", sessionId: "real-child" } });
+    rejectSend(new Error("Transport disconnected after confirmation"));
+    assert.deepEqual((await response).value, { status: "created", sessionId: "real-child" });
+    assert.deepEqual((await f.post("status", { id: body.id })).value, { status: "created", sessionId: "real-child" });
+});
+
 test("dispatch and child-creation failures are visible, never success-shaped", async t => {
     const f = await fixture(t, { send: async () => { throw new Error("dispatch failed; password=secret"); } });
     const result = await f.post("start", f.body());
@@ -335,8 +352,18 @@ test("encoded JSON diagnostics redact nested credentials with bounded depth", as
         assert.doesNotMatch(once, /SYNTHETIC_CREDENTIAL_VALUE/);
         assert.doesNotMatch(redactError(once), /SYNTHETIC_CREDENTIAL_VALUE/);
         await f.post("start", { ...f.body(), error: encoded });
+        const prefixed = `Request failed: ${encoded}`;
+        assert.doesNotMatch(redactError(prefixed), /SYNTHETIC_CREDENTIAL_VALUE/);
+        assert.doesNotMatch(redactError(redactError(prefixed)), /SYNTHETIC_CREDENTIAL_VALUE/);
+        await f.post("start", { ...f.body(), error: prefixed });
+        const wrapped = JSON.stringify({ message: prefixed });
+        assert.doesNotMatch(redactError(wrapped), /SYNTHETIC_CREDENTIAL_VALUE/);
+        await f.post("start", { ...f.body(), error: wrapped });
     }
     for (const prompt of prompts) assert.doesNotMatch(prompt, /SYNTHETIC_CREDENTIAL_VALUE/);
+    const incomplete = 'Request failed: {"message":"{\\"token\\":\\"SYNTHETIC_CREDENTIAL_VALUE';
+    assert.doesNotMatch(redactError(incomplete), /SYNTHETIC_CREDENTIAL_VALUE/);
+    assert.match(redactError(incomplete), /Request failed:.*redacted incomplete JSON diagnostic/);
     let nested = { token: "SYNTHETIC_CREDENTIAL_VALUE" };
     for (let depth = 0; depth < 30; depth++) nested = { message: nested };
     assert.doesNotMatch(redactError(JSON.stringify(nested)), /SYNTHETIC_CREDENTIAL_VALUE/);
@@ -623,83 +650,84 @@ test("board toasts distinguish workflow guidance from handled failures without h
             h: (tag, attrs, ...children) => ({ tag, attrs, children }),
         });
 
-        test("PR and plugin HTTP responses and API clients preserve expected-notice classification", async t => {
-            const { expectedNotice } = await import("../.github/extensions/open-pr-board/lib/errors.mjs");
-            for (const board of ["open-pr-board", "external-plugin-review-board"]) {
-                const { startBoardServer } = await import(`../.github/extensions/${board}/lib/server.mjs`);
-                const server = await startBoardServer({
-                    publicDir: fileURLToPath(new URL(`../.github/extensions/${board}/public/`, import.meta.url)),
-                    api: {
-                        snapshot: () => ({}), subscribe: () => () => {},
-                        routes: { "POST /api/notice": () => {
-                            throw Object.assign(expectedNotice("Item changed. Refresh first."), { status: 400, publicMessage: "Item changed. Refresh first." });
-                        } },
-                    },
-                });
-
-                test("review and plugin decision guards classify stale state without hiding GitHub failures", async () => {
-                    const { expectedNotice } = await import("../.github/extensions/open-pr-board/lib/errors.mjs");
-                    for (const board of ["open-pr-board", "external-plugin-review-board"]) {
-                        const source = await readFile(new URL(`../.github/extensions/${board}/extension.mjs`, import.meta.url), "utf8");
-                        const extract = name => {
-                            const start = source.indexOf(`async function ${name}(`);
-                            return source.slice(start, source.indexOf("\n}", start) + 2);
-                        };
-                        let item;
-                        const store = { getItem: () => item, state: { repo: "github/awesome-copilot" } };
-                        const context = vm.createContext({
-                            expectedNotice, store, requireItem: () => item,
-                            isReadyForApproval: labels => labels?.includes("ready-for-review"),
-                            reviewBlockedReason: () => "Intake pending.",
-                        });
-                        vm.runInContext(extract("startRereview"), context);
-                        for (const state of [{ decision: { kind: "approve" } }, { reviewStatus: "queued" },
-                            ...(board === "external-plugin-review-board" ? [{ pendingDecision: {} }, { labels: [] }] : [])]) {
-                            item = { number: 42, ...state };
-                            await assert.rejects(() => context.startRereview({ store, number: 42 }),
-                                error => error.handoff === false);
-                        }
-                        if (board !== "external-plugin-review-board") continue;
-                        context.assertNoPendingFixesRequest = () => {};
-                        context.stripCommand = text => text;
-                        vm.runInContext(extract("postDecisionCommand"), context);
-                        item = { number: 42 };
-                        for (const status of [{ state: "CLOSED" }, { state: "OPEN", labels: [] }]) {
-                            context.gh = { getIssueStatus: async () => status };
-                            await assert.rejects(() => context.postDecisionCommand({ number: 42, kind: "approve" }),
-                                error => error.handoff === false);
-                        }
-                        context.gh = { getIssueStatus: async () => { throw new Error("GitHub offline"); } };
-                        await assert.rejects(() => context.postDecisionCommand({ number: 42, kind: "approve" }),
-                            error => error.handoff !== false && error.message === "GitHub offline");
-                    }
-                });
-                t.after(() => server.close());
-                const html = await (await fetch(server.url)).text();
-                const token = /name="board-token" content="([^"]+)"/.exec(html)[1];
-                const response = await fetch(new URL("api/notice", server.url), {
-                    method: "POST", headers: { "X-Board-Token": token, "Content-Type": "application/json" }, body: "{}",
-                });
-                const notice = await response.json();
-                assert.equal(response.status, 400);
-                assert.equal(notice.handoff, false);
-                const source = await readFile(new URL(`../.github/extensions/${board}/public/app.js`, import.meta.url), "utf8");
-                const start = source.indexOf("async function api(");
-                const end = source.indexOf("\n}", start) + 2;
-                const context = vm.createContext({
-                    TOKEN: token, token,
-                    fetch: async () => ({ ok: false, status: 400, json: async () => notice }),
-                });
-                vm.runInContext(source.slice(start, end), context);
-                const call = board === "open-pr-board" ? () => context.api("/api/notice") : () => context.api("POST", "/api/notice");
-                await assert.rejects(call, error => error.handoff === false && /Refresh first/.test(error.message));
-            }
-        });
         vm.runInContext(source.slice(start, end), context);
         context.toast("Required feedback is missing", { error: true, handoff: false });
         context.toast("Operation failed", { error: true });
         assert.equal(notices[0].attrs["data-agent-error"], undefined);
         assert.match(notices[0].attrs.class, /error/);
         assert.equal(notices[1].attrs["data-agent-error"], "");
+    }
+});
+
+test("PR and plugin HTTP responses and API clients preserve expected-notice classification", async t => {
+    const { expectedNotice } = await import("../.github/extensions/open-pr-board/lib/errors.mjs");
+    for (const board of ["open-pr-board", "external-plugin-review-board"]) {
+        const { startBoardServer } = await import(`../.github/extensions/${board}/lib/server.mjs`);
+        const server = await startBoardServer({
+            publicDir: fileURLToPath(new URL(`../.github/extensions/${board}/public/`, import.meta.url)),
+            api: {
+                snapshot: () => ({}), subscribe: () => () => {},
+                routes: { "POST /api/notice": () => {
+                    throw Object.assign(expectedNotice("Item changed. Refresh first."), { status: 400, publicMessage: "Item changed. Refresh first." });
+                } },
+            },
+        });
+        t.after(() => server.close());
+        const html = await (await fetch(server.url)).text();
+        const token = /name="board-token" content="([^"]+)"/.exec(html)[1];
+        const response = await fetch(new URL("api/notice", server.url), {
+            method: "POST", headers: { "X-Board-Token": token, "Content-Type": "application/json" }, body: "{}",
+        });
+        const notice = await response.json();
+        assert.equal(response.status, 400);
+        assert.equal(notice.handoff, false);
+        const source = await readFile(new URL(`../.github/extensions/${board}/public/app.js`, import.meta.url), "utf8");
+        const start = source.indexOf("async function api(");
+        const end = source.indexOf("\n}", start) + 2;
+        const context = vm.createContext({
+            TOKEN: token, token,
+            fetch: async () => ({ ok: false, status: 400, json: async () => notice }),
+        });
+        vm.runInContext(source.slice(start, end), context);
+        const call = board === "open-pr-board" ? () => context.api("/api/notice") : () => context.api("POST", "/api/notice");
+        await assert.rejects(call, error => error.handoff === false && /Refresh first/.test(error.message));
+    }
+});
+
+test("review and plugin decision guards classify stale state without hiding GitHub failures", async () => {
+    const { expectedNotice } = await import("../.github/extensions/open-pr-board/lib/errors.mjs");
+    for (const board of ["open-pr-board", "external-plugin-review-board"]) {
+        const source = await readFile(new URL(`../.github/extensions/${board}/extension.mjs`, import.meta.url), "utf8");
+        const extract = name => {
+            const start = source.indexOf(`async function ${name}(`);
+            return source.slice(start, source.indexOf("\n}", start) + 2);
+        };
+        let item;
+        const store = { getItem: () => item, state: { repo: "github/awesome-copilot" } };
+        const context = vm.createContext({
+            expectedNotice, store, requireItem: () => item,
+            isReadyForApproval: labels => labels?.includes("ready-for-review"),
+            reviewBlockedReason: () => "Intake pending.",
+        });
+        vm.runInContext(extract("startRereview"), context);
+        for (const state of [{ decision: { kind: "approve" } }, { reviewStatus: "queued" },
+            ...(board === "external-plugin-review-board" ? [{ pendingDecision: {} }, { labels: [] }] : [])]) {
+            item = { number: 42, ...state };
+            await assert.rejects(() => context.startRereview({ store, number: 42 }),
+                error => error.handoff === false);
+        }
+        if (board !== "external-plugin-review-board") continue;
+        context.assertNoPendingFixesRequest = () => {};
+        context.stripCommand = text => text;
+        vm.runInContext(extract("postDecisionCommand"), context);
+        item = { number: 42 };
+        for (const status of [{ state: "CLOSED" }, { state: "OPEN", labels: [] }]) {
+            context.gh = { getIssueStatus: async () => status };
+            await assert.rejects(() => context.postDecisionCommand({ number: 42, kind: "approve" }),
+                error => error.handoff === false);
+        }
+        context.gh = { getIssueStatus: async () => { throw new Error("GitHub offline"); } };
+        await assert.rejects(() => context.postDecisionCommand({ number: 42, kind: "approve" }),
+            error => error.handoff !== false && error.message === "GitHub offline");
     }
 });
