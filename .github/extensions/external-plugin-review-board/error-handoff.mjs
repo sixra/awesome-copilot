@@ -386,7 +386,8 @@ Message admission is NOT creation. Do not claim success or retry creation after 
                 chunk = Buffer.concat(this.handoffChunks);
             }
             if (this.handoffPage && (typeof chunk === "string" || Buffer.isBuffer(chunk))) {
-                const code = `(${installErrorHandoff.toString()})(${JSON.stringify({ endpoint: ENDPOINT, selectors, instanceId: this.handoffPage.instanceId })}, ${redactError.toString()});`;
+                const config = JSON.stringify({ endpoint: ENDPOINT, selectors, instanceId: this.handoffPage.instanceId }).replace(/</g, "\\u003c");
+                const code = `(${installErrorHandoff.toString()})(${config}, ${redactError.toString()});`;
                 const script = this.handoffInline ? `<script>${code}</script>` :
                     `<script src="${ENDPOINT}/client.js?instanceId=${encodeURIComponent(this.handoffPage.instanceId)}"${this.handoffNonce ? ` nonce="${this.handoffNonce}"` : ""} defer></script>`;
                 chunk = chunk.toString().replace(/<\/body>/i, `${script}</body>`);

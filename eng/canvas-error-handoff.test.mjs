@@ -8,7 +8,7 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 import { createErrorHandoffRuntime, installErrorHandoff, redactError } from "./canvas-error-handoff/runtime.mjs";
 
-async function fixture(t, { send = async () => {}, policy = "script-src 'self'", streamed = false, hostname = "127.0.0.1" } = {}) {
+async function fixture(t, { send = async () => {}, policy = "script-src 'self'", streamed = false, hostname = "127.0.0.1", instanceId = "panel-one" } = {}) {
     let options;
     const runtime = createErrorHandoffRuntime({
         createCanvas(value) { options = value; return value; },
@@ -49,7 +49,7 @@ async function fixture(t, { send = async () => {}, policy = "script-src 'self'",
         open: async () => ({ title: "Board", url: `http://${hostname}:${server.address().port}/?token=original-secret` }),
         onClose: async () => {},
     });
-    const open = await options.open({ instanceId: "panel-one", input: { repo: "github/awesome-copilot", token: "never-send", number: 42 } });
+    const open = await options.open({ instanceId, input: { repo: "github/awesome-copilot", token: "never-send", number: 42 } });
     const action = options.actions.find(item => item.name === "record_error_handoff");
     const token = new URLSearchParams(new URL(open.url).hash.slice(1)).get("canvas-error-handoff");
     const post = async (route, body, extraHeaders = {}) => {
@@ -65,7 +65,7 @@ async function fixture(t, { send = async () => {}, policy = "script-src 'self'",
         return { status: response.status, value: await response.json() };
     };
     const body = () => ({
-        id: randomUUID(), instanceId: "panel-one", page: "/",
+        id: randomUUID(), instanceId, page: "/",
         error: "GitHub API failed; token=secret", operation: "Load PR detail",
     });
     return { runtime, options, open, origin, post, body, action, token };
@@ -105,6 +105,20 @@ test("streamed canvas HTML is enhanced and nonce/inline-only CSPs remain intact"
             else assert.match(html, /<script>\(function installErrorHandoff/);
         });
     }
+});
+
+test("inline configuration cannot terminate its script and preserves the instance ID", async t => {
+    const instanceId = '</script><img src=x onerror="injected()">';
+    const f = await fixture(t, { policy: "script-src 'unsafe-inline'", instanceId });
+    const html = await (await fetch(f.open.url)).text();
+    assert.equal((html.match(/<\/script>/gi) || []).length, 1);
+    assert.doesNotMatch(html, /<img/);
+    assert.match(html, /\\u003c\/script>/);
+    const script = /<script>([\s\S]*?)<\/script>/i.exec(html)[1];
+    let captured;
+    vm.runInNewContext(script.replace(`(${installErrorHandoff.toString()})`, "(capture)"),
+        { capture: config => { captured = config; } });
+    assert.equal(captured.instanceId, instanceId);
 });
 
 test("handoff dispatch is opt-in and deduplicated; success requires the real child ID", async t => {
