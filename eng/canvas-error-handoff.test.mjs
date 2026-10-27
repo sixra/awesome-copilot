@@ -256,6 +256,26 @@ test("redaction removes entire multi-cookie headers and stays bounded on adversa
     assert.ok(performance.now() - start < 1000, "redaction should not backtrack on long key-like input");
 });
 
+test("quoted credential redaction handles escaped quotes and truncated values", async t => {
+    const prompts = [];
+    const f = await fixture(t, { send: async value => prompts.push(value.prompt) });
+    const diagnostics = [
+        JSON.stringify({ password: 'prefix"middle SYNTHETIC_SECRET_SUFFIX' }),
+        String.raw`password='prefix\'middle SYNTHETIC_SECRET_SUFFIX'`,
+        String.raw`{"password":"prefix\"middle SYNTHETIC_SECRET_SUFFIX`,
+        String.raw`password='prefix\'middle SYNTHETIC_SECRET_SUFFIX`,
+        `password="${"x".repeat(11970)} SYNTHETIC_SECRET_SUFFIX`,
+    ];
+    for (const raw of diagnostics) {
+        const once = redactError(raw);
+        assert.doesNotMatch(once, /SYNTHETIC_SECRET/);
+        assert.doesNotMatch(redactError(once), /SYNTHETIC_SECRET/);
+        await f.post("start", { ...f.body(), error: raw.slice(0, 11000) });
+    }
+    assert.equal(prompts.length, diagnostics.length);
+    for (const prompt of prompts) assert.doesNotMatch(prompt, /SYNTHETIC_SECRET/);
+});
+
 function browserFixture(outcomes = [{ status: "created", sessionId: "child-one" }]) {
     const calls = [];
     const timers = new Map();
