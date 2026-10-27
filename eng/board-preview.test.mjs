@@ -77,12 +77,47 @@ async function createUI(boardName, request = async () => ({
         return context.decide(kind);
     }
     return {
-        context, nodes, drawer, listeners, messages, select, decide,
+        context, nodes, drawer, listeners, messages, select, decide, source,
         selected: () => vm.runInContext(isPR ? "selectedNumber" : "selected", context),
     };
 }
 
 for (const boardName of ["open-pr-board", "external-plugin-review-board"]) {
+    test(`${boardName}: live refresh retains selection, drafts, tabs, and in-flight action guards`, async () => {
+        const ui = await createUI(boardName);
+        const isPR = boardName === "open-pr-board";
+        vm.runInContext(`
+            stagedComments.set(1, "Draft feedback");
+            activeTab = "comments";
+            bulkBusy = true;
+            ${isPR ? "decisionsInFlight.add(1)" : "decisionBusy = true"};
+        `, ui.context);
+        ui.nodes.get("decision-comment").value = "Draft feedback";
+        const snapshot = {
+            items: [1, 2, 3].map((number) => ({ number, reviewEligible: true })),
+            columns: [],
+        };
+        if (isPR) ui.context.applySnapshot(snapshot);
+        else {
+            const handlers = new Map();
+            ui.context.EventSource = class {
+                addEventListener(name, handler) { handlers.set(name, handler); }
+            };
+            const start = ui.source.indexOf("function connect()");
+            vm.runInContext(ui.source.slice(start, ui.source.indexOf("\nconnect();", start)), ui.context);
+            ui.context.connect();
+            handlers.get("board")({ data: JSON.stringify(snapshot) });
+        }
+        assert.equal(ui.selected(), 1);
+        assert.equal(ui.drawer.classList.contains("open"), true);
+        assert.equal(ui.nodes.get("decision-comment").value, "Draft feedback");
+        assert.equal(vm.runInContext("stagedComments.get(1)", ui.context), "Draft feedback");
+        assert.equal(vm.runInContext("activeTab", ui.context), "comments");
+        assert.equal(vm.runInContext("bulkBusy", ui.context), true);
+        assert.equal(vm.runInContext(isPR ? "decisionsInFlight.has(1)" : "decisionBusy", ui.context), true);
+        assert.equal(vm.runInContext("board.items.length", ui.context), 3);
+    });
+
     test(`${boardName}: clicking inside retains the preview; clicking outside closes it`, async () => {
         const ui = await createUI(boardName);
         const { handler, capture } = ui.listeners.get("pointerdown");

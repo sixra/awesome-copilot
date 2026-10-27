@@ -887,6 +887,7 @@ function connect() {
         renderBoard();
         if (selected != null) renderDrawer();
     });
+    events.addEventListener("refresh-error", (event) => toast(JSON.parse(event.data).error, { error: true }));
     events.addEventListener("error", () => {
         ui.meta.textContent = "Reconnecting…";
     });

@@ -8,6 +8,12 @@ authenticated `gh` CLI.
 
 ## What it does
 
+- **Automatic refresh** — fetches open PRs every 15 minutes while the canvas is open,
+  using the same read-only path as manual Refresh. Concurrent fetches are shared;
+  closing the canvas stops its timer. Existing reviews, queue tokens, manual buckets,
+  decisions, selection, and staged feedback are retained for PRs still on the board.
+  Refresh does not start AI reviews or write to GitHub. Failures show an error without
+  clearing the board, and the next scheduled or manual refresh can retry.
 - **Buckets** — `Unreviewed`, `Reviewing`, `Close`, `Request changes`,
   `Needs insight`, `Approve`, `Actioned`. The AI recommendation picks the bucket;
   dragging a card overrides it. Cards in each bucket are sorted oldest to newest
@@ -94,6 +100,8 @@ Results arriving after a manual move, reset, or replacement review are rejected.
 
 ## Regression tests
 
+Run `node --experimental-vm-modules --test eng/board-periodic-refresh.test.mjs` to check
+automatic refresh cadence, concurrent/manual refreshes, state preservation, errors, and disposal.
 Run `node --test eng/board-column-order.test.mjs` to check oldest-first column ordering.
 Run `node --test eng/open-pr-board.test.mjs` from the repository root. GitHub writes
 are tested with injected in-process fakes, never the authenticated CLI.

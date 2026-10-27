@@ -897,6 +897,7 @@ function applySnapshot(snapshot) {
 
 const events = new EventSource(`/events?token=${encodeURIComponent(TOKEN)}`);
 events.addEventListener("board", (event) => applySnapshot(JSON.parse(event.data)));
+events.addEventListener("refresh-error", (event) => toast(JSON.parse(event.data).error, { error: true }));
 events.addEventListener("error", () => {
     el.summary.textContent = "Connection lost — reopen the canvas to reconnect.";
 });
