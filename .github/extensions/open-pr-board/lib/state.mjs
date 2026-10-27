@@ -245,7 +245,7 @@ export class BoardStore {
         return results;
     }
 
-    async moveItem(number, column) {
+    async moveItem(number, column, headRefOid = null) {
         const item = this.getItem(number);
         if (!item) throw new Error(`Pull request #${number} is not on the board.`);
         if (!DROPPABLE.has(column)) throw new Error(`Column "${column}" cannot be set directly.`);
@@ -258,7 +258,7 @@ export class BoardStore {
             item.manualColumn = null;
         } else {
             item.manualColumn = column;
-            item.manualHeadRefOid = item.headRefOid ?? null;
+            item.manualHeadRefOid = headRefOid;
             if (item.reviewStatus === "queued") {
                 item.reviewStatus = item.review ? "reviewed" : "none";
                 item.queueId = null;
@@ -275,7 +275,7 @@ export class BoardStore {
             comment: decision.comment ?? "",
             at: new Date().toISOString(),
             status: decision.status ?? null,
-            headRefOid: item.headRefOid ?? null,
+            headRefOid: decision.headRefOid === undefined ? item.headRefOid ?? null : decision.headRefOid,
         };
         this.state.history.unshift({
             number: item.number,

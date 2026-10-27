@@ -256,6 +256,7 @@ function renderCard(item) {
             },
             ondragstart: (event) => {
                 event.dataTransfer.setData("text/plain", String(item.number));
+                event.dataTransfer.setData("application/x-pr-head", item.headRefOid ?? "");
                 event.dataTransfer.effectAllowed = "move";
                 card.classList.add("dragging");
             },
@@ -303,7 +304,9 @@ function renderBoard() {
                     const number = Number(event.dataTransfer.getData("text/plain"));
                     if (!Number.isInteger(number)) return;
                     try {
-                        await api("/api/move", { method: "POST", body: { number, column: column.id } });
+                        await api("/api/move", { method: "POST", body: {
+                            number, column: column.id, headRefOid: event.dataTransfer.getData("application/x-pr-head") || null,
+                        } });
                     } catch (error) {
                         toast(error.message, { error: true });
                     }
@@ -836,7 +839,7 @@ el.drawerColumn.addEventListener("change", async (event) => {
     const column = event.target.value;
     if (column === item.column) return;
     try {
-        await api("/api/move", { method: "POST", body: { number: item.number, column } });
+        await api("/api/move", { method: "POST", body: { number: item.number, column, headRefOid: item.headRefOid } });
         if (selectedNumber === item.number) closeDrawer();
     } catch (error) {
         toast(error.message, { error: true });
@@ -907,13 +910,16 @@ el.comment.addEventListener("input", () => {
 
 function applySnapshot(snapshot) {
     const previousHead = currentItem()?.headRefOid;
+    const refreshed = board?.updatedAt !== snapshot.updatedAt;
     board = snapshot;
     renderBoard();
     if (selectedNumber !== null) {
         if (!currentItem()) closeDrawer();
         else {
             renderDrawerHeader();
-            if (previousHead !== currentItem().headRefOid) loadDetail(selectedNumber, { force: true });
+            if (previousHead !== currentItem().headRefOid || (refreshed && detailError)) {
+                loadDetail(selectedNumber, { force: true });
+            }
             else renderDrawerBody();
         }
     }

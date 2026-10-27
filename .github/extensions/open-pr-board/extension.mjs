@@ -211,7 +211,7 @@ function routesFor(instanceId, store) {
         "POST /api/review": ({ body }) => startReview({ store, numbers: body.numbers, instanceId, send: true }),
         "POST /api/rereview": ({ body }) =>
             startRereview({ store, number: body.number, guidance: body.guidance, instanceId, send: true }),
-        "POST /api/move": ({ body }) => store.moveItem(Number(body.number), String(body.column)),
+        "POST /api/move": ({ body }) => store.moveItem(Number(body.number), String(body.column), body.headRefOid),
         "GET /api/pr/:number": ({ number }) => getPullRequest(store, number),
         "POST /api/pr/:number": ({ number }) => getPullRequest(store, number, { force: true }),
         "POST /api/decision": ({ body }) =>
@@ -346,10 +346,11 @@ session = await joinSession({
                             repo: repoProperty,
                             number: { type: "integer" },
                             column: { type: "string", enum: ["unreviewed", ...RECOMMENDATIONS] },
+                            headRefOid: { type: "string", description: "Commit SHA displayed when choosing the bucket; required for a current manual approval choice." },
                         },
                     },
                     handler: wrap(async (ctx) =>
-                        (await storeForContext(ctx)).moveItem(ctx.input.number, ctx.input.column),
+                        (await storeForContext(ctx)).moveItem(ctx.input.number, ctx.input.column, ctx.input.headRefOid),
                     ),
                 },
                 {

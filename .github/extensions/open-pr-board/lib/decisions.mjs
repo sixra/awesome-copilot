@@ -13,6 +13,7 @@ export async function applyDecisionOnGitHub({ store, number, kind, comment, head
         const item = store.getItem(number);
         if (!item) throw new Error(`Pull request #${number} is not on the board. Refresh first.`);
         if (item.decision) throw new Error(`#${number} was already actioned (${item.decision.kind}).`);
+        const actionHeadRefOid = item.headRefOid ?? null;
 
         const body = String(comment ?? "").trim().slice(0, MAX_COMMENT_LENGTH);
         if ((kind === "request-changes" || kind === "comment") && !body) {
@@ -33,7 +34,7 @@ export async function applyDecisionOnGitHub({ store, number, kind, comment, head
 
         const warnings = result.warning ? [result.warning] : [];
         try {
-            await store.recordDecision(number, { kind, comment: body, status: result.status });
+            await store.recordDecision(number, { kind, comment: body, status: result.status, headRefOid: actionHeadRefOid });
         } catch (error) {
             warnings.push(`GitHub was updated, but the board could not record the action: ${error.message}`);
         }

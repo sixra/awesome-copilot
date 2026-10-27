@@ -75,13 +75,13 @@ test("a review finishing after a head sync retains its queued commit and remains
 
 test("manual approval provenance survives refresh and is renewed only by an explicit move", async (t) => {
   const store = await createStore(t);
-  await store.moveItem(1, "approve");
+  await store.moveItem(1, "approve", "first");
   assert.equal(store.snapshot().items[0].approvalStale, false);
   await store.syncPullRequests([pr("second")]);
   assert.equal(store.getItem(1).manualColumn, "approve");
   assert.equal(store.getItem(1).manualHeadRefOid, "first");
   assert.equal(store.snapshot().items[0].approvalStale, true);
-  await store.moveItem(1, "approve");
+  await store.moveItem(1, "approve", "second");
   assert.equal(store.snapshot().items[0].approvalStale, false);
   const { previous } = await store.markQueued([1]);
   await store.restoreQueueState(previous);
@@ -95,6 +95,34 @@ test("legacy approval choices without commit provenance cannot silently authoriz
   store.getItem(1).manualColumn = "approve";
   assert.equal(store.snapshot().items[0].approvalStale, true);
 });
+
+test("sync before a delayed manual move retains the client's original commit", async (t) => {
+  const store = await createStore(t);
+  await store.syncPullRequests([pr("second")]);
+  await store.moveItem(1, "approve", "first");
+  assert.equal(store.getItem(1).manualHeadRefOid, "first");
+  assert.equal(store.snapshot().items[0].approvalStale, true);
+  await store.moveItem(1, "approve");
+  assert.equal(store.snapshot().items[0].approvalStale, true, "Missing client provenance fails closed");
+});
+
+for (const kind of ["comment", "request-changes"]) {
+  test(`a delayed ${kind} response retains the action head when polling discovers new commits`, async (t) => {
+    const store = await createStore(t);
+    const pending = deferred();
+    const action = applyDecisionOnGitHub({
+      store, number: 1, kind, comment: "Feedback on first",
+      github: { submitPullRequestReview: async () => { await pending.promise; return { status: "submitted" }; } },
+      refresh: () => store.syncPullRequests([pr("second")]),
+    });
+    await store.syncPullRequests([pr("second")]);
+    pending.resolve();
+    await action;
+    assert.equal(store.getItem(1).decision, null);
+    assert.equal(store.snapshot().items[0].column, "unreviewed");
+    assert.equal(store.state.history[0].kind, kind);
+  });
+}
 
 test("approval and auto-merge are pinned to the reviewed commit", async () => {
   const headRefOid = "a".repeat(40);
@@ -430,6 +458,27 @@ test("a cached preview from another commit cannot authorize approval", async () 
   assert.equal(ui.state().previewHeadRefOid, null);
   assert.equal(ui.state().detail, null);
   assert.match(ui.state().detailError, /changed while loading/);
+});
+
+test("a successful same-head refresh retries a failed preview without disturbing the draft", async () => {
+  const { context, ui, nodes } = await createUI();
+  ui.select(1);
+  context.nextRequest = deferred();
+  const failed = ui.loadDetail(1);
+  context.nextRequest.reject(new Error("Transient GitHub error"));
+  await failed;
+  assert.match(ui.state().detailError, /Transient/);
+  nodes.get("decision-comment").value = "Keep my feedback";
+  context.nextRequest = deferred();
+  context.applySnapshot({
+    updatedAt: "new-refresh", columns: [],
+    items: [{ number: 1, title: "Example", labels: [], headRefOid: "first" }],
+  });
+  assert.equal(ui.state().detailError, null);
+  context.nextRequest.resolve({ headRefOid: "first", files: [] });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ui.state().previewHeadRefOid, "first");
+  assert.equal(nodes.get("decision-comment").value, "Keep my feedback");
 });
 
 test("older PR detail responses and errors cannot overwrite a newer selected PR", async () => {

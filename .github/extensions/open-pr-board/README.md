@@ -53,6 +53,9 @@ authenticated `gh` CLI.
   Queued reviews and manual approval moves retain their original commit SHA, so a
   refresh cannot carry those approval choices onto newer commits. Legacy reviews or
   approval moves without a recorded SHA must be reviewed or explicitly moved again.
+  Moves carry the client's displayed SHA even if polling updates the board before the
+  request arrives. Delayed feedback actions retain their original SHA so new commits
+  still return to Unreviewed. A successful refresh retries a failed open preview.
   Only one GitHub action can run per PR at a time.
 - **Reset board** — after a second click to confirm, clear every local AI review,
   queued review, manual move, recorded action, and history entry, then reload open PRs.
