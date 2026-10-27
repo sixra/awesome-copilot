@@ -437,7 +437,7 @@ function renderDrawer() {
     for (const tab of ui.tabs) {
         tab.setAttribute("aria-selected", String(tab.dataset.tab === activeTab));
         if (tab.dataset.tab === "comments") {
-            const count = details.get(item.number)?.comments.length;
+            const count = details.get(item.number)?.comments?.length;
             tab.textContent = count != null ? `Comments (${count})` : "Comments";
         }
     }
