@@ -736,7 +736,7 @@ async function submitDecision(button, kind) {
     if (selectedNumber === item.number) renderDrawerHeader();
     button.textContent = DECISION_BUTTONS[kind];
     if (result) {
-        if (result.warning) toast(result.warning, { error: true, handoff: false, url: result.url });
+        if (result.warning) toast(result.warning, { error: true, url: result.url });
         else toast(`#${item.number}: ${result.status}.`, { url: result.url });
         if (selectedNumber === item.number) closeDrawer();
     }

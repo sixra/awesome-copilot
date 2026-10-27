@@ -234,13 +234,14 @@ test("sensitive assignments remain visible to redaction inside prefixes and JSON
     for (const raw of [
         "Request failed: accessToken=SYNTHETIC_SECRET",
         '{"details":{"token":"SYNTHETIC_SECRET"}}',
+        '{"message":"accessToken=SYNTHETIC_SECRET"}',
     ]) {
         const once = redactError(raw);
         assert.doesNotMatch(once, /SYNTHETIC_SECRET/);
         assert.doesNotMatch(redactError(once), /SYNTHETIC_SECRET/);
         await f.post("start", { ...f.body(), error: raw });
     }
-    assert.equal(prompts.length, 2);
+    assert.equal(prompts.length, 3);
     for (const prompt of prompts) assert.doesNotMatch(prompt, /SYNTHETIC_SECRET/);
 });
 
@@ -330,6 +331,36 @@ test("browser error handling preserves original errors and only sends on one exp
     assert.equal(f.calls[0].options.headers["X-Canvas-Error-Handoff-Token"], "browser-token");
     assert.equal(button.textContent, "Sent to agent");
     assert.match(row.children[3].textContent, /Child session created: child-one/);
+});
+
+test("each handoff control describes its own diagnostic", () => {
+    const f = browserFixture();
+    f.window.canvasErrorHandoff.report("First failure", "Refresh");
+    f.window.canvasErrorHandoff.report("Second failure", "Save");
+    const rows = f.body.children[0].children;
+    assert.notEqual(rows[0].children[0].id, rows[1].children[0].id);
+    for (const row of rows) {
+        assert.ok(row.children[0].id);
+        assert.equal(row.children[1].getAttribute("aria-describedby"), row.children[0].id);
+        assert.equal(row.children[2].getAttribute("aria-describedby"), row.children[0].id);
+    }
+});
+
+test("fetch capture honors explicit expected notices without suppressing actual failures", async () => {
+    const response = value => ({
+        ok: false, status: 400,
+        headers: { get: () => "application/json" },
+        clone: () => ({ json: async () => value }),
+    });
+    const notice = response({ error: "Local triage changed.", handoff: false });
+    const failure = response({ error: "Disk write failed." });
+    const f = browserFixture([() => notice, () => failure]);
+    assert.equal(await f.window.fetch("/api/update"), notice);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.body.children.length, 0);
+    assert.equal(await f.window.fetch("/api/update"), failure);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.match(f.body.children[0].children[0].children[0].textContent, /Disk write failed/);
 });
 
 test("the same message retains one handoff across operations and dismissal", async () => {

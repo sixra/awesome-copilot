@@ -155,7 +155,10 @@ export async function startBoardServer({ publicDir, api, serverFactory = createS
             if (!res.headersSent) {
                 const status = Number.isInteger(error?.status) ? error.status : 500;
                 if (status >= 500) reportError(api, error);
-                sendJson(res, status, { error: clientErrorMessage(error) });
+                sendJson(res, status, {
+                    error: clientErrorMessage(error),
+                    ...(error.handoff === false ? { handoff: false } : {}),
+                });
             } else {
                 reportError(api, error);
                 try {

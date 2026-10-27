@@ -142,7 +142,8 @@ session = await joinSession({
                     try { return await handler(args); }
                     catch (error) {
                         session.log(`Duplicate board ${key}: ${error.stack ?? error}`, { level: "warning", ephemeral: true });
-                        throw expectedError(error.message, 400);
+                        throw Object.assign(expectedError(error.message, 400),
+                            { handoff: error.handoff !== false });
                     }
                 }]));
                 // This loopback token is not a trusted caller identity: same-user local agents can fetch the page and token.

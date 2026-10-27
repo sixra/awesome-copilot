@@ -87,7 +87,8 @@ async function api(name, body) {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `Request failed (${response.status})`);
+    if (!response.ok) throw Object.assign(new Error(result.error || `Request failed (${response.status})`),
+        { handoff: result.handoff !== false });
     return result;
 }
 

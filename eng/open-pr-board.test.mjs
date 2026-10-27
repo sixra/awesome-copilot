@@ -416,6 +416,21 @@ test("tabs use roving focus with arrows and Home/End, and label their panel", as
   assert.equal(tabs.filter(tab => tab.tabIndex === 0).length, 1);
 });
 
+test("partial decision failures retain a repair handoff without retrying the action", async () => {
+  const { ui, context, nodes } = await createUI();
+  ui.select(1);
+  context.nextRequest = deferred();
+  vm.runInContext("globalThis.notices = []; toast = (text, options) => notices.push({text, options});", context);
+  const button = nodes.get("decision-comment");
+  await ui.submitDecision(button, "comment");
+  const submitting = ui.submitDecision(button, "comment");
+  context.nextRequest.resolve({ status: "comment-submitted", warning: "Comment posted but local receipt failed." });
+  await submitting;
+  assert.equal(context.notices[0].options.error, true);
+  assert.notEqual(context.notices[0].options.handoff, false);
+  assert.match(context.notices[0].text, /local receipt failed/);
+});
+
 test("all decision buttons stay disabled while an action is pending", async () => {
   const { ui, context, nodes } = await createUI();
   ui.select(1);

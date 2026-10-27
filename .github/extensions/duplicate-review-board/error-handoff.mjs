@@ -90,15 +90,18 @@ export function installErrorHandoff(config, redact) {
         }
         const row = document.createElement("section");
         const text = document.createElement("p");
+        text.id = `canvas-error-${crypto.randomUUID()}`;
         text.textContent = `${safeOperation}: ${safeMessage}`;
         text.style.whiteSpace = "pre-wrap";
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = "Send to agent";
+        button.setAttribute("aria-describedby", text.id);
         button.title = "Start a child session to investigate this error. No session starts until you click.";
         const dismiss = document.createElement("button");
         dismiss.type = "button";
         dismiss.textContent = "Dismiss";
+        dismiss.setAttribute("aria-describedby", text.id);
         dismiss.style.marginLeft = "8px";
         dismiss.onclick = () => {
             row.remove();
@@ -158,6 +161,7 @@ export function installErrorHandoff(config, redact) {
             const response = await originalFetch(...args);
             if (response.headers.get("content-type")?.includes("application/json")) {
                 response.clone().json().then(value => {
+                    if (value?.handoff === false) return;
                     const message = typeof value?.error === "string" ? value.error : value?.error?.message;
                     if (message) report(message, operation);
                     else if (!response.ok) report(value?.message || `Request failed (${response.status}).`, operation);

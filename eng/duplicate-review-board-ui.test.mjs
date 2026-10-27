@@ -179,6 +179,14 @@ test("guidance and reconnect styling do not authorize repair handoffs", async ()
     assert.equal(h.nodes.message.getAttribute("data-agent-error"), undefined);
 });
 
+test("API expected-notice classification survives the renderer catch", async () => {
+    const h = await harness(async () => response({ error: "Local triage changed.", handoff: false }, false));
+    await h.context.run(h.nodes.import, () => h.context.api("update", {}));
+    assert.equal(h.nodes.message.textContent, "Local triage changed.");
+    assert.equal(h.nodes.message.error, true);
+    assert.equal(h.nodes.message.getAttribute("data-agent-error"), undefined);
+});
+
 test("hide published keeps unconfirmed publication intents visible and snapshot rerender restores group focus", async () => {
     const h = await harness();
     const items = [

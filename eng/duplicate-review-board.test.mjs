@@ -487,7 +487,11 @@ test("local decision updates are UI-only and reject stale saves", async (t) => {
     const changes = { number: 12, id: item.id, column: "consolidate", note: "Saved", draft: item.draft };
     assert.equal((await update(changes)).status, 400);
     assert.equal((await update({ ...changes, expectedRevision: item.revision })).status, 200);
-    assert.equal((await update({ ...changes, note: "Stale", expectedRevision: item.revision })).status, 400);
+    const stale = await update({ ...changes, note: "Stale", expectedRevision: item.revision });
+    assert.equal(stale.status, 400);
+    const notice = await stale.json();
+    assert.match(notice.error, /Local triage changed/);
+    assert.equal(notice.handoff, false);
     assert.equal((await uiBoard()).items[0].note, "Saved");
     assert.equal((await act("get_board")).items[0].note, undefined);
 });
