@@ -75,10 +75,12 @@ agent using `session.send`, and the parent uses `create_session` and reports the
 actual returned child ID (or a creation error) through the canvas's
 `record_error_handoff` action. **Message admission is not success.** While the
 parent is busy or waiting for approval, the tray remains pending. After two
-minutes without confirmation, it tells the user to inspect the parent
+minutes from the initial dispatch without confirmation (including stalled network
+requests or response bodies), it tells the user to inspect the parent
 conversation; it never automatically creates another child. Dispatch failures,
 child-creation failures and uncertain receipts remain visible rather than showing
 a successful handoff. Closing the canvas invalidates its outstanding receipts.
+Receipts remain visible until explicitly dismissed; new diagnostics do not evict them.
 Handoff POSTs also require a random per-instance capability token delivered only
 in the canvas URL fragment, not HTTP-served HTML or scripts. Origin and Host headers alone cannot
 authorize a handoff, and one instance cannot read or submit another's requests.
@@ -102,7 +104,8 @@ downloads, SSE and API responses retain their original delivery behavior. Existi
 CSPs, including nonce-only and inline-only script policies, are preserved.
 
 The client detects failed same-origin fetches and explicitly marked board-owned
-error surfaces (including error toasts), excluding rendered Markdown/file content.
+error surfaces (including marked failure toasts), excluding rendered Markdown/file content.
+Missing-input prompts and other expected workflow notices are not marked for handoff.
 Cancellation and content-invalidation notices are not repair errors. Identical
 redacted messages share one handoff for the document lifetime, even after dismissal;
 the first operation is retained as context.

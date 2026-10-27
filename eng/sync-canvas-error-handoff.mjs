@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const template = (await readFile(path.join(root, "eng", "canvas-error-handoff", "runtime.mjs"), "utf8")).replace(/\r\n/g, "\n");
 const check = process.argv.includes("--check");
-const defaults = "[data-agent-error], .toast.error";
+const defaults = "[data-agent-error]";
 let count = 0;
 let stale = false;
 for (const parent of [path.join(".github", "extensions")]) {

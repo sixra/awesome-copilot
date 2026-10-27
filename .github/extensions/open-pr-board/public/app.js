@@ -119,10 +119,10 @@ function relativeTime(iso) {
     return new Date(iso).toLocaleDateString();
 }
 
-function toast(message, { error = false, url } = {}) {
+function toast(message, { error = false, handoff = error, url } = {}) {
     const node = h(
         "div",
-        { class: error ? "toast error" : "toast" },
+        { class: error ? "toast error" : "toast", ...(handoff ? { "data-agent-error": "" } : {}) },
         message,
         url ? " " : null,
         url ? h("a", { href: url, target: "_blank", rel: "noreferrer noopener" }, "View") : null,
@@ -374,7 +374,7 @@ async function bulkAction(columnId, kind) {
     if (kind === "close" || kind === "request-changes") {
         const missing = items.filter((item) => !item.comment.trim());
         if (missing.length) {
-            toast(`Stage feedback for ${missing.map((item) => `#${item.number}`).join(", ")} before actioning this column.`, { error: true });
+            toast(`Stage feedback for ${missing.map((item) => `#${item.number}`).join(", ")} before actioning this column.`, { error: true, handoff: false });
             return;
         }
     }
@@ -736,7 +736,7 @@ async function submitDecision(button, kind) {
     if (selectedNumber === item.number) renderDrawerHeader();
     button.textContent = DECISION_BUTTONS[kind];
     if (result) {
-        if (result.warning) toast(result.warning, { error: true, url: result.url });
+        if (result.warning) toast(result.warning, { error: true, handoff: false, url: result.url });
         else toast(`#${item.number}: ${result.status}.`, { url: result.url });
         if (selectedNumber === item.number) closeDrawer();
     }
@@ -773,7 +773,7 @@ el.reset.addEventListener("click", async (event) => {
     const result = await run(event.currentTarget, () => api("/api/reset", { method: "POST" }));
     if (!result) return;
     closeDrawer();
-    if (result.warning) toast(result.warning, { error: true });
+    if (result.warning) toast(result.warning, { error: true, handoff: false });
     else toast("Board reset. Local reviews and history cleared; GitHub was not changed.");
 });
 

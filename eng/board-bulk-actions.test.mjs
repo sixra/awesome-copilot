@@ -73,6 +73,7 @@ for (const boardName of ["open-pr-board", "external-plugin-review-board"]) {
         assert.equal(ui.calls.length, 0);
         assert.equal(ui.confirmations.length, 0);
         assert.match(ui.messages[0].text, /#2/);
+        assert.equal(ui.messages[0].options.handoff, false);
     });
 
     test(`${boardName}: cancelling confirmation never calls an API`, async () => {

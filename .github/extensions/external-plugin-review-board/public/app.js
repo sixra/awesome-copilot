@@ -78,8 +78,8 @@ async function api(method, url, body) {
     return data;
 }
 
-function toast(message, { error = false, link } = {}) {
-    const el = h("div", { class: `toast${error ? " error" : ""}`, role: error ? "alert" : "status" }, message);
+function toast(message, { error = false, handoff = error, link } = {}) {
+    const el = h("div", { class: `toast${error ? " error" : ""}`, role: error ? "alert" : "status", ...(handoff ? { "data-agent-error": "" } : {}) }, message);
     if (link) el.append(" ", h("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, "View ↗"));
     ui.toasts.append(el);
     setTimeout(() => el.remove(), error ? 8000 : 5000);
@@ -253,7 +253,7 @@ async function bulkAction(columnId, kind) {
     if (kind === "reject") {
         const missing = items.filter((item) => !item.comment.trim().replace(/^\/(approve|reject)\b\s*/i, "").trim());
         if (missing.length) {
-            toast(`Stage a rejection reason for ${missing.map((item) => `#${item.number}`).join(", ")} before rejecting this column.`, { error: true });
+            toast(`Stage a rejection reason for ${missing.map((item) => `#${item.number}`).join(", ")} before rejecting this column.`, { error: true, handoff: false });
             return;
         }
     }
@@ -674,7 +674,7 @@ async function decide(kind) {
                 ? "Request fixes needs a description of what the submitter must change."
                 : null;
     if (problem) {
-        toast(problem, { error: true });
+        toast(problem, { error: true, handoff: false });
         updatePreview();
         return;
     }
