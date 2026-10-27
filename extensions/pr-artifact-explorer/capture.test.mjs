@@ -135,3 +135,55 @@ test("controlled browser keeps real history, current state and viewport/zoom sep
   await browser.close();
   assert.equal(browser.active, false);
 });
+
+test("an invalid initial viewport is rejected before any browser is launched", async () => {
+  const previous = process.env.PR_ARTIFACT_EXPLORER_CHROMIUM;
+  // If a launch were attempted, this nonexistent executable would surface a different error code.
+  process.env.PR_ARTIFACT_EXPLORER_CHROMIUM = join(tmpdir(), "no-such-chromium");
+  try {
+    const controlled = new ControlledBrowser();
+    await assert.rejects(controlled.navigate("http://127.0.0.1:9/", { width: 1, height: 1 }), { code: "invalid_viewport" });
+    assert.equal(controlled.active, false);
+    assert.deepEqual(await controlled.close(), { clean: true });
+  } finally {
+    if (previous === undefined) delete process.env.PR_ARTIFACT_EXPLORER_CHROMIUM;
+    else process.env.PR_ARTIFACT_EXPLORER_CHROMIUM = previous;
+  }
+});
+
+test("an explicit viewport applies to an already-open controlled session, and omitting it keeps the current one", async (t) => {
+  const server = createServer((req, res) => {
+    res.setHeader("content-type", "text/html");
+    res.end(`<meta name=viewport content="width=device-width,initial-scale=1"><body><div id=t></div><script>document.getElementById('t').textContent=innerWidth;</script></body>`);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const browser = new ControlledBrowser();
+  t.after(async () => {
+    await browser.close();
+    server.close();
+  });
+  let state;
+  try {
+    state = await browser.navigate(`${base}/a`, { preset: "desktop" });
+  } catch (error) {
+    if (error.code === "playwright_missing" || error.code === "chromium_missing") return t.skip(error.message.split("\n")[0]);
+    throw error;
+  }
+  assert.equal(state.page.innerWidth, 1440);
+  state = await browser.navigate(`${base}/b`, { preset: "mobile" });
+  assert.equal(state.page.innerWidth, 390);
+  state = await browser.navigate(`${base}/c`);
+  assert.equal(state.page.innerWidth, 390, "no viewport options keeps the current settings");
+});
+
+test("closing while the browser is still starting leaves nothing running", async (t) => {
+  const browser = new ControlledBrowser();
+  const pending = browser.navigate("http://127.0.0.1:9/", { preset: "desktop" }).catch((error) => error);
+  const closed = await browser.close();
+  const outcome = await pending;
+  if (outcome?.code === "playwright_missing" || outcome?.code === "chromium_missing") return t.skip(outcome.message.split("\n")[0]);
+  assert.equal(browser.active, false);
+  assert.equal(closed.clean, true);
+  assert.ok(outcome instanceof CaptureError, "the interrupted navigation fails explicitly instead of resolving on a torn-down session");
+});

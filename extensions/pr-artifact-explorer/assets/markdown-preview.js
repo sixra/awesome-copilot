@@ -17,26 +17,59 @@
     return /^(https?:|mailto:|#)/i.test(value) ? value : "";
   }
 
+  // Linear code-span scanner: a run of N backticks closes at the next run of exactly N, otherwise it is literal.
+  function stashCodeSpans(escaped, codes) {
+    const runs = [];
+    for (let i = 0; i < escaped.length;) {
+      if (escaped[i] !== "`") { i += 1; continue; }
+      let j = i;
+      while (j < escaped.length && escaped[j] === "`") j += 1;
+      runs.push({ start: i, end: j });
+      i = j;
+    }
+    if (!runs.length) return escaped;
+    const next = new Array(runs.length).fill(-1);
+    const seen = new Map();
+    for (let k = runs.length - 1; k >= 0; k -= 1) {
+      const length = runs[k].end - runs[k].start;
+      next[k] = seen.get(length) ?? -1;
+      seen.set(length, k);
+    }
+    let out = "";
+    let cursor = 0;
+    for (let k = 0; k < runs.length; k += 1) {
+      if (runs[k].start < cursor || next[k] < 0) continue;
+      out += escaped.slice(cursor, runs[k].start);
+      codes.push(`<code>${escaped.slice(runs[k].end, runs[next[k]].start).trim()}</code>`);
+      out += `\u0000${codes.length - 1}\u0000`;
+      cursor = runs[next[k]].end;
+    }
+    return out + escaped.slice(cursor);
+  }
+
   // Input is HTML-escaped first, so only markup produced here reaches the DOM.
   function inline(text) {
     const codes = [];
-    let out = esc(text).replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, (_m, _t, code) => {
-      codes.push(`<code>${code.trim()}</code>`);
-      return `\u0000${codes.length - 1}\u0000`;
-    });
+    const links = [];
+    // Placeholder delimiters must not be forgeable from the source text.
+    let out = stashCodeSpans(esc(String(text ?? "").replace(/[\u0000-\u0002]/g, "")), codes);
     out = out
       .replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;[^)]*&quot;)?\)/g, (_m, alt) => `<span class="md-image">[image: ${alt || "no description"}]</span>`)
+      // Link destinations are stashed so the emphasis rules below cannot rewrite characters inside an href.
       .replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+&quot;[^)]*&quot;)?\)/g, (_m, label, href) => {
         const safe = safeUrl(href.replaceAll("&amp;", "&"));
-        return safe
-          ? `<a href="${esc(safe)}" target="_blank" rel="noopener noreferrer">${label}</a>`
-          : label;
+        if (!safe) return label;
+        links.push(`<a href="${esc(safe)}" target="_blank" rel="noopener noreferrer">`);
+        return `\u0001${links.length - 1}\u0001${label}\u0002`;
       })
       .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, (_m, a, b) => `<strong>${a ?? b}</strong>`)
       .replace(/(^|[^*\w])\*([^*\s][^*]*)\*(?!\*)/g, (_m, pre, t) => `${pre}<em>${t}</em>`)
       .replace(/(^|[^_\w])_([^_\s][^_]*)_(?!\w)/g, (_m, pre, t) => `${pre}<em>${t}</em>`)
       .replace(/~~([^~]+)~~/g, "<del>$1</del>");
-    return out.replace(/\u0000(\d+)\u0000/g, (_m, i) => codes[Number(i)]);
+    return out
+      .replace(/\u0001(\d+)\u0001/g, (_m, i) => links[Number(i)])
+      .replaceAll("\u0002", "</a>")
+      .replace(/\u0000(\d+)\u0000/g, (_m, i) => codes[Number(i)]);
   }
 
   function splitRow(line) {
@@ -95,7 +128,8 @@
         const ordered = /\d/.test(list[2]);
         const items = [];
         while (i < lines.length) {
-          const m = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+          // [\s\S] rather than . so a line separator (U+2028/2029) inside an item cannot stall the parser.
+          const m = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+([\s\S]*)$/);
           if (m && /\d/.test(m[2]) === ordered && m[1].length < 2 + list[1].length) {
             items.push([m[3]]);
             i += 1;

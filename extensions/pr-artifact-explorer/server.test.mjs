@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
 import { after, before, test } from "node:test";
 import { createServer } from "node:http";
-import { startInstance, stopInstance } from "./server.mjs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// The server persists limits and jobs under COPILOT_HOME, so point it at a throwaway directory before it loads.
+const sharedHome = await mkdtemp(join(tmpdir(), "pae-server-test-"));
+process.env.COPILOT_HOME = sharedHome;
+const { startInstance, stopInstance } = await import("./server.mjs");
+const { limitPolicy } = await import("./limits.mjs");
+const { jobRegistry } = await import("./cache.mjs");
 
 const ID = "server-test";
 let entry;
@@ -21,6 +30,9 @@ before(async () => {
 after(async () => {
   await stopInstance(ID);
   await new Promise((resolve) => target.close(resolve));
+  await limitPolicy.flush();
+  await jobRegistry.flush();
+  await rm(sharedHome, { recursive: true, force: true });
 });
 
 const call = (path, { method = "GET", body, token = entry.token } = {}) =>

@@ -684,8 +684,12 @@ const RUN_STATUSES = new Set([
 const RUN_EVENT_PATTERN = /^[a-z_]{1,40}$/;
 const RUN_WORKFLOW_PATTERN = /^(?:\d{1,20}|[A-Za-z0-9_.-]{1,100}\.ya?ml)$/;
 export const RUNS_PER_PAGE = 30;
-// GitHub only exposes the first 1,000 results of a run search.
-const MAX_RUN_PAGES = 33;
+// GitHub only exposes the first 1,000 results of a run search; the last page is partial.
+const RUN_SEARCH_LIMIT = 1_000;
+const MAX_RUN_PAGES = Math.ceil(RUN_SEARCH_LIMIT / RUNS_PER_PAGE);
+const MAX_WORKFLOW_PAGES = 10;
+// GitHub's exclude_pull_requests only empties each run's pull_requests array, so these runs are filtered here.
+const PULL_REQUEST_EVENTS = new Set(["pull_request", "pull_request_target", "pull_request_review", "pull_request_review_comment"]);
 export const MAX_ARTIFACT_COUNT_RUNS = 30;
 
 export function normalizeRunFilters(filters = {}) {
@@ -724,21 +728,34 @@ function mapWorkflowRun(run) {
   };
 }
 
+// The file name is the readable selector, but only when the runs filter would accept it; otherwise use the numeric id.
+function workflowRef(workflow) {
+  const file = String(workflow.path ?? "").split("/").at(-1) ?? "";
+  return RUN_WORKFLOW_PATTERN.test(file) && /\.ya?ml$/.test(file) ? file : String(workflow.id);
+}
+
 export async function listWorkflows(token, repository) {
-  const payload = await githubRequest(
-    token,
-    `/repos/${repositoryPath(repository)}/actions/workflows?per_page=100`,
-  );
-  return (payload.workflows ?? []).map((workflow) => {
-    const file = String(workflow.path ?? "").split("/").at(-1) ?? "";
-    return {
-      id: workflow.id,
-      name: workflow.name,
-      path: workflow.path,
-      ref: /\.ya?ml$/.test(file) ? file : String(workflow.id),
-      state: workflow.state,
-    };
-  });
+  const workflows = [];
+  for (let page = 1; page <= MAX_WORKFLOW_PAGES; page++) {
+    const payload = await githubRequest(
+      token,
+      `/repos/${repositoryPath(repository)}/actions/workflows?per_page=100&page=${page}`,
+    );
+    const batch = payload.workflows ?? [];
+    workflows.push(...batch);
+    if (batch.length < 100 || workflows.length >= (Number(payload.total_count) || 0)) break;
+  }
+  return workflows.map((workflow) => ({
+    id: workflow.id,
+    name: workflow.name,
+    path: workflow.path,
+    ref: workflowRef(workflow),
+    state: workflow.state,
+  }));
+}
+
+function isPullRequestRun(run) {
+  return PULL_REQUEST_EVENTS.has(run.event) || run.pullRequests.length > 0;
 }
 
 export async function listWorkflowRuns(token, repository, filters = {}) {
@@ -750,7 +767,6 @@ export async function listWorkflowRuns(token, repository, filters = {}) {
   if (normalized.event) query.set("event", normalized.event);
   if (normalized.status) query.set("status", normalized.status);
   if (normalized.branch) query.set("branch", normalized.branch);
-  if (normalized.excludePullRequests) query.set("exclude_pull_requests", "true");
   const scope = normalized.workflow
     ? `/actions/workflows/${encodeURIComponent(normalized.workflow)}/runs`
     : "/actions/runs";
@@ -758,18 +774,24 @@ export async function listWorkflowRuns(token, repository, filters = {}) {
     token,
     `/repos/${repositoryPath(repository)}${scope}?${query}`,
   );
-  const runs = (payload.workflow_runs ?? []).map(mapWorkflowRun);
-  const totalCount = Math.max(Number(payload.total_count) || 0, runs.length);
-  const reachable = Math.min(totalCount, MAX_RUN_PAGES * RUNS_PER_PAGE);
+  const scanned = (payload.workflow_runs ?? []).map(mapWorkflowRun);
+  // Asking for pull_request runs explicitly overrides hiding them.
+  const hidePullRequests = normalized.excludePullRequests && !PULL_REQUEST_EVENTS.has(normalized.event);
+  const runs = hidePullRequests ? scanned.filter((run) => !isPullRequestRun(run)) : scanned;
+  const totalCount = Math.max(Number(payload.total_count) || 0, scanned.length);
+  const reachable = Math.min(totalCount, RUN_SEARCH_LIMIT);
+  // Paging follows the unfiltered results, so a filtered page can hold fewer than perPage runs (or none).
   return {
     filters: normalized,
     runs,
     totalCount,
+    scannedCount: scanned.length,
+    hiddenPullRequestRuns: scanned.length - runs.length,
     page: normalized.page,
     perPage: RUNS_PER_PAGE,
     hasPrevious: normalized.page > 1,
     hasMore: normalized.page * RUNS_PER_PAGE < reachable,
-    capped: totalCount > MAX_RUN_PAGES * RUNS_PER_PAGE,
+    capped: totalCount > RUN_SEARCH_LIMIT,
   };
 }
 

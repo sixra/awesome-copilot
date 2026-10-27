@@ -3890,7 +3890,7 @@ function runsPageHtml(repository, filters) {
     </section>`;
 }
 
-function runListEmptyHtml(filters, { artifactsHidden = false, nextHref = null } = {}) {
+function runListEmptyHtml(filters, { artifactsHidden = false, nextHref = null, hiddenPulls = 0 } = {}) {
   if (artifactsHidden) {
     return `<div class="blankslate" id="run-list-empty">
       ${icon("package")}
@@ -3902,15 +3902,19 @@ function runListEmptyHtml(filters, { artifactsHidden = false, nextHref = null } 
       </div>
     </div>`;
   }
-  const hint =
-    filters.event === "pull_request" && filters.excludePullRequests
-      ? "Pull request runs are hidden. Turn off Hide PR runs to see them."
-      : "Adjust the event, status, branch or workflow filters.";
+  const hint = hiddenPulls
+    ? `${hiddenPulls.toLocaleString()} pull request run${hiddenPulls === 1 ? " is" : "s are"} hidden on this page. Check older runs, or turn off Hide PR runs.`
+    : "Adjust the event, status, branch or workflow filters.";
+  const actions = [
+    hiddenPulls ? `<button class="app-button app-button-small" type="button" data-run-toggle="excludePullRequests">Show pull request runs</button>` : "",
+    nextHref ? `<a class="app-button app-button-small" href="${escapeHtml(nextHref)}">Older runs ${icon("chevron-right")}</a>` : "",
+    runFiltersActive(filters) ? `<button class="app-button app-button-small" type="button" data-run-reset>Clear filters</button>` : "",
+  ].filter(Boolean).join("");
   return `<div class="blankslate">
     ${icon("workflow")}
     <h2>No workflow runs match</h2>
     <p>${escapeHtml(hint)}</p>
-    ${runFiltersActive(filters) ? `<div class="blankslate-actions"><button class="app-button app-button-small" type="button" data-run-reset>Clear filters</button></div>` : ""}
+    ${actions ? `<div class="blankslate-actions">${actions}</div>` : ""}
   </div>`;
 }
 
@@ -3921,21 +3925,27 @@ function updateRunList(payload, repository, filters) {
   if (!rowsHost || !footer || !heading) return;
   const runs = payload.runs ?? [];
   const total = Number(payload.totalCount) || runs.length;
-  const first = runs.length ? (payload.page - 1) * payload.perPage + 1 : 0;
-  const last = first ? first + runs.length - 1 : 0;
+  // Paging follows GitHub's unfiltered results, so the range counts scanned runs, not the ones shown.
+  const scanned = Number(payload.scannedCount ?? runs.length);
+  const hiddenPulls = Number(payload.hiddenPullRequestRuns) || 0;
+  const first = scanned ? (payload.page - 1) * payload.perPage + 1 : 0;
+  const last = first ? first + scanned - 1 : 0;
   const nextHref = payload.hasMore ? runsHash(repository, { ...filters, page: filters.page + 1 }) : null;
   const pageLink = (page, label, enabled) =>
     enabled
       ? `<a class="app-button app-button-small" href="${escapeHtml(runsHash(repository, { ...filters, page }))}">${label}</a>`
       : `<button class="app-button app-button-small" type="button" disabled>${label}</button>`;
-  heading.textContent = `${total.toLocaleString()} workflow run${total === 1 ? "" : "s"}`;
+  const countLabel = filters.excludePullRequests && filters.event !== "pull_request"
+    ? `${runs.length.toLocaleString()} workflow run${runs.length === 1 ? "" : "s"} on this page`
+    : `${total.toLocaleString()} workflow run${total === 1 ? "" : "s"}`;
+  heading.textContent = countLabel;
   rowsHost.removeAttribute("aria-busy");
   rowsHost.innerHTML = runs.length
     ? `${runs.map((run) => runRowHtml(run, repository)).join("")}<div hidden data-run-empty-host>${runListEmptyHtml(filters, { artifactsHidden: true, nextHref })}</div>`
-    : runListEmptyHtml(filters);
+    : runListEmptyHtml(filters, { nextHref, hiddenPulls });
   footer.hidden = false;
   footer.innerHTML = `
-    <span>${runs.length ? `Showing ${first.toLocaleString()}–${last.toLocaleString()} of ${total.toLocaleString()}` : "Nothing to show"}${payload.capped ? " · GitHub exposes only the newest 1,000 runs for a search" : ""}<span id="run-list-artifact-note"></span></span>
+    <span>${scanned ? `Showing runs ${first.toLocaleString()}–${last.toLocaleString()} of ${total.toLocaleString()}` : "Nothing to show"}${hiddenPulls ? ` · ${hiddenPulls.toLocaleString()} pull request run${hiddenPulls === 1 ? "" : "s"} hidden` : ""}${payload.capped ? " · GitHub exposes only the newest 1,000 runs for a search" : ""}<span id="run-list-artifact-note"></span></span>
     <span class="run-pager">${pageLink(filters.page - 1, `${icon("chevron-left")} Newer`, payload.hasPrevious)}${pageLink(filters.page + 1, `Older ${icon("chevron-right")}`, payload.hasMore)}</span>`;
 }
 

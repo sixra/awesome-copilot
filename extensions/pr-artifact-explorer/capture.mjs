@@ -128,13 +128,30 @@ export async function closeBrowserBounded(browser, timeoutMs = CLOSE_TIMEOUT_MS)
   return closeBounded(browser, timeoutMs);
 }
 
+/** Waits for a promise to settle (either way), but never longer than the close bound; false on timeout. */
+async function settleBounded(promise, timeoutMs = CLOSE_TIMEOUT_MS) {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise.then(() => true, () => true), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function hasViewportOptions(options) {
+  return ["preset", "width", "height", "orientation", "deviceScaleFactor"].some((key) => options?.[key] != null);
+}
+
 /** Bounded close of any Playwright closable (browser or context); false only on timeout. */
 async function closeBounded(target, timeoutMs = CLOSE_TIMEOUT_MS) {
   if (!target) return true;
   let timer;
   const timeout = new Promise((resolve) => {
+    // Referenced on purpose: an unsettled close must still reach this timeout before Node can exit.
     timer = setTimeout(() => resolve(false), timeoutMs);
-    timer.unref?.();
   });
   try {
     return await Promise.race([Promise.resolve().then(() => target.close()).then(() => true, () => true), timeout]);
@@ -217,6 +234,7 @@ export class ControlledBrowser {
   #page = null;
   #viewport = null;
   #starting = null;
+  #epoch = 0;
   #colorScheme = undefined;
 
   get active() {
@@ -238,10 +256,29 @@ export class ControlledBrowser {
 
   async #ensure(viewportOptions) {
     if (this.#page) return;
+    // Validate before launching so invalid input never allocates a browser.
+    const viewport = resolveViewport(viewportOptions);
+    const epoch = this.#epoch;
     this.#starting ??= (async () => {
-      this.#browser = await launchChromium();
-      this.#viewport = resolveViewport(viewportOptions);
-      await this.#open();
+      const browser = await launchChromium();
+      if (epoch !== this.#epoch) {
+        await closeBrowserBounded(browser);
+        throw new CaptureError("closed", "The controlled browser was closed while it was starting.");
+      }
+      this.#browser = browser;
+      this.#viewport = viewport;
+      try {
+        await this.#open();
+      } catch (error) {
+        this.#browser = this.#context = this.#page = null;
+        await closeBrowserBounded(browser);
+        throw error;
+      }
+      if (epoch !== this.#epoch) {
+        this.#browser = this.#context = this.#page = null;
+        await closeBrowserBounded(browser);
+        throw new CaptureError("closed", "The controlled browser was closed while it was starting.");
+      }
     })().finally(() => {
       this.#starting = null;
     });
@@ -276,7 +313,10 @@ export class ControlledBrowser {
 
   async navigate(url, viewportOptions = {}) {
     const target = assertHttpUrl(url);
+    const wasActive = Boolean(this.#page);
     await this.#ensure(viewportOptions);
+    // An already-open session keeps its settings unless this call names a new viewport.
+    if (wasActive && hasViewportOptions(viewportOptions)) await this.setViewport(viewportOptions);
     try {
       const response = await this.#page.goto(target.href, { waitUntil: "load", timeout: 30_000 });
       return { ...(await this.#state()), status: response?.status() ?? null };
@@ -379,9 +419,14 @@ export class ControlledBrowser {
   }
 
   async close() {
+    this.#epoch += 1;
     const browser = this.#browser;
+    const starting = this.#starting;
     this.#browser = this.#context = this.#page = null;
-    const clean = await closeBrowserBounded(browser);
-    return { clean };
+    const [closed, settled] = await Promise.all([
+      closeBrowserBounded(browser),
+      starting ? settleBounded(starting) : true,
+    ]);
+    return { clean: closed && settled };
   }
 }

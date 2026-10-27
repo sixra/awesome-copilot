@@ -67,7 +67,7 @@ test("run filters are normalized and unsafe values are dropped", () => {
   );
   const bad = normalizeRunFilters({ event: "a&b=c", status: "bogus", workflow: "../x", page: "-4" });
   assert.deepEqual(bad, { event: "", status: "", workflow: "", branch: "", excludePullRequests: false, page: 1 });
-  assert.equal(normalizeRunFilters({ page: "9999" }).page, 33);
+  assert.equal(normalizeRunFilters({ page: "9999" }).page, 34);
   assert.equal(normalizeRunFilters({ workflow: "12345" }).workflow, "12345");
 });
 
@@ -90,18 +90,22 @@ test("listWorkflowRuns queries the repository runs endpoint with filters and map
   assert.equal(calls[0].searchParams.get("event"), "schedule");
   assert.equal(calls[0].searchParams.get("status"), "success");
   assert.equal(calls[0].searchParams.get("branch"), "main");
-  assert.equal(calls[0].searchParams.get("exclude_pull_requests"), "true");
+  assert.equal(calls[0].searchParams.has("exclude_pull_requests"), false, "GitHub's flag only empties pull_requests, so it is not used");
   assert.equal(calls[0].searchParams.get("page"), "2");
   assert.equal(calls[0].searchParams.get("per_page"), "30");
   assert.equal(result.totalCount, 61);
   assert.equal(result.page, 2);
   assert.equal(result.hasPrevious, true);
   assert.equal(result.hasMore, true);
-  assert.equal(result.runs[0].title, "Nightly 101");
+  // Run 101 is linked to PR 9, so hiding pull request runs drops it; paging and counts still follow the unfiltered page.
+  assert.deepEqual(result.runs.map((run) => run.id), [102]);
+  assert.equal(result.scannedCount, 2);
+  assert.equal(result.hiddenPullRequestRuns, 1);
+  assert.equal(result.totalCount, 61);
+  assert.equal(result.runs[0].title, "Nightly 102");
   assert.equal(result.runs[0].branch, "main");
   assert.equal(result.runs[0].actor, "octo");
-  assert.deepEqual(result.runs[0].pullRequests, [9]);
-  assert.deepEqual(result.runs[1].pullRequests, []);
+  assert.deepEqual(result.runs[0].pullRequests, []);
 });
 
 test("listWorkflowRuns scopes to a workflow and reports paging limits", async (t) => {
@@ -113,8 +117,32 @@ test("listWorkflowRuns scopes to a workflow and reports paging limits", async (t
   assert.equal(result.capped, true);
   assert.equal(result.hasPrevious, false);
 
-  const last = await listWorkflowRuns("token", "o/r", { page: 33 });
+  const secondLast = await listWorkflowRuns("token", "o/r", { page: 33 });
+  assert.equal(secondLast.hasMore, true, "the final partial page of the 1,000 reachable runs is still reachable");
+  const last = await listWorkflowRuns("token", "o/r", { page: 34 });
   assert.equal(last.hasMore, false);
+});
+
+test("hiding pull request runs filters by event and linked PRs, and keeps everything when not asked", async (t) => {
+  mockFetch(t, () =>
+    json({
+      total_count: 4,
+      workflow_runs: [
+        rawRun(101, { event: "pull_request" }),
+        rawRun(102, { event: "push", pull_requests: [{ number: 3 }] }),
+        rawRun(103, { event: "push" }),
+        rawRun(104, { event: "schedule" }),
+      ],
+    }),
+  );
+  const hidden = await listWorkflowRuns("token", "o/r", { excludePullRequests: true });
+  assert.deepEqual(hidden.runs.map((run) => run.id), [103, 104]);
+  assert.equal(hidden.hiddenPullRequestRuns, 2);
+  const shown = await listWorkflowRuns("token", "o/r", {});
+  assert.equal(shown.runs.length, 4);
+  assert.equal(shown.hiddenPullRequestRuns, 0);
+  const explicit = await listWorkflowRuns("token", "o/r", { excludePullRequests: true, event: "pull_request" });
+  assert.equal(explicit.runs.length, 4, "asking for pull_request runs overrides hiding them");
 });
 
 test("listWorkflows exposes a file name or id reference for filtering", async (t) => {
@@ -123,11 +151,26 @@ test("listWorkflows exposes a file name or id reference for filtering", async (t
       workflows: [
         { id: 1, name: "CI", path: ".github/workflows/ci.yml", state: "active" },
         { id: 2, name: "Copilot", path: "dynamic/copilot-swe-agent/copilot", state: "active" },
+        { id: 3, name: "CI Tests", path: ".github/workflows/CI Tests.yml", state: "active" },
       ],
     }),
   );
   const workflows = await listWorkflows("token", "o/r");
-  assert.deepEqual(workflows.map((workflow) => workflow.ref), ["ci.yml", "2"]);
+  assert.deepEqual(workflows.map((workflow) => workflow.ref), ["ci.yml", "2", "3"]);
+  // Every selector must survive the runs filter, otherwise choosing the workflow would silently list all of them.
+  for (const workflow of workflows) assert.equal(normalizeRunFilters({ workflow: workflow.ref }).workflow, workflow.ref);
+});
+
+test("workflow lists are fetched across pages", async (t) => {
+  const page = (start, count) => Array.from({ length: count }, (_, index) => ({ id: start + index, name: `W${start + index}`, path: `.github/workflows/w${start + index}.yml`, state: "active" }));
+  const calls = mockFetch(t, (url) => {
+    const number = Number(url.searchParams.get("page"));
+    return json({ total_count: 130, workflows: number === 1 ? page(1, 100) : number === 2 ? page(101, 30) : [] });
+  });
+  const workflows = await listWorkflows("token", "o/r");
+  assert.equal(workflows.length, 130);
+  assert.equal(workflows.at(-1).ref, "w130.yml");
+  assert.equal(calls.length, 2);
 });
 
 test("getWorkflowRun returns the run and its artifacts in the shared payload shape", async (t) => {
