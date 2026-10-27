@@ -455,7 +455,7 @@ export function ExtensionsCatalog({
                                 href={vscodeInstallUrl}
                                 variant="secondary"
                                 hasArrow={false}
-                                aria-label={`Install ${ext.name} in VS Code`}
+                                aria-label={`Install in VS Code: ${ext.name}`}
                               >
                                 Install in VS Code
                               </Button>

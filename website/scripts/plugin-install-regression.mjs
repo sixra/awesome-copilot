@@ -22,7 +22,7 @@ try {
       const url = new URL(await link.getAttribute("href"));
       assert.equal(url.searchParams.get("source"), "github/awesome-copilot");
       assert.ok(url.searchParams.get("plugin"));
-      assert.match(await link.getAttribute("aria-label"), /^Install .+ in VS Code$/);
+      assert.match(await link.getAttribute("aria-label"), /^Install in VS Code: .+$/);
       assert.equal(await link.evaluate((element) => element.parentElement.closest("a, button")), null,
         "install action is not nested inside the card link");
     }

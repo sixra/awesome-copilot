@@ -376,7 +376,7 @@ export function PluginsCatalog({
                             href={buildVSCodePluginInstallUrl(plugin.name)}
                             variant="primary"
                             hasArrow={false}
-                            aria-label={`Install ${plugin.name} in VS Code`}
+                            aria-label={`Install in VS Code: ${plugin.name}`}
                           >
                             Install in VS Code
                           </Button>
