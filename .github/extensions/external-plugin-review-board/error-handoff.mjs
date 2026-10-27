@@ -50,7 +50,7 @@ export function redactError(value) {
             const fragment = text.slice(start, end + 1);
             let sanitized = fragment;
             try { sanitized = JSON.stringify(sanitizeJson(JSON.parse(fragment), nesting + 1)); }
-            catch { /* Ordinary bracketed text still uses text redaction below. */ }
+            catch { sanitized = "[redacted invalid JSON diagnostic]"; }
             output += text.slice(cursor, start) + sanitized;
             cursor = end + 1;
             start = end;
@@ -381,7 +381,9 @@ input { requestId: ${JSON.stringify(requestId)}, status: "created", sessionId: <
 If creation fails, record status "failed" with error: <safe failure summary> instead.
 Message admission is NOT creation. Do not claim success or retry creation after an uncertain receipt; inspect existing sessions first.`;
                 try {
-                    await session.send({ prompt });
+                    Promise.resolve(session.send({ prompt })).catch(error => {
+                        if (item.status === "pending") item.dispatchError = redactError(error.message);
+                    });
                 } catch (error) {
                     if (item.status === "pending") item.dispatchError = redactError(error.message);
                 }

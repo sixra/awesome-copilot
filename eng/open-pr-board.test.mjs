@@ -489,7 +489,7 @@ async function createUI() {
           number, title: "Example", labels: [], createdAt: "2026-10-01", column: "unreviewed", headRefOid: "first",
         })) };
       },
-      state: () => ({ detail, detailError, activeTab, previewHeadRefOid }),
+      state: () => ({ detail, detailError, detailErrorHandoff, activeTab, previewHeadRefOid }),
       render: renderDrawerBody,
     };
   `, context);
@@ -542,6 +542,7 @@ test("a cached preview from another commit cannot authorize approval", async () 
   assert.equal(ui.state().previewHeadRefOid, null);
   assert.equal(ui.state().detail, null);
   assert.match(ui.state().detailError, /changed while loading/);
+  assert.equal(ui.state().detailErrorHandoff, false);
 });
 
 test("a successful same-head refresh retries a failed preview without disturbing the draft", async () => {

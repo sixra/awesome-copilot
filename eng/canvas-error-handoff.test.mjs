@@ -168,8 +168,23 @@ test("a confirmed receipt survives a later transport rejection", async t => {
     await admission;
     f.action.handler({ instanceId: "panel-one", input: { requestId: body.id, status: "created", sessionId: "real-child" } });
     rejectSend(new Error("Transport disconnected after confirmation"));
-    assert.deepEqual((await response).value, { status: "created", sessionId: "real-child" });
+    const initial = (await response).value;
+    assert.ok(["pending", "created"].includes(initial.status));
     assert.deepEqual((await f.post("status", { id: body.id })).value, { status: "created", sessionId: "real-child" });
+});
+
+test("stalled dispatch returns promptly and permits created or failed receipts without resending", { timeout: 3000 }, async t => {
+    let sends = 0;
+    const f = await fixture(t, { send: () => { sends++; return new Promise(() => {}); } });
+    for (const receipt of [{ status: "created", sessionId: "real-child" }, { status: "failed", error: "Creation refused" }]) {
+        const body = f.body();
+        const response = await f.post("start", body);
+        assert.equal(response.value.status, "pending");
+        f.action.handler({ instanceId: "panel-one", input: { requestId: body.id, ...receipt } });
+        assert.deepEqual((await f.post("status", { id: body.id })).value, receipt);
+        await f.post("start", body);
+    }
+    assert.equal(sends, 2);
 });
 
 test("uncertain dispatch remains visible and accepts a later definitive receipt without resending", async t => {
@@ -178,7 +193,7 @@ test("uncertain dispatch remains visible and accepts a later definitive receipt 
     const body = f.body();
     const first = await f.post("start", body);
     assert.equal(first.value.status, "pending");
-    assert.match(first.value.dispatchError, /Connection lost/);
+    assert.match((await f.post("status", { id: body.id })).value.dispatchError, /Connection lost/);
     assert.equal((await f.post("start", body)).value.status, "pending");
     assert.equal(sends, 1);
     f.action.handler({ instanceId: "panel-one", input: { requestId: body.id, status: "created", sessionId: "late-real-child" } });
@@ -187,7 +202,9 @@ test("uncertain dispatch remains visible and accepts a later definitive receipt 
 
 test("dispatch and child-creation failures are visible, never success-shaped", async t => {
     const f = await fixture(t, { send: async () => { throw new Error("dispatch failed; password=secret"); } });
-    const result = await f.post("start", f.body());
+    const request = f.body();
+    await f.post("start", request);
+    const result = await f.post("status", { id: request.id });
     assert.equal(result.value.status, "pending");
     assert.match(result.value.dispatchError, /dispatch failed/);
     assert.doesNotMatch(result.value.dispatchError, /password=secret/);
@@ -359,6 +376,10 @@ test("quoted credential redaction handles escaped quotes and truncated values", 
 test("encoded JSON diagnostics redact nested credentials with bounded depth", async t => {
     const prompts = [];
     const f = await fixture(t, { send: async value => prompts.push(value.prompt) });
+    const malformed = 'Request failed: {"message":"{\\"token\\":\\"SYNTHETIC_CREDENTIAL_VALUE\\"}",}';
+    assert.doesNotMatch(redactError(malformed), /SYNTHETIC_CREDENTIAL_VALUE/);
+    assert.doesNotMatch(redactError(redactError(malformed)), /SYNTHETIC_CREDENTIAL_VALUE/);
+    await f.post("start", { ...f.body(), error: malformed });
     let encoded = JSON.stringify({ token: "SYNTHETIC_CREDENTIAL_VALUE" });
     for (let depth = 0; depth < 5; depth++) {
         encoded = JSON.stringify({ message: encoded });

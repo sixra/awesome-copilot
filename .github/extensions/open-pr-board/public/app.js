@@ -664,7 +664,7 @@ async function loadDetail(number, { force = false } = {}) {
         const response = await api(`/api/pr/${number}`, force ? { method: "POST" } : {});
         if (generation !== detailGeneration || selectedNumber !== number) return;
         if (response.headRefOid && response.headRefOid !== headRefOid) {
-            throw new Error("PR changed while loading its preview; refresh and review the current commit.");
+            throw Object.assign(new Error("PR changed while loading its preview; refresh and review the current commit."), { handoff: false });
         }
         detail = response;
         previewHeadRefOid = response.headRefOid ?? null;

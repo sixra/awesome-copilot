@@ -75,7 +75,7 @@ or fragments. Common credentials, complete Authorization/Proxy-Authorization and
 Cookie/Set-Cookie fields, and private keys are redacted on both sides, with bounded
 input processing. Decoded JSON string fields are redacted before reserialization.
 JSON diagnostics, including prefixed JSON and JSON encoded inside string fields,
-are inspected with a bounded nesting depth before text redaction. Incomplete
+are inspected with a bounded nesting depth before text redaction. Invalid or incomplete
 embedded JSON is conservatively replaced rather than forwarded.
 Review the displayed text before sending; do not include sensitive data in errors.
 The child is instructed not to commit, push, publish a PR, change credentials or
@@ -94,6 +94,8 @@ child-creation failures and uncertain receipts remain visible rather than showin
 a successful handoff. A transport rejection is an uncertain dispatch, not a
 definitive creation failure: the tray keeps polling within the same deadline and
 accepts a matching child receipt without resending the prompt.
+Dispatch completion never blocks status polling, so a recorded receipt remains
+available even if the message transport does not settle.
 Closing the canvas invalidates its outstanding receipts.
 Receipts remain visible until explicitly dismissed; new diagnostics do not evict them.
 Handoff POSTs also require a random per-instance capability token delivered only
