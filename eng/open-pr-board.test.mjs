@@ -57,6 +57,45 @@ test("approval rejects a missing or previously displayed SHA after a scheduled s
   assert.equal(store.getItem(1).decision, null);
 });
 
+test("a review finishing after a head sync retains its queued commit and remains stale", async (t) => {
+  const store = await createStore(t);
+  const { queued } = await store.markQueued([1]);
+  await store.syncPullRequests([pr("second")]);
+  await store.recordReviews([{
+    number: 1, queueId: queued[0].queueId, recommendation: "approve",
+    rationale: "Reviewed the first commit.", headRefOid: "second",
+  }]);
+  assert.equal(store.getItem(1).review.headRefOid, "first", "Payload cannot overwrite queue provenance");
+  assert.equal(store.snapshot().items[0].reviewStale, true);
+  const next = await store.markQueued([1]);
+  await store.recordReviews([{ number: 1, queueId: next.queued[0].queueId, recommendation: "approve" }]);
+  assert.equal(store.getItem(1).review.headRefOid, "second");
+  assert.equal(store.snapshot().items[0].reviewStale, false);
+});
+
+test("manual approval provenance survives refresh and is renewed only by an explicit move", async (t) => {
+  const store = await createStore(t);
+  await store.moveItem(1, "approve");
+  assert.equal(store.snapshot().items[0].approvalStale, false);
+  await store.syncPullRequests([pr("second")]);
+  assert.equal(store.getItem(1).manualColumn, "approve");
+  assert.equal(store.getItem(1).manualHeadRefOid, "first");
+  assert.equal(store.snapshot().items[0].approvalStale, true);
+  await store.moveItem(1, "approve");
+  assert.equal(store.snapshot().items[0].approvalStale, false);
+  const { previous } = await store.markQueued([1]);
+  await store.restoreQueueState(previous);
+  assert.equal(store.getItem(1).queueHeadRefOid, previous[0].queueHeadRefOid);
+});
+
+test("legacy approval choices without commit provenance cannot silently authorize bulk approval", async (t) => {
+  const store = await createStore(t);
+  store.getItem(1).review = { recommendation: "approve", reviewedAt: "2099-01-01" };
+  assert.equal(store.snapshot().items[0].reviewStale, true);
+  store.getItem(1).manualColumn = "approve";
+  assert.equal(store.snapshot().items[0].approvalStale, true);
+});
+
 test("approval and auto-merge are pinned to the reviewed commit", async () => {
   const headRefOid = "a".repeat(40);
   const calls = [];

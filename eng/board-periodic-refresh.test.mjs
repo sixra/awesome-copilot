@@ -5,9 +5,28 @@ import path from "node:path";
 import { setImmediate } from "node:timers/promises";
 import vm from "node:vm";
 import { test } from "node:test";
+import { startBoardServer } from "../.github/extensions/open-pr-board/lib/server.mjs";
 
 const INTERVAL = 15 * 60 * 1000;
 const repo = "github/awesome-copilot";
+
+test("shared server consumers without a refresh route never poll or report refresh errors", async (t) => {
+    t.mock.timers.enable({ apis: ["setInterval"] });
+    const errors = [];
+    let unsubscribed = false;
+    const server = await startBoardServer({
+        api: {
+            snapshot: () => ({}), routes: {},
+            subscribe: () => () => { unsubscribed = true; },
+            logger: { error: (...args) => errors.push(args) },
+        },
+    });
+    t.after(() => server.close());
+    t.mock.timers.tick(INTERVAL * 3);
+    await setImmediate();
+    assert.deepEqual(errors, []);
+    assert.equal(unsubscribed, false);
+});
 
 function item(number) {
     return {

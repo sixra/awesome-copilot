@@ -181,6 +181,7 @@ test("bulk approvals send the displayed commit and refuse stale AI reviews", asy
     const ui = await createUI("open-pr-board", [
         { number: 1, column: "approve", headRefOid: "displayed" },
         { number: 2, column: "approve", headRefOid: "new", reviewStale: true },
+        { number: 3, column: "approve", headRefOid: "new", manualColumn: "approve", approvalStale: true },
     ]);
     await ui.context.bulkAction("approve", "approve");
     assert.equal(ui.calls.length, 1);

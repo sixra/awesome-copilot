@@ -50,6 +50,9 @@ authenticated `gh` CLI.
   A changed head automatically reloads an open preview; approval is unavailable until
   that preview has loaded. Bulk approval skips stale AI reviews. If the head changes,
   review the new commit before approving again.
+  Queued reviews and manual approval moves retain their original commit SHA, so a
+  refresh cannot carry those approval choices onto newer commits. Legacy reviews or
+  approval moves without a recorded SHA must be reviewed or explicitly moved again.
   Only one GitHub action can run per PR at a time.
 - **Reset board** — after a second click to confirm, clear every local AI review,
   queued review, manual move, recorded action, and history entry, then reload open PRs.

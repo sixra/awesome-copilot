@@ -171,7 +171,7 @@ export async function startBoardServer({ publicDir, api }) {
 
     let refreshing = false;
     const refreshTimer = setInterval(async () => {
-        if (refreshing) return;
+        if (refreshing || typeof api.routes["POST /api/refresh"] !== "function") return;
         refreshing = true;
         try {
             await api.routes["POST /api/refresh"]({});

@@ -400,8 +400,8 @@ async function bulkAction(columnId, kind) {
                 if (!current || current.headRefOid !== item.headRefOid) {
                     throw new Error("PR moved, changed, or was already actioned; review it again.");
                 }
-                if (kind === "approve" && current.reviewStale) {
-                    throw new Error("PR changed since its AI review; review the current commit before approving.");
+                if (kind === "approve" && (current.manualColumn === "approve" ? current.approvalStale : current.reviewStale)) {
+                    throw new Error("PR changed since its AI review or manual approval choice; review the current commit before approving.");
                 }
                 decisionsInFlight.add(item.number);
                 const result = await api("/api/decision", {
