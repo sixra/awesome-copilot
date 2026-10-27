@@ -76,6 +76,10 @@ minutes without confirmation, it tells the user to inspect the parent
 conversation; it never automatically creates another child. Dispatch failures,
 child-creation failures and uncertain receipts remain visible rather than showing
 a successful handoff. Closing the canvas invalidates its outstanding receipts.
+Handoff POSTs also require a random per-instance capability token delivered only
+in the canvas URL fragment, not HTTP-served HTML or scripts. Origin and Host headers alone cannot
+authorize a handoff, and one instance cannot read or submit another's requests.
+The token is never included in diagnostic prompts and expires when the canvas closes.
 
 Implementation lives in `eng/canvas-error-handoff/runtime.mjs`. Each applicable
 repository-local canvas includes a generated `error-handoff.mjs` copy so its

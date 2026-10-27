@@ -50,11 +50,13 @@ async function fixture(t, { send = async () => {}, policy = "script-src 'self'",
     });
     const open = await options.open({ instanceId: "panel-one", input: { repo: "github/awesome-copilot", token: "never-send", number: 42 } });
     const action = options.actions.find(item => item.name === "record_error_handoff");
+    const token = new URLSearchParams(new URL(open.url).hash.slice(1)).get("canvas-error-handoff");
     const post = async (route, body, extraHeaders = {}) => {
         const response = await fetch(`${origin}/.canvas-error-handoff/${route}`, {
             method: "POST",
             headers: {
                 Origin: origin, "Content-Type": "application/json", "X-Canvas-Error-Handoff": "1",
+                "X-Canvas-Error-Handoff-Token": token,
                 ...extraHeaders,
             },
             body: JSON.stringify(body),
@@ -65,7 +67,7 @@ async function fixture(t, { send = async () => {}, policy = "script-src 'self'",
         id: randomUUID(), instanceId: "panel-one", page: "/",
         error: "GitHub API failed; token=secret", operation: "Load PR detail",
     });
-    return { runtime, options, open, origin, post, body, action };
+    return { runtime, options, open, origin, post, body, action, token };
 }
 
 test("registered documents gain opt-in UI without changing recovery, API, SSE or other HTML", async t => {
@@ -75,6 +77,7 @@ test("registered documents gain opt-in UI without changing recovery, API, SSE or
     assert.match(html, /Original error/);
     assert.match(html, /<button>Retry<\/button>/);
     assert.match(html, /src="\/\.canvas-error-handoff\/client.js\?instanceId=panel-one"/);
+    assert.ok(!html.includes(f.token));
     assert.equal(response.headers.get("content-security-policy"), "script-src 'self'");
     assert.equal(response.headers.get("content-length"), null);
     assert.doesNotMatch(await (await fetch(`${f.origin}/preview`)).text(), /canvas-error-handoff/);
@@ -117,6 +120,7 @@ test("handoff dispatch is opt-in and deduplicated; success requires the real chi
     assert.match(prompts[0], /Load PR detail/);
     assert.match(prompts[0], /"number":42/);
     assert.doesNotMatch(prompts[0], /never-send|original-secret|token=secret/);
+    assert.ok(!prompts[0].includes(f.token));
     assert.throws(() => f.action.handler({
         instanceId: "other-panel", input: { requestId: body.id, status: "created", sessionId: "child" },
     }), /Unknown/);
@@ -163,8 +167,35 @@ test("reject cross-origin, wrong host, malformed, oversized and closed-instance 
     assert.equal((await f.post("start", { ...f.body(), id: "wrong" })).status, 400);
     assert.equal((await f.post("start", { ...f.body(), error: "x".repeat(13000) })).status, 400);
     await f.options.onClose({ instanceId: "panel-one" });
-    assert.equal((await f.post("start", f.body())).status, 400);
+    assert.equal((await f.post("start", f.body())).status, 403);
     assert.equal(sent, 0);
+});
+
+test("URL-fragment tokens protect dispatch and status without exposing secrets in HTTP bootstrap", async t => {
+    let sent = 0;
+    const f = await fixture(t, { send: async () => sent++ });
+    const client = `${f.origin}/.canvas-error-handoff/client.js?instanceId=panel-one`;
+    const bootstrap = await fetch(client);
+    assert.equal(bootstrap.status, 200);
+    assert.ok(!(await bootstrap.text()).includes(f.token));
+    assert.equal((await fetch(`${f.origin}/.canvas-error-handoff/client.js?instanceId=unknown`)).status, 403);
+    for (const token of ["", "wrong"]) {
+        assert.equal((await f.post("start", f.body(), { "X-Canvas-Error-Handoff-Token": token })).status, 403);
+        assert.equal((await f.post("status", { id: randomUUID() }, { "X-Canvas-Error-Handoff-Token": token })).status, 403);
+    }
+    assert.equal(sent, 0);
+    const body = f.body();
+    await f.post("start", body);
+    assert.equal(sent, 1);
+    const other = await f.options.open({ instanceId: "panel-two", input: {} });
+    const otherToken = new URLSearchParams(new URL(other.url).hash.slice(1)).get("canvas-error-handoff");
+    assert.notEqual(otherToken, f.token);
+    const otherHeaders = { "X-Canvas-Error-Handoff-Token": otherToken };
+    assert.equal((await f.post("start", f.body(), otherHeaders)).status, 400);
+    assert.equal((await f.post("status", { id: body.id }, otherHeaders)).status, 400);
+    assert.equal(sent, 1);
+    await f.options.onClose({ instanceId: "panel-one" });
+    assert.equal((await fetch(client)).status, 403);
 });
 
 test("redaction removes common credentials, URL userinfo, queries and fragments", () => {
@@ -208,7 +239,7 @@ function browserFixture(outcomes = [{ status: "created", sessionId: "child-one" 
     };
     const sandbox = vm.createContext({
         window, document, URL, URLSearchParams, crypto: { randomUUID },
-        location: { pathname: "/", search: "?__canvasHandoff=panel-one", href: "http://127.0.0.1/", origin: "http://127.0.0.1" },
+        location: { pathname: "/", hash: "#canvas-error-handoff=browser-token", href: "http://127.0.0.1/", origin: "http://127.0.0.1" },
         MutationObserver: class { observe() {} },
         requestAnimationFrame: fn => fn(), setTimeout: fn => { fn(); },
     });

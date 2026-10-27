@@ -1,4 +1,5 @@
 import http from "node:http";
+import { randomBytes } from "node:crypto";
 
 const ENDPOINT = "/.canvas-error-handoff";
 const MAX_BODY = 12000;
@@ -31,7 +32,10 @@ export function installErrorHandoff(config, redact) {
     let lastOperation = "Canvas operation";
     const originalFetch = window.fetch.bind(window);
     const endpoint = config.endpoint;
-    const headers = { "Content-Type": "application/json", "X-Canvas-Error-Handoff": "1" };
+    const headers = {
+        "Content-Type": "application/json", "X-Canvas-Error-Handoff": "1",
+        "X-Canvas-Error-Handoff-Token": new URLSearchParams(location.hash.slice(1)).get("canvas-error-handoff") || "",
+    };
     const request = async (path, body) => {
         const response = await originalFetch(endpoint + path, {
             method: "POST", headers, body: JSON.stringify(body),
@@ -213,16 +217,24 @@ export function createErrorHandoffRuntime(sdk, source, selectors) {
             return true;
         }
         if (req.method === "GET" && url.pathname === `${ENDPOINT}/client.js`) {
+            const page = [...pages.values()].find(page =>
+                page.host === host && page.instanceId === url.searchParams.get("instanceId"));
+            if (!page) {
+                json(res, 403, { error: "Untrusted canvas handoff request." });
+                return true;
+            }
             res.writeHead(200, {
                 "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store",
                 "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin",
             });
-            res.end(`(${installErrorHandoff.toString()})(${JSON.stringify({ endpoint: ENDPOINT, selectors, instanceId: url.searchParams.get("instanceId") })}, ${redactError.toString()});`);
+            res.end(`(${installErrorHandoff.toString()})(${JSON.stringify({ endpoint: ENDPOINT, selectors, instanceId: page.instanceId })}, ${redactError.toString()});`);
             return true;
         }
+        const authorizedPage = [...pages.values()].find(page =>
+            page.host === host && page.token === req.headers["x-canvas-error-handoff-token"]);
         if (req.method !== "POST" || req.headers.origin !== `http://${host}` ||
             req.headers["x-canvas-error-handoff"] !== "1" ||
-            !req.headers["content-type"]?.startsWith("application/json")) {
+            !req.headers["content-type"]?.startsWith("application/json") || !authorizedPage) {
             json(res, 403, { error: "Untrusted canvas handoff request." });
             return true;
         }
@@ -238,13 +250,14 @@ export function createErrorHandoffRuntime(sdk, source, selectors) {
             if (!/^[a-f0-9-]{36}$/.test(body.id)) throw new Error("A handoff request ID is required.");
             if (url.pathname === `${ENDPOINT}/status`) {
                 const item = requests.get(body.id);
-                if (!item) throw new Error("Unknown handoff request.");
+                if (!item || item.instanceId !== authorizedPage.instanceId) throw new Error("Unknown handoff request.");
                 json(res, 200, publicResult(item));
                 return true;
             }
             if (url.pathname !== `${ENDPOINT}/start`) throw new Error("Unknown handoff operation.");
             const page = pages.get(`${host}${body.page}#${body.instanceId}`);
             if (!page) throw new Error("Reopen the canvas before sending this error.");
+            if (page !== authorizedPage) throw new Error("Handoff belongs to another canvas instance.");
             let item = requests.get(body.id);
             if (!item) {
                 if (typeof body.error !== "string" || !body.error.trim() || typeof body.operation !== "string") {
@@ -349,13 +362,22 @@ Message admission is NOT creation. Do not claim success or retry creation after 
                     const result = await options.open(ctx);
                     if (result.url) {
                         const url = new URL(result.url);
+                        const token = pages.get(`${url.host}${url.pathname}#${ctx.instanceId}`)?.token ||
+                            randomBytes(32).toString("hex");
+                        const fragment = new URLSearchParams(url.hash.slice(1));
+                        fragment.set("canvas-error-handoff", token);
+                        url.hash = fragment.toString();
                         const context = {};
                         for (const key of ["repo", "repository", "number", "pullNumber"]) {
                             const value = ctx.input?.[key];
                             if (typeof value === "number") context[key] = value;
                             else if (typeof value === "string" && /^[A-Za-z0-9._/-]{1,160}$/.test(value)) context[key] = redactError(value);
                         }
-                        pages.set(`${url.host}${url.pathname}#${ctx.instanceId}`, { id: options.id, name: options.displayName, instanceId: ctx.instanceId, context });
+                        pages.set(`${url.host}${url.pathname}#${ctx.instanceId}`, {
+                            id: options.id, name: options.displayName, instanceId: ctx.instanceId, context,
+                            host: url.host, token,
+                        });
+                        return { ...result, url: url.href };
                     }
                     return result;
                 },

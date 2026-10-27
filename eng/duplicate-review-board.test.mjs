@@ -477,9 +477,9 @@ test("local decision updates are UI-only and reject stale saves", async (t) => {
     const opened = await canvas.open({ instanceId: "test-duplicate-board", input: {} });
     const html = await (await fetch(opened.url)).text();
     const token = /name="board-token" content="([^"]+)"/.exec(html)[1];
-    const uiBoard = () => fetch(opened.url + "api/board", { headers: { "x-board-token": token } }).then((response) => response.json());
+    const uiBoard = () => fetch(new URL("api/board", opened.url), { headers: { "x-board-token": token } }).then((response) => response.json());
     const item = (await uiBoard()).items[0];
-    const update = (changes) => fetch(opened.url + "api/update", {
+    const update = (changes) => fetch(new URL("api/update", opened.url), {
         method: "POST",
         headers: { "x-board-token": token, "Content-Type": "application/json" },
         body: JSON.stringify(changes),
@@ -532,7 +532,7 @@ test("canvas opens and actions dispatch directly to a background task, never for
     await act("import_report", { number: 12 });
     const first = (await act("get_board")).items[0];
     const opened = await canvas.open({ instanceId: "test-duplicate-board", input: {} });
-    assert.match(opened.url, /^http:\/\/127\.0\.0\.1:\d+\/$/);
+    assert.match(opened.url, /^http:\/\/127\.0\.0\.1:\d+\/#canvas-error-handoff=[a-f0-9]{64}$/);
     assert.equal((await fetch(opened.url)).status, 200);
     const result = await act("start_review", { number: 12, id: first.id });
     assert.equal(result.agentId, "background-42");
