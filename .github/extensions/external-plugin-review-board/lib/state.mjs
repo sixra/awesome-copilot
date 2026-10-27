@@ -20,7 +20,20 @@ const MANUAL_INTAKE_OVERRIDE_LABEL = "intake-manually-overridden";
 const PENDING_INTAKE_LABELS = ["awaiting-review", "requires-submitter-fixes"];
 
 export function isReadyForApproval(labels) {
-    return labels.includes("ready-for-review") && !labels.some((label) => PENDING_INTAKE_LABELS.includes(label));
+    return reviewBlockedReason(labels) === null;
+}
+
+export function reviewBlockedReason(labels = []) {
+    if (labels.includes("requires-submitter-fixes")) {
+        return "Submitter fixes required. Check the intake feedback on the issue; AI review and approval are unavailable until intake marks it ready-for-review.";
+    }
+    if (labels.some((label) => PENDING_INTAKE_LABELS.includes(label))) {
+        return "Automated intake is pending. AI review and approval are unavailable until intake marks it ready-for-review.";
+    }
+    if (!labels.includes("ready-for-review")) {
+        return "Missing ready-for-review status. AI review and approval are unavailable until intake marks it ready-for-review.";
+    }
+    return null;
 }
 
 // Validated submissions from first-party organizations skip AI triage and land in Accept. Only
@@ -146,6 +159,7 @@ export class BoardStore {
             items: items.map((item) => ({
                 ...item,
                 reviewEligible: isReadyForApproval(item.labels ?? []),
+                reviewBlockedReason: reviewBlockedReason(item.labels),
             })),
             history: this.state.history.slice(0, 50),
         };
@@ -159,6 +173,9 @@ export class BoardStore {
         for (const [key, issue] of incoming) {
             const existing = this.state.items[key];
             if (existing) {
+                if (existing.pendingFixesRequest && issue.labels.includes("requires-submitter-fixes")) {
+                    delete existing.pendingFixesRequest;
+                }
                 Object.assign(existing, {
                     title: issue.title,
                     author: issue.author,
@@ -304,6 +321,27 @@ export class BoardStore {
         const item = this.getItem(number);
         item.pendingDecision = pendingDecision;
         await this.commit();
+    }
+
+    async recordPendingFixesRequest(number, pendingFixesRequest) {
+        const item = this.getItem(number);
+        item.pendingFixesRequest = pendingFixesRequest;
+        await this.commit();
+    }
+
+    async resolvePendingFixesRequest(number, status) {
+        const item = this.state.items[String(number)];
+        if (!item?.pendingFixesRequest || !(status.labels ?? []).includes("requires-submitter-fixes")) return null;
+        const request = item.pendingFixesRequest;
+        delete item.pendingFixesRequest;
+        await this.commit();
+        return request;
+    }
+
+    async pendingFixesRequestNumbers() {
+        return Object.values(this.state.items)
+            .filter((item) => item.pendingFixesRequest && !item.decision)
+            .map((item) => item.number);
     }
 
     async resolvePendingDecision(number, status) {

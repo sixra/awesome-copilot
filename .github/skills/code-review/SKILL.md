@@ -10,6 +10,18 @@ deterministic checklists in `.github/copilot-instructions.md` first, then use
 this skill for the editorial and repository-fit judgments that cannot be
 reduced to schema validation.
 
+Validate frontmatter as YAML and check the required metadata, not quote style.
+Plain, single-quoted, double-quoted, literal, and folded scalars are all acceptable
+when they parse to values that meet the field's type and content requirements.
+Do not request changes solely because a value is not single-quoted.
+
+For skills, use the [Agent Skills specification](https://agentskills.io/specification)
+for `SKILL.md` structure and field constraints, plus the repository-specific
+checks in `.github/copilot-instructions.md`. General YAML validity does not
+replace the specification: for example, `metadata` must map strings to strings,
+and `allowed-tools` must be a space-separated string, not a sequence. Check
+parsed types and values without imposing a quote style.
+
 ## Review priorities
 
 Review in this order:
@@ -107,6 +119,11 @@ Flag marketing-heavy framing only when there is concrete evidence, such as:
 - links or calls to action that dominate the resource
 - a resource whose primary purpose is acquiring users rather than helping them
   use GitHub Copilot
+- a "free resource → paid connector" structure: MCP/connector setup commands,
+  UTM or referral links, or credit-based upsells pointing at the author's
+  service, including adapted copies where the vendor name was removed but the
+  hook remains. Check the LICENSE copyright holder, `metadata.author`, and the
+  upstream repository README to confirm who owns the content.
 
 Describe the specific evidence and suggest how to refocus the contribution on
 the user problem. Do not infer promotional intent solely because an author is
@@ -141,7 +158,9 @@ appropriate evidence depends on the resource:
   describe
 
 Do not require executable tests for prose-only resources when a realistic
-manual evaluation is more appropriate.
+manual evaluation is more appropriate. An AI-only synthetic evaluation whose
+fixture was built to exercise the resource's own rules, or testing only in a
+non-Copilot harness, is weak evidence on its own.
 
 ## Trusted and automated paths
 

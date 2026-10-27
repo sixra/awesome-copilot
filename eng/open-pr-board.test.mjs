@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { BoardStore } from "../.github/extensions/open-pr-board/lib/state.mjs";
 import { applyDecisionOnGitHub } from "../.github/extensions/open-pr-board/lib/decisions.mjs";
 import { approveAndEnableAutoMerge, listOpenPullRequests } from "../.github/extensions/open-pr-board/lib/github.mjs";
-import { REVIEW_FIELDS_SCHEMA } from "../.github/extensions/open-pr-board/lib/review-prompt.mjs";
+import { REVIEW_FIELDS_SCHEMA, buildReviewPrompt, buildRereviewPrompt } from "../.github/extensions/open-pr-board/lib/review-prompt.mjs";
 
 const pr = (headRefOid = "first") => ({
   number: 1, title: "Example", url: "https://github.com/example/repo/pull/1",
@@ -32,7 +32,7 @@ test("approval passes the board's commit SHA to the GitHub helper", async (t) =>
   const store = await createStore(t);
   let options;
   await applyDecisionOnGitHub({
-    store, number: 1, kind: "approve", comment: "Reviewed.", refresh: async () => {},
+    store, number: 1, kind: "approve", comment: "Reviewed.", headRefOid: "first", refresh: async () => {},
     github: {
       approveAndEnableAutoMerge: async (repo, number, input) => {
         options = input;
@@ -42,6 +42,170 @@ test("approval passes the board's commit SHA to the GitHub helper", async (t) =>
   });
   assert.deepEqual(options, { body: "Reviewed.", headRefOid: "first" });
 });
+
+test("approval rejects a missing or previously displayed SHA after a scheduled sync without writing", async (t) => {
+  const store = await createStore(t);
+  await store.syncPullRequests([pr("second")]);
+  let writes = 0;
+  for (const headRefOid of [undefined, "", "first"]) {
+    await assert.rejects(applyDecisionOnGitHub({
+      store, number: 1, kind: "approve", headRefOid, refresh: async () => {},
+      github: { approveAndEnableAutoMerge: async () => { writes++; } },
+    }), /changed since it was displayed/);
+  }
+  assert.equal(writes, 0);
+  assert.equal(store.getItem(1).decision, null);
+});
+
+test("a review finishing after a head sync retains its queued commit and remains stale", async (t) => {
+  const store = await createStore(t);
+  const { queued } = await store.markQueued([1]);
+  await store.syncPullRequests([pr("second")]);
+  await store.recordReviews([{
+    number: 1, queueId: queued[0].queueId, recommendation: "approve",
+    rationale: "Reviewed the first commit.", headRefOid: "second",
+  }]);
+  assert.equal(store.getItem(1).review.headRefOid, "first", "Payload cannot overwrite queue provenance");
+  assert.equal(store.snapshot().items[0].reviewStale, true);
+  const next = await store.markQueued([1]);
+  await store.recordReviews([{ number: 1, queueId: next.queued[0].queueId, recommendation: "approve" }]);
+  assert.equal(store.getItem(1).review.headRefOid, "second");
+  assert.equal(store.snapshot().items[0].reviewStale, false);
+});
+
+test("manual approval provenance survives refresh and is renewed only by an explicit move", async (t) => {
+  const store = await createStore(t);
+  await store.moveItem(1, "approve", "first");
+  assert.equal(store.snapshot().items[0].approvalStale, false);
+  await store.syncPullRequests([pr("second")]);
+  assert.equal(store.getItem(1).manualColumn, "approve");
+  assert.equal(store.getItem(1).manualHeadRefOid, "first");
+  assert.equal(store.snapshot().items[0].approvalStale, true);
+  await store.moveItem(1, "approve", "second");
+  assert.equal(store.snapshot().items[0].approvalStale, false);
+  const { previous } = await store.markQueued([1]);
+  await store.restoreQueueState(previous);
+  assert.equal(store.getItem(1).queueHeadRefOid, previous[0].queueHeadRefOid);
+});
+
+test("legacy approval choices without commit provenance cannot silently authorize bulk approval", async (t) => {
+  const store = await createStore(t);
+  store.getItem(1).review = { recommendation: "approve", reviewedAt: "2099-01-01" };
+  assert.equal(store.snapshot().items[0].reviewStale, true);
+  store.getItem(1).manualColumn = "approve";
+  assert.equal(store.snapshot().items[0].approvalStale, true);
+});
+
+test("sync before a delayed manual move retains the client's original commit", async (t) => {
+  const store = await createStore(t);
+  await store.syncPullRequests([pr("second")]);
+  await store.moveItem(1, "approve", "first");
+  assert.equal(store.getItem(1).manualHeadRefOid, "first");
+  assert.equal(store.snapshot().items[0].approvalStale, true);
+  await store.moveItem(1, "approve");
+  assert.equal(store.snapshot().items[0].approvalStale, true, "Missing client provenance fails closed");
+});
+
+for (const kind of ["comment", "request-changes"]) {
+  test(`${kind} rejects feedback dispatched after the displayed head has changed`, async (t) => {
+    const store = await createStore(t);
+    await store.syncPullRequests([pr("second")]);
+    let writes = 0;
+    for (const headRefOid of ["first", undefined]) {
+      await assert.rejects(applyDecisionOnGitHub({
+        store, number: 1, kind, comment: "Feedback on first", headRefOid,
+        github: { submitPullRequestReview: async () => { writes++; } },
+        refresh: async () => {},
+      }), /changed since it was displayed/);
+    }
+    assert.equal(writes, 0);
+    assert.equal(store.getItem(1).decision, null);
+  });
+
+  test(`a delayed ${kind} response retains the action head when polling discovers new commits`, async (t) => {
+    const store = await createStore(t);
+    const pending = deferred();
+    const action = applyDecisionOnGitHub({
+      store, number: 1, kind, comment: "Feedback on first", headRefOid: "first",
+      github: { submitPullRequestReview: async () => { await pending.promise; return { status: "submitted" }; } },
+      refresh: () => store.syncPullRequests([pr("second")]),
+    });
+    await store.syncPullRequests([pr("second")]);
+    pending.resolve();
+    await action;
+    assert.equal(store.getItem(1).decision, null);
+    assert.equal(store.snapshot().items[0].column, "unreviewed");
+    assert.equal(store.state.history[0].kind, kind);
+  });
+
+  for (const currentState of ["queued", "reviewed", "manual"]) {
+    test(`obsolete ${kind} feedback preserves the newer head's ${currentState} state`, async (t) => {
+      const store = await createStore(t);
+      const pending = deferred();
+      const action = applyDecisionOnGitHub({
+        store, number: 1, kind, comment: "Feedback on first", headRefOid: "first",
+        github: { submitPullRequestReview: async () => { await pending.promise; return { status: "submitted" }; } },
+        refresh: () => store.syncPullRequests([pr("second")]),
+      });
+      await store.syncPullRequests([pr("second")]);
+      const { queued } = await store.markQueued([1]);
+      if (currentState === "reviewed") {
+        await store.recordReviews([{ number: 1, queueId: queued[0].queueId, recommendation: "approve" }]);
+      } else if (currentState === "manual") {
+        await store.moveItem(1, "needs-insight", "second");
+      }
+      const before = structuredClone(store.getItem(1));
+      pending.resolve();
+      await action;
+      assert.deepEqual(store.getItem(1), before, "Obsolete feedback must not replace current review or move state");
+      assert.equal(store.state.history[0].kind, kind);
+      if (currentState === "queued") {
+        const [result] = await store.recordReviews([{
+          number: 1, queueId: queued[0].queueId, recommendation: "approve",
+        }]);
+        assert.equal(result.status, "recorded", "The newer head's queue token remains valid");
+      }
+    });
+  }
+
+  for (const oldState of ["queued", "reviewed", "manual"]) {
+    test(`obsolete ${kind} feedback clears the old head's ${oldState} state`, async (t) => {
+      const store = await createStore(t);
+      const { queued } = await store.markQueued([1]);
+      if (oldState === "reviewed") {
+        await store.recordReviews([{ number: 1, queueId: queued[0].queueId, recommendation: "request-changes" }]);
+      } else if (oldState === "manual") {
+        await store.moveItem(1, "close", "first");
+      }
+      const pending = deferred();
+      const action = applyDecisionOnGitHub({
+        store, number: 1, kind, comment: "Feedback on first", headRefOid: "first",
+        github: { submitPullRequestReview: async () => { await pending.promise; return { status: "submitted" }; } },
+        refresh: () => store.syncPullRequests([pr("second")]),
+      });
+      await store.syncPullRequests([pr("second")]);
+      pending.resolve();
+      await action;
+      assert.equal(store.snapshot().items[0].column, "unreviewed");
+      assert.equal(store.getItem(1).review, null);
+      assert.equal(store.getItem(1).manualColumn, null);
+      assert.equal(store.getItem(1).queueId, null);
+      assert.equal(store.state.history[0].kind, kind);
+    });
+  }
+
+  test(`obsolete ${kind} feedback clears an old review while preserving the new head's queue`, async (t) => {
+    const store = await createStore(t);
+    const old = await store.markQueued([1]);
+    await store.recordReviews([{ number: 1, queueId: old.queued[0].queueId, recommendation: "request-changes" }]);
+    await store.syncPullRequests([pr("second")]);
+    const current = await store.markQueued([1]);
+    await store.recordDecision(1, { kind, headRefOid: "first" });
+    assert.equal(store.getItem(1).review, null);
+    assert.equal(store.getItem(1).queueId, current.queued[0].queueId);
+    assert.equal(store.snapshot().items[0].column, "reviewing");
+  });
+}
 
 test("approval and auto-merge are pinned to the reviewed commit", async () => {
   const headRefOid = "a".repeat(40);
@@ -64,9 +228,22 @@ test("open pull requests fetch checks with bounded concurrency, preserve order, 
   let active = 0;
   let peak = 0;
   const requested = [];
+  const restPullRequests = numbers.map((number) => ({
+    number,
+    title: `PR ${number}`,
+    html_url: `https://github.com/example/repo/pull/${number}`,
+    user: { login: `author-${number}` },
+    created_at: "2026-10-01T00:00:00Z",
+    updated_at: "2026-10-02T00:00:00Z",
+    draft: false,
+    labels: [],
+    base: { ref: "main" },
+    head: { ref: `branch-${number}`, sha: `sha-${number}` },
+  }));
   const runner = async (args) => {
-    if (args[1] === "list") {
-      return JSON.stringify(numbers.map((number) => ({ number, title: `PR ${number}`, labels: [] })));
+    if (args[0] === "api") {
+      assert.deepEqual(args, ["api", "--paginate", "--slurp", "repos/example/repo/pulls?state=open&per_page=100"]);
+      return JSON.stringify([restPullRequests.slice(0, 4), restPullRequests.slice(4)]);
     }
     if (args[1] === "view") {
       const number = Number(args[2]);
@@ -77,6 +254,11 @@ test("open pull requests fetch checks with bounded concurrency, preserve order, 
         await new Promise((resolve) => setTimeout(resolve, 10));
         if (number === 23) throw new Error("check request failed");
         return JSON.stringify({
+          additions: 3,
+          deletions: 1,
+          changedFiles: 2,
+          reviewDecision: "REVIEW_REQUIRED",
+          mergeStateStatus: "CLEAN",
           statusCheckRollup: [{ name: `check-${number}`, status: "COMPLETED", conclusion: "SUCCESS" }],
         });
       } finally {
@@ -93,12 +275,19 @@ test("open pull requests fetch checks with bounded concurrency, preserve order, 
   assert.deepEqual(pullRequests.map(({ number }) => number), numbers, "results should preserve list order");
   assert.deepEqual(requested.sort((a, b) => a - b), [...numbers].sort((a, b) => a - b), "every PR should request checks");
   for (const pullRequest of pullRequests) {
+    assert.equal(pullRequest.url, `https://github.com/example/repo/pull/${pullRequest.number}`);
+    assert.equal(pullRequest.author, `author-${pullRequest.number}`);
+    assert.equal(pullRequest.headRefOid, `sha-${pullRequest.number}`);
     if (pullRequest.number === 23) {
       assert.deepEqual(pullRequest.checks, []);
       assert.equal(pullRequest.checksState, "none");
+      assert.equal(pullRequest.reviewDecision, "NONE");
+      assert.equal(pullRequest.additions, 0);
     } else {
       assert.deepEqual(pullRequest.checks.map(({ name }) => name), [`check-${pullRequest.number}`]);
       assert.equal(pullRequest.checksState, "success");
+      assert.equal(pullRequest.reviewDecision, "REVIEW_REQUIRED");
+      assert.equal(pullRequest.additions, 3);
     }
   }
 });
@@ -206,7 +395,7 @@ test("concurrent GitHub decisions for the same repo/PR cannot both write", async
     submitPullRequestReview: async () => { calls++; await waiting.promise; return { status: "comment-submitted" }; },
     closePullRequest: async () => { calls++; throw new Error("must not be reached"); },
   };
-  const args = { store, number: 1, comment: "Feedback", github, refresh: async () => {} };
+  const args = { store, number: 1, comment: "Feedback", headRefOid: "first", github, refresh: async () => {} };
   const first = applyDecisionOnGitHub({ ...args, kind: "comment" });
   await assert.rejects(applyDecisionOnGitHub({ ...args, kind: "close" }), /in progress/);
   assert.equal(calls, 1);
@@ -217,7 +406,7 @@ test("concurrent GitHub decisions for the same repo/PR cannot both write", async
 
 test("decision lock is released on failure and independent repositories can proceed", async (t) => {
   const store = await createStore(t);
-  const args = { store, number: 1, kind: "comment", comment: "Feedback", refresh: async () => {} };
+  const args = { store, number: 1, kind: "comment", comment: "Feedback", headRefOid: "first", refresh: async () => {} };
   await assert.rejects(applyDecisionOnGitHub({
     ...args, github: { submitPullRequestReview: async () => { throw new Error("offline"); } },
   }), /offline/);
@@ -297,15 +486,83 @@ async function createUI() {
       select(number) {
         selectedNumber = number;
         board = { columns: [], items: [1, 2].map(number => ({
-          number, title: "Example", labels: [], createdAt: "2026-10-01", column: "unreviewed",
+          number, title: "Example", labels: [], createdAt: "2026-10-01", column: "unreviewed", headRefOid: "first",
         })) };
       },
-      state: () => ({ detail, detailError, activeTab }),
+      state: () => ({ detail, detailError, activeTab, previewHeadRefOid }),
       render: renderDrawerBody,
     };
   `, context);
   return { context, ui: context.ui, nodes, tabs, document };
 }
+
+test("a refreshed PR head reloads the preview and blocks approval until the new detail arrives", async () => {
+  const { context, ui, nodes } = await createUI();
+  const requests = [];
+  const messages = [];
+  context.notify = (message) => messages.push(message);
+  vm.runInContext("toast = notify", context);
+  ui.select(1);
+  context.nextRequest = deferred();
+  const initial = ui.loadDetail(1);
+  context.nextRequest.resolve({ headRefOid: "first", files: [{ filename: "old.js" }] });
+  await initial;
+  assert.equal(ui.state().previewHeadRefOid, "first");
+  nodes.get("decision-comment").value = "Keep this feedback";
+  context.nextRequest = deferred();
+  const pending = context.nextRequest;
+  context.applySnapshot({
+    columns: [], items: [{ number: 1, title: "New head", labels: [], headRefOid: "second" }],
+  });
+  assert.equal(ui.state().detail, null);
+  assert.equal(ui.state().previewHeadRefOid, null);
+  await ui.submitDecision(nodes.get("decision-approve"), "approve");
+  assert.match(messages[0], /preview is loading or changed/);
+  assert.equal(nodes.get("decision-comment").value, "Keep this feedback");
+  pending.resolve({ headRefOid: "second", files: [{ filename: "new.js" }] });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ui.state().previewHeadRefOid, "second");
+  assert.equal(ui.state().detail.files[0].filename, "new.js");
+  context.request = async (...args) => { requests.push(args); throw new Error("stop after request"); };
+  vm.runInContext("api = request", context);
+  await ui.submitDecision(nodes.get("decision-approve"), "approve");
+  await ui.submitDecision(nodes.get("decision-approve"), "approve");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0][1].body.headRefOid, "second");
+});
+
+test("a cached preview from another commit cannot authorize approval", async () => {
+  const { context, ui } = await createUI();
+  ui.select(1);
+  context.nextRequest = deferred();
+  const pending = ui.loadDetail(1);
+  context.nextRequest.resolve({ headRefOid: "older", files: [] });
+  await pending;
+  assert.equal(ui.state().previewHeadRefOid, null);
+  assert.equal(ui.state().detail, null);
+  assert.match(ui.state().detailError, /changed while loading/);
+});
+
+test("a successful same-head refresh retries a failed preview without disturbing the draft", async () => {
+  const { context, ui, nodes } = await createUI();
+  ui.select(1);
+  context.nextRequest = deferred();
+  const failed = ui.loadDetail(1);
+  context.nextRequest.reject(new Error("Transient GitHub error"));
+  await failed;
+  assert.match(ui.state().detailError, /Transient/);
+  nodes.get("decision-comment").value = "Keep my feedback";
+  context.nextRequest = deferred();
+  context.applySnapshot({
+    updatedAt: "new-refresh", columns: [],
+    items: [{ number: 1, title: "Example", labels: [], headRefOid: "first" }],
+  });
+  assert.equal(ui.state().detailError, null);
+  context.nextRequest.resolve({ headRefOid: "first", files: [] });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ui.state().previewHeadRefOid, "first");
+  assert.equal(nodes.get("decision-comment").value, "Keep my feedback");
+});
 
 test("older PR detail responses and errors cannot overwrite a newer selected PR", async () => {
   const { context, ui } = await createUI();
@@ -407,4 +664,71 @@ test("all decision buttons stay disabled while an action is pending", async () =
   request.resolve({ status: "comment-submitted" });
   await submitting;
   assert.equal(comment.disabled, false);
+});
+
+const promptItem = {
+  number: 5074, title: "Add headshot skills", queueId: "q-1", author: "someone", isDraft: false,
+  labels: [], additions: 10, deletions: 0, changedFiles: 2, checkCounts: { total: 0 },
+  reviewDecision: "REVIEW_REQUIRED", mergeStateStatus: "CLEAN", url: "https://github.com/example/repo/pull/5074",
+};
+const promptArgs = { instanceId: "board-1", repo: "example/repo", guidancePath: "guidance.md" };
+
+test("initial and re-review agent briefs accept valid YAML scalar styles while preserving metadata checks", () => {
+  const prompts = [
+    buildReviewPrompt({ ...promptArgs, items: [promptItem], decisions: [] }),
+    buildRereviewPrompt({ ...promptArgs, item: promptItem }),
+  ];
+  for (const prompt of prompts) {
+    const [, brief] = prompt.split("--- Agent brief ---");
+    assert.match(brief, /Frontmatter must be valid YAML/);
+    assert.match(brief, /required metadata fields, types, lengths, and naming rules/);
+    assert.match(brief, /Accept plain, single-quoted, double-quoted, literal, and folded scalars/);
+    assert.match(brief, /Do not request changes solely because a value is not single-quoted/);
+    assert.match(brief, /For skills, review SKILL\.md against the Agent Skills specification at https:\/\/agentskills\.io\/specification/);
+    assert.match(brief, /repository's additional skill checks/);
+    assert.match(brief, /Valid YAML alone is not enough/);
+    assert.match(brief, /`metadata` must map string keys to string values/);
+    assert.match(brief, /`allowed-tools` must be a space-separated string, not a YAML sequence/);
+  }
+});
+
+test("review prompts include vendor-funnel, author-batch, and recording checks", () => {
+  const prompts = [
+    buildReviewPrompt({ ...promptArgs, items: [promptItem], decisions: [] }),
+    buildRereviewPrompt({ ...promptArgs, item: promptItem }),
+  ];
+  for (const prompt of prompts) {
+    assert.match(prompt, /gh pr list -R example\/repo --author <login> --state all/);
+    assert.match(prompt, /LICENSE copyright holder/);
+    assert.match(prompt, /repos\/<owner>\/<repo>\/readme/);
+    assert.match(prompt, /UTM or referral links/);
+    assert.match(prompt, /vendor funnel is `close`, not `request-changes`/);
+    assert.match(prompt, /non-developer domains/);
+    assert.match(prompt, /AI-only synthetic evaluations/);
+    assert.match(prompt, /weak repo fit or a vendor funnel is `close`/);
+    assert.match(prompt, /gh pr view <number> --json state/);
+    assert.match(prompt, /stale review result/);
+  }
+});
+
+test("re-review prompt frames maintainer guidance as a prior to verify", () => {
+  const prompt = buildRereviewPrompt({ ...promptArgs, item: promptItem, guidance: "thinly veiled product integration" });
+  assert.match(prompt, /strong prior — verify it against the evidence[^\n]*\nthinly veiled product integration/);
+  assert.doesNotMatch(buildRereviewPrompt({ ...promptArgs, item: promptItem }), /strong prior/);
+});
+
+test("review prompts delegate to background agents instead of the main session", () => {
+  const batch = buildReviewPrompt({ ...promptArgs, items: [promptItem, { ...promptItem, number: 2, queueId: "q-2" }], decisions: [] });
+  const single = buildRereviewPrompt({ ...promptArgs, item: promptItem });
+  for (const prompt of [batch, single]) {
+    const [coordinator, brief] = prompt.split("--- Agent brief ---");
+    assert.ok(brief, "prompt separates coordinator instructions from the agent brief");
+    assert.match(coordinator, /do not review in the main session/);
+    assert.match(coordinator, /mode: "background"/);
+    assert.match(coordinator, /instanceId `board-1`/);
+    assert.match(brief, /record_review/);
+    assert.match(brief, /#5074/);
+  }
+  assert.match(batch, /in parallel, one per pull request/);
+  assert.match(single, /one background agent for this pull request/);
 });

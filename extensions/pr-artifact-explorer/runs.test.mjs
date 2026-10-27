@@ -202,9 +202,9 @@ test("branch queries that could traverse the API path are rejected without a req
   }
   assert.equal(normalizeBranchQuery("  feature/x \u0007"), "feature/x");
   assert.equal(normalizeBranchQuery("a".repeat(300)).length, 100);
-  await listBranches("token", "o/r", "feat ure/é#?");
+  await listBranches("token", "o/r", "my branch/é#?");
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].pathname, "/repos/o/r/git/matching-refs/heads/feat%20ure/%C3%A9%23%3F");
+  assert.equal(calls[0].pathname, "/repos/o/r/git/matching-refs/heads/my%20branch/%C3%A9%23%3F");
 });
 
 test("re-run context works for a run that has no pull request or artifact", async (t) => {

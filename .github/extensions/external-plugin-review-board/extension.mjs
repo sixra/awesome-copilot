@@ -6,10 +6,11 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
-import { BoardStore, isReadyForApproval, RECOMMENDATIONS } from "./lib/state.mjs";
+import { BoardStore, isReadyForApproval, reviewBlockedReason, RECOMMENDATIONS } from "./lib/state.mjs";
 import * as gh from "./lib/github.mjs";
 import { buildReviewPrompt, buildRereviewPrompt, REVIEW_FIELDS_SCHEMA } from "./lib/review-prompt.mjs";
 import { startBoardServer, expectedError } from "./lib/server.mjs";
+import { assertNoPendingFixesRequest, confirmRequestFixes } from "./lib/request-fixes.mjs";
 
 const CANVAS_ID = "external-plugin-review-board";
 const REPO = "github/awesome-copilot";
@@ -46,10 +47,28 @@ async function resolvePendingDecisions(numbers = store.pendingDecisionNumbers())
     return resolved;
 }
 
+async function resolvePendingFixesRequests(numbers = store.pendingFixesRequestNumbers()) {
+    const resolved = [];
+    for (const number of await numbers) {
+        try {
+            const status = await gh.getIssueStatus(store.state.repo, number);
+            const request = await store.resolvePendingFixesRequest(number, status);
+            if (request) {
+                detailCache.delete(number);
+                resolved.push(number);
+            }
+        } catch (error) {
+            session?.log(`Could not resolve pending fixes request for #${number}: ${error.message}`, { level: "warning" });
+        }
+    }
+    return resolved;
+}
+
 async function refresh() {
     refreshInFlight ??= (async () => {
         try {
             await resolvePendingDecisions();
+            await resolvePendingFixesRequests();
             const issues = await gh.listBoardIssues(store.state.repo);
             detailCache.clear();
             return await store.syncIssues(issues);
@@ -62,15 +81,34 @@ async function refresh() {
 
 async function getIssue(number, { force = false } = {}) {
     const cached = detailCache.get(number);
-    if (!force && cached && Date.now() - cached.at < DETAIL_TTL_MS) return cached.data;
-    const data = await gh.getIssueDetail(store.state.repo, number);
-    detailCache.set(number, { at: Date.now(), data });
-    return data;
+    if (!force && cached?.data && Date.now() - cached.at < DETAIL_TTL_MS) return cached.data;
+    const request = {};
+    detailCache.set(number, request);
+    try {
+        const data = await gh.getIssueDetail(store.state.repo, number);
+        if (detailCache.get(number) === request) detailCache.set(number, { at: Date.now(), data });
+        return data;
+    } finally {
+        if (detailCache.get(number) === request) detailCache.delete(number);
+    }
 }
 
 async function startReview({ numbers, instanceId, send }) {
     const items = store.pendingReview(numbers);
-    if (!items.length) return { queued: [], message: "Nothing to review — no eligible unreviewed items remain." };
+    if (!items.length) {
+        const wanted = numbers?.length ? new Set(numbers.map(Number)) : null;
+        const blocked = store.snapshot().items.filter((item) =>
+            !item.decision && !item.pendingDecision && !item.reviewEligible &&
+            item.reviewStatus !== "queued" &&
+            (wanted ? wanted.has(item.number) : item.reviewStatus !== "reviewed"),
+        ).length;
+        return {
+            queued: [],
+            message: blocked
+                ? `Nothing to review — ${blocked} submission(s) blocked by intake. AI review requires ready-for-review with no pending intake labels. Check the intake feedback on the issues and refresh after intake completes.`
+                : "Nothing to review — no eligible unreviewed items remain.",
+        };
+    }
     const queued = items.map((item) => item.number);
     const snapshots = await store.markQueued(queued);
     const prompt = buildReviewPrompt({
@@ -100,7 +138,7 @@ async function startRereview({ number, guidance, instanceId, send }) {
     if (item.pendingDecision) throw new Error(`#${item.number} has a posted command awaiting workflow confirmation.`);
     if (item.reviewStatus === "queued") throw new Error(`#${item.number} is already queued for review.`);
     if (!isReadyForApproval(item.labels ?? [])) {
-        throw new Error(`#${item.number} is pending intake or is no longer ready-for-review.`);
+        throw new Error(`#${item.number}: ${reviewBlockedReason(item.labels)}`);
     }
     const text = String(guidance ?? "").trim().slice(0, MAX_GUIDANCE_LENGTH);
     const snapshots = await store.markQueued([item.number], { rereviewGuidance: text || null });
@@ -128,7 +166,7 @@ async function startRereview({ number, guidance, instanceId, send }) {
 function stripCommand(text, command) {
     return String(text ?? "")
         .trim()
-        .replace(new RegExp(`^/${command}\\b`, "i"), "")
+        .replace(new RegExp(`^/${command}(?![\\w-])`, "i"), "")
         .trim();
 }
 
@@ -147,6 +185,7 @@ async function postDecisionCommand({ number, kind, comment }) {
     const item = store.getItem(number);
     if (item.decision) throw new Error(`#${number} was already actioned (${item.decision.kind}).`);
     if (item.pendingDecision) throw new Error(`#${number} already has a posted command awaiting workflow confirmation. Refresh the board.`);
+    assertNoPendingFixesRequest(item, number);
 
     const status = await gh.getIssueStatus(store.state.repo, number);
     if (status.state !== "OPEN") throw new Error(`#${number} is ${status.state.toLowerCase()}. Refresh the board.`);
@@ -169,11 +208,63 @@ async function postDecisionCommand({ number, kind, comment }) {
     return { number, ...pendingDecision, pending: true };
 }
 
+async function postFreeformComment({ number, body }) {
+    const text = gh.normalizeFreeformComment(body);
+    store.getItem(number);
+    if (decisionsInFlight.has(number)) throw new Error(`#${number} already has a GitHub action in progress.`);
+    decisionsInFlight.add(number);
+    try {
+        const commentUrl = await gh.postComment(store.state.repo, number, text);
+        detailCache.delete(number);
+        return { number, commentUrl };
+    } finally {
+        decisionsInFlight.delete(number);
+    }
+}
+
+// Request fixes keeps the issue open, so it bypasses the pending-decision flow. The router swaps the
+// intake labels, and the board picks that up with a refresh once the label lands.
+async function postRequestFixes({ number, comment }) {
+    const body = gh.buildRequestFixesCommand(comment);
+    const item = store.getItem(number);
+    if (item.decision) throw new Error(`#${number} was already actioned (${item.decision.kind}).`);
+    if (item.pendingDecision) throw new Error(`#${number} already has a posted command awaiting workflow confirmation. Refresh the board.`);
+    assertNoPendingFixesRequest(item, number);
+    if (decisionsInFlight.has(number)) throw new Error(`#${number} already has a GitHub action in progress.`);
+    decisionsInFlight.add(number);
+    try {
+        const status = await gh.getIssueStatus(store.state.repo, number);
+        if (status.state !== "OPEN") throw new Error(`#${number} is ${status.state.toLowerCase()}. Refresh the board.`);
+        if (status.labels.includes("requires-submitter-fixes")) {
+            throw new Error(`#${number} is already waiting on submitter fixes.`);
+        }
+        const commentUrl = await gh.postComment(store.state.repo, number, body);
+        const pendingFixesRequest = { body, commentUrl, at: new Date().toISOString() };
+        await store.recordPendingFixesRequest(number, pendingFixesRequest);
+        detailCache.delete(number);
+        const confirmed = await confirmRequestFixes({
+            number,
+            getIssueStatus: (issueNumber) => gh.getIssueStatus(store.state.repo, issueNumber),
+            onConfirmed: (latest) => store.resolvePendingFixesRequest(number, latest),
+            refresh,
+            sleep,
+            log: (error) => session?.log(
+                `Could not confirm fixes request for #${number}: ${error?.stack ?? error}`,
+                { level: "warning" },
+            ),
+        });
+        return { number, commentUrl, pending: !confirmed };
+    } finally {
+        decisionsInFlight.delete(number);
+    }
+}
+
 function boardSummary() {
     const snapshot = store.snapshot();
     return {
         repo: snapshot.repo,
         lastRefreshedAt: snapshot.lastRefreshedAt,
+        pendingReviewCount: store.pendingReview().length,
         counts: Object.fromEntries(
             snapshot.columns.map((column) => [column.id, snapshot.items.filter((i) => i.column === column.id).length]),
         ),
@@ -182,12 +273,17 @@ function boardSummary() {
             title: item.title,
             author: item.author,
             column: item.column,
+            reviewEligible: item.reviewEligible,
+            reviewBlockedReason: item.reviewBlockedReason,
             aiRecommendation: item.review?.recommendation ?? null,
             manualOverride: item.manualColumn ?? null,
             suggestedComment: item.review?.suggestedComment ?? null,
             decision: item.decision ? { kind: item.decision.kind, at: item.decision.at } : null,
             pendingDecision: item.pendingDecision
                 ? { kind: item.pendingDecision.kind, at: item.pendingDecision.at }
+                : null,
+            pendingFixesRequest: item.pendingFixesRequest
+                ? { at: item.pendingFixesRequest.at, commentUrl: item.pendingFixesRequest.commentUrl }
                 : null,
         })),
     };
@@ -205,6 +301,9 @@ function routesFor(instanceId) {
         "POST /api/issue/:number": ({ number }) => getIssue(number, { force: true }),
         "POST /api/decision": ({ body }) =>
             postDecision({ number: Number(body.number), kind: body.kind, comment: body.comment }),
+        "POST /api/comment": ({ body }) => postFreeformComment({ number: Number(body.number), body: body.body }),
+        "POST /api/request-fixes": ({ body }) =>
+            postRequestFixes({ number: Number(body.number), comment: body.comment }),
     };
     // Board errors are user-facing messages (e.g. "already actioned", gh failures); surface only the
     // message text, never the stack, and log the full error for debugging.
@@ -249,7 +348,7 @@ session = await joinSession({
             actions: [
                 {
                     name: "get_board",
-                    description: "Return every board item with its column, AI recommendation, suggested comment, and decision.",
+                    description: "Return every board item with its review eligibility, blocked reason, column, AI recommendation, suggested comment, and decision.",
                     handler: wrap(() => boardSummary()),
                 },
                 {
@@ -260,7 +359,7 @@ session = await joinSession({
                 {
                     name: "start_review",
                     description:
-                        "Queue items for AI review (defaults to every item without a review) and return review instructions to follow.",
+                        "Queue intake-ready items for AI review (defaults to eligible items without a review) and return review instructions to follow. Pending intake submissions cannot be forced into review.",
                     inputSchema: {
                         type: "object",
                         additionalProperties: false,
