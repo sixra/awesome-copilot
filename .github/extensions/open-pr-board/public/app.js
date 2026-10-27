@@ -410,7 +410,7 @@ async function bulkAction(columnId, kind) {
                 const result = await api("/api/decision", {
                     method: "POST", body: {
                         number: item.number, kind, comment: item.comment,
-                        ...(kind === "approve" ? { headRefOid: item.headRefOid } : {}),
+                        ...(kind !== "close" ? { headRefOid: item.headRefOid } : {}),
                     },
                 });
                 completed++;
@@ -754,7 +754,7 @@ async function submitDecision(button, kind) {
     const result = await run(button, () =>
         api("/api/decision", { method: "POST", body: {
             number: item.number, kind, comment,
-            ...(kind === "approve" ? { headRefOid: previewHeadRefOid } : {}),
+            ...(kind !== "close" ? { headRefOid: kind === "approve" ? previewHeadRefOid : item.headRefOid } : {}),
         } }),
     );
     decisionsInFlight.delete(item.number);

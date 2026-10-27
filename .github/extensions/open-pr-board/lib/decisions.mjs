@@ -14,6 +14,10 @@ export async function applyDecisionOnGitHub({ store, number, kind, comment, head
         if (!item) throw new Error(`Pull request #${number} is not on the board. Refresh first.`);
         if (item.decision) throw new Error(`#${number} was already actioned (${item.decision.kind}).`);
         const actionHeadRefOid = item.headRefOid ?? null;
+        if ((kind === "comment" || kind === "request-changes") &&
+            (!headRefOid || headRefOid !== actionHeadRefOid)) {
+            throw new Error("PR changed since it was displayed; review the current commit before submitting feedback.");
+        }
 
         const body = String(comment ?? "").trim().slice(0, MAX_COMMENT_LENGTH);
         if ((kind === "request-changes" || kind === "comment") && !body) {

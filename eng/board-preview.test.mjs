@@ -82,6 +82,37 @@ async function createUI(boardName, request = async () => ({
     };
 }
 
+for (const outcome of ["success", "error"]) {
+    test(`plugin detail reload ignores an older polling ${outcome} after the post-comment reload`, async () => {
+        const requests = [];
+        const ui = await createUI("external-plugin-review-board", () => new Promise((resolve, reject) => {
+            requests.push({ resolve, reject });
+        }));
+        const polling = ui.context.loadDetail(1, { force: true });
+        const posted = ui.context.loadDetail(1, { force: true });
+        requests[1].resolve({ bodyHtml: "new", comments: [{ bodyHtml: "posted comment" }] });
+        await posted;
+        if (outcome === "success") requests[0].resolve({ bodyHtml: "old", comments: [] });
+        else requests[0].reject(new Error("Old failure"));
+        await polling;
+        assert.equal(vm.runInContext("details.get(1).bodyHtml", ui.context), "new");
+        assert.equal(vm.runInContext("details.get(1).comments.length", ui.context), 1);
+        assert.equal(vm.runInContext("detailRequests.size", ui.context), 0);
+    });
+}
+
+for (const kind of ["comment", "request-changes"]) {
+    test(`PR drawer ${kind} includes the displayed SHA`, async () => {
+        const calls = [];
+        const ui = await createUI("open-pr-board", async (...args) => {
+            calls.push(args);
+            return { status: "submitted" };
+        });
+        await ui.decide(kind);
+        assert.equal(calls[0][1].body.headRefOid, "first");
+    });
+}
+
 for (const boardName of ["open-pr-board", "external-plugin-review-board"]) {
     test(`${boardName}: live refresh retains selection, drafts, tabs, and in-flight action guards`, async () => {
         const ui = await createUI(boardName);

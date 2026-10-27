@@ -107,11 +107,26 @@ test("sync before a delayed manual move retains the client's original commit", a
 });
 
 for (const kind of ["comment", "request-changes"]) {
+  test(`${kind} rejects feedback dispatched after the displayed head has changed`, async (t) => {
+    const store = await createStore(t);
+    await store.syncPullRequests([pr("second")]);
+    let writes = 0;
+    for (const headRefOid of ["first", undefined]) {
+      await assert.rejects(applyDecisionOnGitHub({
+        store, number: 1, kind, comment: "Feedback on first", headRefOid,
+        github: { submitPullRequestReview: async () => { writes++; } },
+        refresh: async () => {},
+      }), /changed since it was displayed/);
+    }
+    assert.equal(writes, 0);
+    assert.equal(store.getItem(1).decision, null);
+  });
+
   test(`a delayed ${kind} response retains the action head when polling discovers new commits`, async (t) => {
     const store = await createStore(t);
     const pending = deferred();
     const action = applyDecisionOnGitHub({
-      store, number: 1, kind, comment: "Feedback on first",
+      store, number: 1, kind, comment: "Feedback on first", headRefOid: "first",
       github: { submitPullRequestReview: async () => { await pending.promise; return { status: "submitted" }; } },
       refresh: () => store.syncPullRequests([pr("second")]),
     });
@@ -312,7 +327,7 @@ test("concurrent GitHub decisions for the same repo/PR cannot both write", async
     submitPullRequestReview: async () => { calls++; await waiting.promise; return { status: "comment-submitted" }; },
     closePullRequest: async () => { calls++; throw new Error("must not be reached"); },
   };
-  const args = { store, number: 1, comment: "Feedback", github, refresh: async () => {} };
+  const args = { store, number: 1, comment: "Feedback", headRefOid: "first", github, refresh: async () => {} };
   const first = applyDecisionOnGitHub({ ...args, kind: "comment" });
   await assert.rejects(applyDecisionOnGitHub({ ...args, kind: "close" }), /in progress/);
   assert.equal(calls, 1);
@@ -323,7 +338,7 @@ test("concurrent GitHub decisions for the same repo/PR cannot both write", async
 
 test("decision lock is released on failure and independent repositories can proceed", async (t) => {
   const store = await createStore(t);
-  const args = { store, number: 1, kind: "comment", comment: "Feedback", refresh: async () => {} };
+  const args = { store, number: 1, kind: "comment", comment: "Feedback", headRefOid: "first", refresh: async () => {} };
   await assert.rejects(applyDecisionOnGitHub({
     ...args, github: { submitPullRequestReview: async () => { throw new Error("offline"); } },
   }), /offline/);

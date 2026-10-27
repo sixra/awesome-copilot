@@ -60,8 +60,8 @@ for (const boardName of ["open-pr-board", "external-plugin-review-board"]) {
         vm.runInContext('stagedComments.set(1, "Edited feedback"); filterText = filter = "no matches";', ui.context);
         await ui.context.bulkAction("test", reject);
         assert.deepEqual(ui.calls.map(args => ({ ...payload(args) })), [
-            { number: 1, kind: reject, comment: "Edited feedback" },
-            { number: 2, kind: reject, comment: "Feedback 2" },
+            { number: 1, kind: reject, comment: "Edited feedback", ...(isPR ? { headRefOid: "first" } : {}) },
+            { number: 2, kind: reject, comment: "Feedback 2", ...(isPR ? { headRefOid: "first" } : {}) },
         ]);
         assert.match(ui.confirmations[0], /Edited feedback/);
         assert.match(ui.confirmations[0], /hidden search results/);

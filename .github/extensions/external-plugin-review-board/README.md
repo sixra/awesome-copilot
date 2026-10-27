@@ -44,6 +44,8 @@ Open it by asking Copilot to "open the plugin review board" (canvas id `external
 - **Details panel** shows the AI review, the rendered issue body, and all comments.
   Successful refreshes invalidate cached issue details and reload the selected body/comments
   tab without changing staged feedback.
+  When detail requests overlap, only the latest request for each issue can update its
+  cache, so an older poll cannot overwrite comments loaded after posting feedback.
   Clicking outside the panel or successfully submitting an item action closes it;
   failed actions leave it open so you can correct or retry them.
 - **Quick actions** post `/approve` (with an optional note) or `/reject <reason>` straight to the issue
