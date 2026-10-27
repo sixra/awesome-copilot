@@ -270,7 +270,7 @@ export class BoardStore {
     async recordDecision(number, decision) {
         const item = this.getItem(number);
         if (!item) throw new Error(`Pull request #${number} is not on the board.`);
-        item.decision = {
+        const recorded = {
             kind: decision.kind,
             comment: decision.comment ?? "",
             at: new Date().toISOString(),
@@ -283,9 +283,12 @@ export class BoardStore {
             url: item.url,
             kind: decision.kind,
             comment: decision.comment ?? "",
-            at: item.decision.at,
+            at: recorded.at,
             status: decision.status ?? null,
         });
+        const obsoleteFeedback = (recorded.kind === "comment" || recorded.kind === "request-changes") &&
+            recorded.headRefOid && item.headRefOid && recorded.headRefOid !== item.headRefOid;
+        if (!obsoleteFeedback) item.decision = recorded;
         this.state.history = this.state.history.slice(0, HISTORY_LIMIT);
         return this.commit();
     }

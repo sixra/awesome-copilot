@@ -137,6 +137,36 @@ for (const kind of ["comment", "request-changes"]) {
     assert.equal(store.snapshot().items[0].column, "unreviewed");
     assert.equal(store.state.history[0].kind, kind);
   });
+
+  for (const currentState of ["queued", "reviewed", "manual"]) {
+    test(`obsolete ${kind} feedback preserves the newer head's ${currentState} state`, async (t) => {
+      const store = await createStore(t);
+      const pending = deferred();
+      const action = applyDecisionOnGitHub({
+        store, number: 1, kind, comment: "Feedback on first", headRefOid: "first",
+        github: { submitPullRequestReview: async () => { await pending.promise; return { status: "submitted" }; } },
+        refresh: () => store.syncPullRequests([pr("second")]),
+      });
+      await store.syncPullRequests([pr("second")]);
+      const { queued } = await store.markQueued([1]);
+      if (currentState === "reviewed") {
+        await store.recordReviews([{ number: 1, queueId: queued[0].queueId, recommendation: "approve" }]);
+      } else if (currentState === "manual") {
+        await store.moveItem(1, "needs-insight", "second");
+      }
+      const before = structuredClone(store.getItem(1));
+      pending.resolve();
+      await action;
+      assert.deepEqual(store.getItem(1), before, "Obsolete feedback must not replace current review or move state");
+      assert.equal(store.state.history[0].kind, kind);
+      if (currentState === "queued") {
+        const [result] = await store.recordReviews([{
+          number: 1, queueId: queued[0].queueId, recommendation: "approve",
+        }]);
+        assert.equal(result.status, "recorded", "The newer head's queue token remains valid");
+      }
+    });
+  }
 }
 
 test("approval and auto-merge are pinned to the reviewed commit", async () => {
