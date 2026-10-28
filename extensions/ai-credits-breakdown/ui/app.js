@@ -745,7 +745,7 @@
         const b = by[f.s] || (by[f.s] = { c: 0, calls: 0, tok: 0, first: f.day, models: {}, t: [0, 0] });
         b.c += f.c; b.calls += f.calls; b.tok += f.ti + f.tr + f.tw + f.to; if (f.day < b.first) b.first = f.day; b.models[f.m] = (b.models[f.m] || 0) + f.c; b.t[f.tier] += f.c;
       });
-      const top = Object.entries(by).sort((a, b) => b[1].c - a[1].c).slice(0, 25);
+      const top = Object.entries(by).sort((a, b) => b[1].c - a[1].c).slice(0, 10);
       const all = rows.length ? sum(rows, 'c') : 0;
       $('sessions-table').innerHTML = '<thead><tr><th class="left">Session</th><th class="left">First matching usage</th><th class="left">Repository</th><th class="left">Surface</th><th class="left">Main model</th><th>Credits (USD)</th><th>Share</th><th>Calls</th><th>Tokens</th><th>Basis</th></tr></thead><tbody>' +
         top.map(([s, b]) => {
