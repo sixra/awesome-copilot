@@ -60,8 +60,8 @@
     const modelName = (i) => D.models[i].name;
     const modelFam = (i) => D.models[i].family;
     const months = Array.from(new Set(facts.map((f) => f.mo))).sort();
-    const lastMonth = months[months.length - 1];
-    const START = M.periodStart, END = M.periodEnd;
+    const lastMonth = M.generated.slice(0, 7);
+    const START = M.periodStart, END = M.generated.slice(0, 10);
     const EVENTS_FROM = M.eventsStart ? longDate(M.eventsStart.slice(0, 10)) : 'the day the Copilot CLI began recording them';
     const TZ = M.timeZone || 'UTC';
 
@@ -127,7 +127,13 @@
       if (url !== location.pathname + location.search + location.hash) history.replaceState(null, '', url);
     }
     readHash();
-    window.addEventListener('hashchange', () => { readHash(); render(); });
+    window.addEventListener('hashchange', () => {
+      if (location.hash === '#provenance' || location.hash === '#main') {
+        writeHash();
+        return;
+      }
+      readHash(); render();
+    });
 
     const updated = new Date(M.generated).toLocaleString(undefined, {
       day: 'numeric', month: 'short', year: 'numeric',
@@ -511,7 +517,9 @@
       }
       automationEl.setAttribute('tabindex', '0');
       const total = series.reduce((v, a) => v + a.total, 0);
-      $('automations-summary').textContent = plural(series.length, 'series', 'series') + ' · ' + credTxt(total) + ' recorded · ' + rangeText(F.from, F.to) +
+      $('automations-summary').textContent =
+        (M.automationsUnavailable ? 'Automation attribution is unavailable: ' + M.automationsUnavailable + '. ' : '') +
+        plural(series.length, 'series', 'series') + ' · ' + credTxt(total) + ' recorded · ' + rangeText(F.from, F.to) +
         (total ? '' : '. No automation spend under these filters; widen the date range or clear a filter.');
       const W = Math.max(240, automationEl.clientWidth), L = 72, R = 16, T = 26, PH = 240, H = T + PH + 34;
       const pw = W - L - R, n = days.length;
@@ -658,9 +666,14 @@
       let h = '<div class="hours" role="img" aria-label="Credits by weekday and hour, ' + esc(TZ) + ' time">' + '<span></span>' + Array.from({ length: 24 }, (_, i) => '<span class="h">' + (i % 6 === 0 ? i : '') + '</span>').join('');
       grid.forEach((row, d) => { h += '<span class="d">' + days[d] + '</span>' + row.map((v, i) => '<span class="cell" style="background:' + shade(v) + '" title="' + days[d] + ' ' + String(i).padStart(2, '0') + ':00 · ' + credTxt(v) + '"></span>').join(''); });
       let peak = null; grid.forEach((row, d) => row.forEach((v, i) => { if (v > 0 && (!peak || v > peak.v)) peak = { v, d, i }; }));
+      const hourlyTable = '<details class="note"><summary>Hourly credits as a table</summary><div class="scroll"><table class="tbl">' +
+        '<caption>AI credits by weekday and hour, ' + esc(TZ) + ' time</caption>' +
+        '<thead><tr><th scope="col">Day</th>' + Array.from({ length: 24 }, (_, i) => '<th scope="col">' + String(i).padStart(2, '0') + ':00</th>').join('') + '</tr></thead>' +
+        '<tbody>' + grid.map((row, d) => '<tr><th scope="row">' + days[d] + '</th>' + row.map((v) => '<td>' + esc(credTxt(v)) + '</td>').join('') + '</tr>').join('') +
+        '</tbody></table></div></details>';
       $('hours').innerHTML = h + '</div>' +
         (peak ? '<p class="note">Busiest slot: ' + days[peak.d] + ' ' + String(peak.i).padStart(2, '0') + ':00, ' + credTxt(peak.v) + '. Grid covers ' + credTxt(total) + ' of per-call telemetry.</p>' : '<p class="note">No per-call telemetry under these filters.</p>') +
-        '<p class="note">' + esc(TZ) + ' time, per-call telemetry only (from ' + EVENTS_FROM + '). Darker = more credits. Follows every filter.</p>';
+        '<p class="note">' + esc(TZ) + ' time, per-call telemetry only (from ' + EVENTS_FROM + '). Darker = more credits. Follows every filter.</p>' + hourlyTable;
     }
 
     /* ---------- Prompt cache ---------- */

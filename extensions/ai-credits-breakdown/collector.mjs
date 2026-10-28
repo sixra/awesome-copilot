@@ -192,8 +192,10 @@ export function loadEvents(db) {
         "total_nano_aiu", "initiator", "token_details_json", "created_at", "id", "agent_id", "duration_ms"];
     const select = wanted.map((column) => (have.has(column) ? column : `NULL AS ${column}`)).join(", ");
     for (const row of db.prepare(`SELECT ${select} FROM assistant_usage_events`).iterate()) {
-        const startMs = Date.parse(row.created_at);
+        const timestamp = String(row.created_at ?? "").trim().replace(" ", "T");
+        const startMs = Date.parse(/[zZ]$|[+-]\d{2}:\d{2}$/.test(timestamp) ? timestamp : `${timestamp}Z`);
         if (!row.session_id || !row.model || Number.isNaN(startMs)) continue;
+        row.created_at = new Date(startMs).toISOString();
         const comps = { input: 0, cache_read: 0, cache_write: 0, output: 0 };
         const tok = { input: 0, cache_read: 0, cache_write: 0, output: 0 };
         try {
@@ -209,6 +211,12 @@ export function loadEvents(db) {
                 }
             }
         } catch { /* malformed token details: keep the call's credits without a split */ }
+        tok.cache_read = row.cache_read_tokens ?? tok.cache_read;
+        tok.cache_write = row.cache_write_tokens ?? tok.cache_write;
+        tok.output = row.output_tokens ?? tok.output;
+        if (row.input_tokens != null) {
+            tok.input = Math.max(0, row.input_tokens - tok.cache_read - tok.cache_write);
+        }
         nested(bySession, row.session_id, () => []).push({
             model: row.model,
             credits: (row.total_nano_aiu || 0) / 1e9,
