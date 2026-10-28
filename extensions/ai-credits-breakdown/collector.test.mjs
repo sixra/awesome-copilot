@@ -6,7 +6,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
     CACHE_STATES, buildLedger, buildRates, cacheStates, cacheTtlFor, createLocalClock, family,
-    loadAutomations, prettyModel, shutdownIncrements, summarizeLedger,
+    loadAutomations, prettyModel, shutdownIncrements, summarizeLedger, transcriptStats,
 } from "./collector.mjs";
 import { SENTINELS, writeSampleHome } from "./sample-data.mjs";
 
@@ -311,6 +311,155 @@ test("tolerates an older per-call schema and malformed log lines", async () => {
         assert.equal(ledger.meta.total, 5);
         assert.equal(ledger.facts.length, 1);
         assert.equal(ledger.dims.repos[0], "contoso/app");
+    } finally {
+        cleanup();
+    }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Small hand-made telemetry homes
+// ---------------------------------------------------------------------------------------------
+const EVENT_COLUMNS = "id INTEGER, session_id TEXT, model TEXT, input_tokens INTEGER, output_tokens INTEGER, " +
+    "cache_read_tokens INTEGER, cache_write_tokens INTEGER, total_nano_aiu INTEGER, initiator TEXT, " +
+    "token_details_json TEXT, created_at TEXT, agent_id TEXT, duration_ms INTEGER";
+const details = (input, cacheRead, cacheWrite, output) => JSON.stringify([
+    ["input", input], ["cache_read", cacheRead], ["cache_write", cacheWrite], ["output", output],
+].map(([tokenType, tokenCount]) => ({ tokenType, tokenCount, batchSize: 1000000, costPerBatch: 1e9 })));
+
+// events: [session, model, created_at, nanoAiu, columns?, detailsJson?, initiator?]
+function eventsHome(home, events) {
+    const store = new DatabaseSync(path.join(home, "session-store.db"));
+    store.exec(`CREATE TABLE sessions (id TEXT, repository TEXT, created_at TEXT, updated_at TEXT);
+        CREATE TABLE assistant_usage_events (${EVENT_COLUMNS});`);
+    const insert = store.prepare("INSERT INTO assistant_usage_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    events.forEach(([sid, model, createdAt, nano, c = {}, json = null, initiator = "user"], i) => {
+        insert.run(i + 1, sid, model, c.input ?? null, c.output ?? null, c.cacheRead ?? null, c.cacheWrite ?? null,
+            nano, initiator, json, createdAt, "", 1000);
+    });
+    store.close();
+}
+function shutdownLine(timestamp, credits, model = "claude-sonnet-5.5") {
+    return JSON.stringify({
+        type: "session.shutdown", timestamp,
+        data: { totalNanoAiu: credits * 1e9, modelMetrics: { [model]: { totalNanoAiu: credits * 1e9, requests: { count: 3 },
+            tokenDetails: { input: { tokenCount: 100 }, output: { tokenCount: 10 } } } } },
+    });
+}
+function writeTranscript(home, sid, lines) {
+    fs.mkdirSync(path.join(home, "session-state", sid), { recursive: true });
+    fs.writeFileSync(path.join(home, "session-state", sid, "events.jsonl"), lines.join("\n") + "\n");
+}
+const sumColumn = (ledger, column) => ledger.facts.reduce((a, f) => a + f[column], 0);
+
+test("unzoned SQLite timestamps are UTC whatever the machine's time zone is", async () => {
+    const { home, cleanup } = tempHome();
+    const before = process.env.TZ;
+    try {
+        eventsHome(home, [["s1", "claude-sonnet-5.5", "2026-10-28 12:34:00", 2e9]]);
+        process.env.TZ = "America/New_York"; // Date.parse() reads an unzoned time in this zone
+        const ledger = await buildLedger({ home, timeZone: "UTC" });
+        assert.equal(ledger.dims.days[ledger.facts[0][0]], "2026-10-28");
+        assert.equal(ledger.hourly.length, 1);
+        assert.deepEqual(ledger.hourly[0].slice(4, 6), [2, 12], "Wednesday 12:00 UTC, not 16:00");
+        assert.equal(ledger.meta.eventsStart, "2026-10-28T12:34:00.000Z");
+    } finally {
+        if (before === undefined) delete process.env.TZ; else process.env.TZ = before;
+        cleanup();
+    }
+});
+
+test("token counts fall back to the call's own counters only when it has no usable token details", async () => {
+    const { home, cleanup } = tempHome();
+    try {
+        const counters = { input: 1000, cacheRead: 600, cacheWrite: 100, output: 50 };
+        eventsHome(home, [
+            ["none", "claude-sonnet-5.5", "2026-10-01T10:00:00Z", 1e9, counters, null],
+            ["bad", "claude-sonnet-5.5", "2026-10-02T10:00:00Z", 1e9, counters, "not json"],
+            ["empty", "claude-sonnet-5.5", "2026-10-03T10:00:00Z", 1e9, counters, "[]"],
+            // The billed details win when they disagree with the counters.
+            ["billed", "claude-sonnet-5.5", "2026-10-04T10:00:00Z", 1e9, counters, details(250, 600, 450, 50)],
+        ]);
+        const ledger = await buildLedger({ home, timeZone: "UTC" });
+        const bySession = Object.fromEntries(ledger.facts.map((f) => [ledger.dims.days[f[0]], f.slice(10, 14)]));
+        assert.deepEqual(bySession["2026-10-01"], [300, 600, 100, 50], "fresh input = input minus cached tokens");
+        assert.deepEqual(bySession["2026-10-02"], [300, 600, 100, 50]);
+        assert.deepEqual(bySession["2026-10-03"], [300, 600, 100, 50]);
+        assert.deepEqual(bySession["2026-10-04"], [250, 600, 450, 50]);
+        assert.ok(ledger.facts.every((f) => f[6] + f[7] + f[8] + f[9] <= f[5] + 1e-6));
+    } finally {
+        cleanup();
+    }
+});
+
+test("a session whose whole total is one credit or less is still counted", async () => {
+    const { home, cleanup } = tempHome();
+    try {
+        writeTranscript(home, "shutdown-only", [shutdownLine("2026-10-05T10:00:00Z", 0.4)]);
+        fs.mkdirSync(home, { recursive: true });
+        const app = new DatabaseSync(path.join(home, "data.db"));
+        app.exec(`CREATE TABLE sessions (id TEXT, title TEXT, session_type TEXT, model TEXT, created_at TEXT, updated_at TEXT, total_nano_aiu INTEGER);
+            INSERT INTO sessions VALUES ('app-only', NULL, 'project', 'claude-sonnet-5.5', '2026-10-06T10:00:00Z', '2026-10-06T11:00:00Z', 300000000);`);
+        app.close();
+        const ledger = await buildLedger({ home, timeZone: "UTC" });
+        assert.equal(ledger.sessions.length, 2);
+        assert.ok(Math.abs(ledger.meta.total - 0.7) < 1e-6, String(ledger.meta.total));
+        assert.deepEqual(ledger.dims.kinds.sort(), ["Session total"]);
+    } finally {
+        cleanup();
+    }
+});
+
+test("the tolerance still forgives small disagreements against usage already counted", async () => {
+    const { home, cleanup } = tempHome();
+    try {
+        eventsHome(home, [["s1", "claude-sonnet-5.5", "2026-10-01T10:00:00Z", 100e9]]);
+        writeTranscript(home, "s1", [shutdownLine("2026-10-01T11:00:00Z", 100.6)]);
+        const ledger = await buildLedger({ home, timeZone: "UTC" });
+        assert.ok(Math.abs(ledger.meta.total - 100) < 1e-6, "0.6 credits of disagreement is not added on top");
+        assert.equal(ledger.meta.tierTotals[1], 0);
+    } finally {
+        cleanup();
+    }
+});
+
+test("session logs are read once while they are unchanged, and again when they change or go", async () => {
+    const { home, cleanup } = tempHome();
+    try {
+        writeTranscript(home, "a", [shutdownLine("2026-10-01T10:00:00Z", 5)]);
+        writeTranscript(home, "b", [shutdownLine("2026-10-02T10:00:00Z", 7)]);
+        const reads = () => transcriptStats.reads;
+        const start = reads();
+        assert.equal((await buildLedger({ home, timeZone: "UTC" })).meta.total, 12);
+        assert.equal(reads() - start, 2);
+        assert.equal((await buildLedger({ home, timeZone: "UTC" })).meta.total, 12);
+        assert.equal(reads() - start, 2, "unchanged files are not read again");
+
+        fs.appendFileSync(path.join(home, "session-state", "a", "events.jsonl"), shutdownLine("2026-10-03T10:00:00Z", 9) + "\n");
+        assert.equal((await buildLedger({ home, timeZone: "UTC" })).meta.total, 16, "the grown log is read again");
+        assert.equal(reads() - start, 3);
+
+        fs.rmSync(path.join(home, "session-state", "b"), { recursive: true });
+        assert.equal((await buildLedger({ home, timeZone: "UTC" })).meta.total, 9, "a removed log no longer counts");
+        assert.equal(reads() - start, 3);
+    } finally {
+        cleanup();
+    }
+});
+
+test("values that look like inherited object properties are treated as ordinary names", async () => {
+    const { home, cleanup } = tempHome();
+    try {
+        eventsHome(home, [["s1", "constructor", "2026-10-01T10:00:00Z", 3e9, {}, details(10, 0, 0, 5), "constructor"]]);
+        const app = new DatabaseSync(path.join(home, "data.db"));
+        app.exec(`CREATE TABLE sessions (id TEXT, title TEXT, session_type TEXT, model TEXT, created_at TEXT, updated_at TEXT, total_nano_aiu INTEGER);
+            INSERT INTO sessions VALUES ('s1', NULL, 'toString', 'constructor', '2026-10-01T10:00:00Z', '2026-10-01T11:00:00Z', 3000000000);`);
+        app.close();
+        const ledger = await buildLedger({ home, timeZone: "UTC" });
+        assert.equal(ledger.meta.total, 3);
+        assert.deepEqual(ledger.dims.models, [{ id: "constructor", name: "Constructor", family: "Other" }]);
+        assert.deepEqual(ledger.dims.kinds, ["Background"]);
+        assert.deepEqual(ledger.dims.surfaces, ["Copilot app · project session"]);
+        assert.ok(Number.isFinite(sumColumn(ledger, 5)) && Number.isFinite(sumColumn(ledger, 6)));
     } finally {
         cleanup();
     }

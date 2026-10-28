@@ -37,7 +37,8 @@
   <section class="sheet span-8" id="rain-sheet" hidden aria-labelledby="rain-h">
     <h2 id="rain-h">Daily credits and running total</h2>
     <p class="sub">Each day's credits hang from the top; the running total rises below. Drag across the chart to zoom into those days; hover or use ← → for detail.</p>
-    <div class="rain" id="rain" tabindex="0" role="group" aria-label="Chart of daily AI credits with cumulative total"></div>
+    <div class="rain" id="rain" tabindex="0" role="group" aria-label="Chart of daily AI credits with cumulative total" aria-describedby="rain-status"></div>
+    <p class="sr-only" id="rain-status" role="status" aria-live="polite"></p>
     <div class="legend" id="rain-legend"></div>
   </section>
 

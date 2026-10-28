@@ -11,6 +11,11 @@
   };
   const plural = (n, one, many) => fmt(n) + ' ' + (n === 1 ? one : (many || one + 's'));
   const cu = (c) => fmt(c) + ' (' + usd(c) + ')';
+  // Averages per call are often a fraction of a credit, so they keep their decimals and sub-cent dollars.
+  const cuFine = (c) => (c >= 100 ? fmt(c) : c >= 10 ? c.toFixed(1) : c.toFixed(2)) + ' (' +
+    (c >= 100 ? usd(c) : '$' + (c * 0.01).toFixed(4).replace(/(\.\d\d)0+$/, '$1')) + ')';
+  // Totals grouped by names that come from telemetry: a name like "constructor" must stay an ordinary key.
+  const dict = () => Object.create(null);
   const credTxt = (c) => fmt(c) + ' credits (' + usd(c) + ')';
   const pct = (x) => (x >= 0.1 ? Math.round(x * 100) + '%' : x >= 0.01 ? (x * 100).toFixed(1) + '%' : x > 0 ? '<1%' : '0%');
   const mtok = (n) => (n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(n));
@@ -174,7 +179,7 @@
       const pid = presetOf(); preset.value = pid;
       fromEl.value = F.from; toEl.value = F.to;
       DIMS.forEach((d) => {
-        const g = {}; rowsFor(d.key).forEach((f) => { g[f[d.key]] = (g[f[d.key]] || 0) + f.c; });
+        const g = dict(); rowsFor(d.key).forEach((f) => { g[f[d.key]] = (g[f[d.key]] || 0) + f.c; });
         const raw = (v) => (d.num ? Number(v) : v);
         const opts = Object.entries(g).map(([v, c]) => ({ v: raw(v), c })).sort((a, b) => b.c - a.c);
         if (F[d.key] !== null && !opts.some((o) => o.v === F[d.key])) opts.unshift({ v: F[d.key], c: 0 });
@@ -265,7 +270,7 @@
       const tiers = [0, 1].map((t) => sum(rows.filter((f) => f.tier === t), 'c'));
       const amt = '<strong class="amt">' + usd(c) + '</strong>';
       const len = spanDays(F.from, F.to);
-      const byDay = {}; rows.forEach((f) => { byDay[f.day] = (byDay[f.day] || 0) + f.c; });
+      const byDay = dict(); rows.forEach((f) => { byDay[f.day] = (byDay[f.day] || 0) + f.c; });
       const active = Object.keys(byDay).length;
       const peak = Object.entries(byDay).sort((a, b) => b[1] - a[1])[0];
       const counts = '<span class="cr">' + credTxt(c) + ' · ' + plural(sess, 'session') + ' · ' + plural(repos, 'repository', 'repositories') + ' · ' + plural(active, 'active day') + ' of ' + len + '</span>';
@@ -311,13 +316,13 @@
     let allRepos = false;
     function renderRepoSpend() {
       const rows = rowsFor('repo');
-      const by = {};
+      const by = dict();
       rows.forEach((f) => {
         const k = f.repo || '';
-        const b = by[k] || (by[k] = { c: 0, sess: new Set(), models: {} });
+        const b = by[k] || (by[k] = { c: 0, sess: new Set(), models: dict() });
         b.c += f.c; b.sess.add(f.s); b.models[f.m] = (b.models[f.m] || 0) + f.c;
       });
-      const cmpP = comparison(); const cmpLabel = cmpP ? cmpP.label : null; const cmp = {};
+      const cmpP = comparison(); const cmpLabel = cmpP ? cmpP.label : null; const cmp = dict();
       if (cmpP) rowsBetween(cmpP.a, cmpP.b, 'repo').forEach((f) => { cmp[f.repo || ''] = (cmp[f.repo || ''] || 0) + f.c; });
       const items = Object.entries(by).sort((a, b) => b[1].c - a[1].c);
       const total = items.reduce((a, [, b]) => a + b.c, 0); const max = items.length ? items[0][1].c : 1;
@@ -362,9 +367,9 @@
     function renderRain() {
       const rows = rowsFor(null);
       const days = dayList(F.from, F.to);
-      const idx = {}; days.forEach((d, i) => { idx[d] = i; });
+      const idx = dict(); days.forEach((d, i) => { idx[d] = i; });
       const per = days.map(() => [0, 0]);
-      const topModel = days.map(() => ({}));
+      const topModel = days.map(() => dict());
       const sessSet = days.map(() => new Set());
       rows.forEach((f) => {
         const i = idx[f.day]; if (i === undefined) return;
@@ -444,6 +449,11 @@
         (tm ? '<div class="row"><span>Top model</span><span>' + esc(modelName(Number(tm[0]))) + '</span></div>' : '') +
         (per[1] ? '<div class="row"><span>Basis</span><span>' + [per[0] && 'call ' + cu(per[0]), 'session ' + cu(per[1])].filter(Boolean).join(' · ') + '</span></div>' : '');
       tip.hidden = false;
+      // Keyboard users get the same detail as a spoken status; pointer movement stays silent.
+      if (fromKey) {
+        $('rain-status').textContent = longDate(rainState.days[i]) + '. ' + credTxt(tot) + '. Running total ' + credTxt(rainState.cum[i]) + '. ' +
+          plural(rainState.sessSet[i].size, 'session') + (tm ? '. Top model ' + modelName(Number(tm[0])) : '') + '.';
+      }
       const svg = $('rain').querySelector('svg'); const r = svg.getBoundingClientRect();
       const px = r.left + (xx / g.W) * r.width; const py = r.top + 20;
       const tw = tip.offsetWidth; const left = Math.min(Math.max(8, px + 14), window.innerWidth - tw - 8);
@@ -479,7 +489,7 @@
     });
     rainEl.addEventListener('pointercancel', () => { brush = null; const el = $('brush'); if (el) el.setAttribute('hidden', ''); });
     rainEl.addEventListener('pointerleave', () => { if (!brush) hideDay(); });
-    rainEl.addEventListener('blur', hideDay);
+    rainEl.addEventListener('blur', () => { hideDay(); $('rain-status').textContent = ''; });
     rainEl.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return; e.preventDefault();
       const n = rainState.days.length; let i = rainState.active === null ? (e.key === 'ArrowLeft' ? n - 1 : 0) : rainState.active + (e.key === 'ArrowLeft' ? -1 : 1);
@@ -611,12 +621,12 @@
       if (rest.length) h += '<p class="note">+ ' + rest.length + ' more, ' + credTxt(rest.reduce((a, i) => a + i.c, 0)) + ' combined.</p>';
       return h;
     }
-    const groupSum = (rows, keyFn) => { const o = {}; rows.forEach((f) => { const k = keyFn(f); o[k] = (o[k] || 0) + f.c; }); return o; };
+    const groupSum = (rows, keyFn) => { const o = dict(); rows.forEach((f) => { const k = keyFn(f); o[k] = (o[k] || 0) + f.c; }); return o; };
 
     function renderModels() {
       const rows = rowsFor('m'); const g = groupSum(rows, (f) => f.m);
       const items = Object.entries(g).map(([m, c]) => ({ v: m, label: modelName(Number(m)), c, color: FAMILY_COLOR[modelFam(Number(m))] })).sort((a, b) => b.c - a.c);
-      const tok = {}; rows.forEach((f) => { tok[f.m] = (tok[f.m] || 0) + f.ti + f.tr + f.tw + f.to; });
+      const tok = dict(); rows.forEach((f) => { tok[f.m] = (tok[f.m] || 0) + f.ti + f.tr + f.tw + f.to; });
       $('models').innerHTML = rankList(items, 'm', { limit: 10 }) +
         '<p class="fam">' + Object.keys(FAMILY_COLOR).map((k) => '<span><i class="dot" style="--c:' + FAMILY_COLOR[k] + '"></i>' + esc(k) + '</span>').join('') + '</p>' +
         (items.length ? '<p class="note">' + esc(items[0].label) + ' alone accounts for ' + pct(items[0].c / items.reduce((a, i) => a + i.c, 0)) + ' of the credits shown.</p>' : '');
@@ -710,7 +720,7 @@
           return '<tr class="' + (on ? 'on' : '') + (none ? ' none' : '') + '"><td class="left state"><button class="rowbtn" data-f="cache" data-v="' + i + '" aria-pressed="' + on + '">' + esc(s.name) + '</button><span class="desc">' + esc(CACHE_DESC[s.id] || '') + '</span></td>' +
             '<td class="spent">' + usd(b.c) + '</td>' +
             '<td class="share"><div class="sharewrap"><span class="sharebar"><i style="width:' + (b.c / max) * 100 + '%"></i></span><span class="pct">' + pct(total ? b.c / total : 0) + '</span></div></td>' +
-            '<td class="opt">' + (perCall ? fmt(b.calls) : '–') + '</td><td>' + (perCall ? cu(b.c / b.calls) : '–') + '</td>' +
+            '<td class="opt">' + (perCall ? fmt(b.calls) : '–') + '</td><td>' + (perCall ? cuFine(b.c / b.calls) : '–') + '</td>' +
             '<td class="left paid">' + paidBar(b) + '</td><td class="muted cred">' + cu(b.c) + '</td></tr>';
         }).join('') : '<tr><td class="left muted" colspan="7">No spend under these filters. Widen the date range or clear a filter.</td></tr>') +
         '</tbody>' + (shown.length > 1 ? '<tfoot><tr><td class="left">Total</td><td class="spent">' + usd(total) + '</td><td class="share"></td><td class="opt">' + (mCalls ? fmt(mCalls) : '') + '</td><td></td><td class="paid"></td><td class="muted cred">' + cu(total) + '</td></tr></tfoot>' : '');
@@ -718,8 +728,8 @@
       let insight = '';
       if (W && X && W.calls && X.calls) {
         const pw = W.c / W.calls, px = X.c / X.calls, r = px / pw;
-        insight = 'After a pause, a call cost ' + cu(px) + ' on average' +
-          (r >= 1.5 ? ': ' + (r >= 10 ? Math.round(r) : r.toFixed(1)) + ' times the ' + cu(pw) + ' of a call that reused the cache' : '') +
+        insight = 'After a pause, a call cost ' + cuFine(px) + ' on average' +
+          (r >= 1.5 ? ': ' + (r >= 10 ? Math.round(r) : r.toFixed(1)) + ' times the ' + cuFine(pw) + ' of a call that reused the cache' : '') +
           '. Those ' + plural(X.calls, 'call') + ' came to ' + credTxt(X.c) + ', ' + pct(mCredits ? X.c / mCredits : 0) + ' of the per-call metered credits shown.';
       }
       $('cache-notes').innerHTML =
@@ -730,14 +740,14 @@
 
     /* ---------- Sessions ---------- */
     function renderSessions() {
-      const rows = rowsFor(null); const by = {};
+      const rows = rowsFor(null); const by = dict();
       rows.forEach((f) => {
         const b = by[f.s] || (by[f.s] = { c: 0, calls: 0, tok: 0, first: f.day, models: {}, t: [0, 0] });
         b.c += f.c; b.calls += f.calls; b.tok += f.ti + f.tr + f.tw + f.to; if (f.day < b.first) b.first = f.day; b.models[f.m] = (b.models[f.m] || 0) + f.c; b.t[f.tier] += f.c;
       });
       const top = Object.entries(by).sort((a, b) => b[1].c - a[1].c).slice(0, 25);
       const all = rows.length ? sum(rows, 'c') : 0;
-      $('sessions-table').innerHTML = '<thead><tr><th class="left">Session</th><th class="left">Started</th><th class="left">Repository</th><th class="left">Surface</th><th class="left">Main model</th><th>Credits (USD)</th><th>Share</th><th>Calls</th><th>Tokens</th><th>Basis</th></tr></thead><tbody>' +
+      $('sessions-table').innerHTML = '<thead><tr><th class="left">Session</th><th class="left">First matching usage</th><th class="left">Repository</th><th class="left">Surface</th><th class="left">Main model</th><th>Credits (USD)</th><th>Share</th><th>Calls</th><th>Tokens</th><th>Basis</th></tr></thead><tbody>' +
         top.map(([s, b]) => {
           const sess = data.sessions[s]; const mm = Object.entries(b.models).sort((a, c) => c[1] - a[1])[0];
           return '<tr><td class="left"><code>' + esc(sess.id) + '</code></td><td class="left">' + shortDate(b.first) + '</td><td class="left">' + esc(repoLabel(D.repos[sess.repo])) + '</td><td class="left">' + esc(D.surfaces[sess.surface]) + '</td><td class="left">' + esc(modelName(Number(mm[0]))) + (Object.keys(b.models).length > 1 ? ' <span class="partial">+' + (Object.keys(b.models).length - 1) + '</span>' : '') + '</td>' +

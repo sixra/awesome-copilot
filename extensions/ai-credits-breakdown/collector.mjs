@@ -104,11 +104,15 @@ export function family(model) {
     return "Other";
 }
 
+// Lookup in a table keyed by values read from local telemetry, which must never reach inherited
+// properties such as "constructor".
+const ownValue = (table, key) => (Object.hasOwn(table, key) ? table[key] : undefined);
+
 const PRETTY = { gpt: "GPT", mai: "MAI", kimi: "Kimi", claude: "Claude" };
 export function prettyModel(id) {
     return id.replace("-1m", " (1M)").split("-").map((part) => {
         const lower = part.toLowerCase();
-        if (PRETTY[lower]) return PRETTY[lower];
+        if (ownValue(PRETTY, lower)) return PRETTY[lower];
         if (/^\d/.test(part) || part.startsWith("(")) return part;
         return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
     }).join(" ");
@@ -198,11 +202,13 @@ export function loadEvents(db) {
         row.created_at = new Date(startMs).toISOString();
         const comps = { input: 0, cache_read: 0, cache_write: 0, output: 0 };
         const tok = { input: 0, cache_read: 0, cache_write: 0, output: 0 };
+        let itemised = false;
         try {
             for (const t of JSON.parse(row.token_details_json || "[]")) {
-                if (!(t.tokenType in comps)) continue;
+                if (!Object.hasOwn(comps, t.tokenType)) continue;
                 const rate = t.costPerBatch / t.batchSize / 1e9; // credits per token
                 if (!Number.isFinite(rate)) continue;
+                itemised = true;
                 comps[t.tokenType] += t.tokenCount * rate;
                 tok[t.tokenType] += t.tokenCount;
                 if (t.tokenCount > 0) {
@@ -211,17 +217,20 @@ export function loadEvents(db) {
                 }
             }
         } catch { /* malformed token details: keep the call's credits without a split */ }
-        tok.cache_read = row.cache_read_tokens ?? tok.cache_read;
-        tok.cache_write = row.cache_write_tokens ?? tok.cache_write;
-        tok.output = row.output_tokens ?? tok.output;
-        if (row.input_tokens != null) {
-            tok.input = Math.max(0, row.input_tokens - tok.cache_read - tok.cache_write);
+        // The token details are what the credits are priced from, so they win. Without them (absent,
+        // empty or malformed) the call's own counters still give its token counts; input_tokens includes
+        // the cached tokens, so fresh input is what is left after them.
+        if (!itemised) {
+            tok.cache_read = row.cache_read_tokens ?? 0;
+            tok.cache_write = row.cache_write_tokens ?? 0;
+            tok.output = row.output_tokens ?? 0;
+            tok.input = row.input_tokens == null ? 0 : Math.max(0, row.input_tokens - tok.cache_read - tok.cache_write);
         }
         nested(bySession, row.session_id, () => []).push({
             model: row.model,
             credits: (row.total_nano_aiu || 0) / 1e9,
             comps, tok,
-            kind: KIND_BY_INITIATOR[row.initiator || ""] || "Background",
+            kind: ownValue(KIND_BY_INITIATOR, row.initiator || "") || "Background",
             ts: row.created_at,
             // created_at is when the call finished; the request went out duration_ms earlier.
             start: startMs / 1000 - (row.duration_ms || 0) / 1000,
@@ -280,7 +289,7 @@ export function cacheStates(bySession, ttlFor) {
 export function buildRates(ratesSeen) {
     const rates = new Map();
     for (const [model, byType] of ratesSeen) {
-        const fallback = FALLBACK_RATES[model];
+        const fallback = ownValue(FALLBACK_RATES, model);
         rates.set(model, TOKEN_TYPES.map((type, i) => {
             const counter = byType.get(type);
             if (counter) return mode(counter);
@@ -316,51 +325,83 @@ function* linesStartingWith(buffer, needle) {
 const SHUTDOWN_LINE = Buffer.from('{"type":"session.shutdown"');
 const CHECKPOINT_LINE = Buffer.from('{"type":"session.usage_checkpoint"');
 
-// Per session: [timestamp, totalCredits, {model: {credits, tok, calls}}] in file order, from the CLI's
-// shutdown records. Also the prompt-cache lifetimes the CLI recorded: Map<model, Map<seconds, count>>.
+// What one transcript contributes: the prompt-cache lifetimes its usage checkpoints recorded, and its
+// shutdown records as [timestamp, totalCredits, {model: {credits, tok, calls}}] in file order.
+function parseTranscript(buffer) {
+    const ttls = [];
+    for (const line of linesStartingWith(buffer, CHECKPOINT_LINE)) {
+        try {
+            for (const state of JSON.parse(line).data.modelCacheState || []) {
+                if (state.modelId && state.cacheTtlSeconds) ttls.push([state.modelId, Math.trunc(Number(state.cacheTtlSeconds))]);
+            }
+        } catch { /* skip malformed checkpoint */ }
+    }
+    const seq = [];
+    for (const line of linesStartingWith(buffer, SHUTDOWN_LINE)) {
+        let event;
+        try { event = JSON.parse(line); } catch { continue; }
+        const d = event.data || {};
+        const models = Object.create(null);
+        for (const [model, mm] of Object.entries(d.modelMetrics || {})) {
+            const td = mm.tokenDetails || {};
+            const u = mm.usage || {};
+            const tok = {
+                input: td.input?.tokenCount ?? 0,
+                cache_read: td.cache_read?.tokenCount ?? u.cacheReadTokens ?? 0,
+                cache_write: td.cache_write?.tokenCount ?? u.cacheWriteTokens ?? 0,
+                output: td.output?.tokenCount ?? u.outputTokens ?? 0,
+            };
+            if (Object.keys(td).length === 0) {
+                tok.input = Math.max(0, (u.inputTokens || 0) - tok.cache_read - tok.cache_write);
+            }
+            models[model] = { credits: (mm.totalNanoAiu || 0) / 1e9, tok, calls: mm.requests?.count ?? 0 };
+        }
+        seq.push([event.timestamp, (d.totalNanoAiu || 0) / 1e9, models]);
+    }
+    return { ttls, seq };
+}
+
+// Transcripts only grow, and most are finished long ago, so what was parsed from each file is kept by
+// its identity (inode, size and modification time) and only changed files are read again. Entries for
+// files that have gone are dropped on the next load. `reads` counts file reads, for the tests.
+const transcriptCache = new Map(); // events.jsonl path -> { key, parsed }
+export const transcriptStats = { reads: 0 };
+
+// Per session: the shutdown records of its transcript, in file order. Also the prompt-cache lifetimes
+// the CLI recorded: Map<model, Map<seconds, count>>. Files are read asynchronously and the loop yields
+// regularly, so a large history does not block the extension's other work.
 export async function loadShutdowns(home) {
     const out = new Map();
     const cacheTtls = new Map();
     const root = path.join(home, "session-state");
     let dirs = [];
-    try { dirs = fs.readdirSync(root); } catch { return { shutdowns: out, cacheTtls }; }
+    try { dirs = await fs.promises.readdir(root); } catch { return { shutdowns: out, cacheTtls }; }
+    const seen = new Set();
     let processed = 0;
     for (const dir of dirs) {
         if (++processed % 64 === 0) await new Promise((resolve) => setImmediate(resolve));
-        let buffer;
-        try { buffer = fs.readFileSync(path.join(root, dir, "events.jsonl")); } catch { continue; }
-        for (const line of linesStartingWith(buffer, CHECKPOINT_LINE)) {
-            try {
-                for (const state of JSON.parse(line).data.modelCacheState || []) {
-                    if (state.modelId && state.cacheTtlSeconds) {
-                        bump(nested(cacheTtls, state.modelId, () => new Map()), Math.trunc(Number(state.cacheTtlSeconds)));
-                    }
-                }
-            } catch { /* skip malformed checkpoint */ }
-        }
-        const seq = [];
-        for (const line of linesStartingWith(buffer, SHUTDOWN_LINE)) {
-            let event;
-            try { event = JSON.parse(line); } catch { continue; }
-            const d = event.data || {};
-            const models = {};
-            for (const [model, mm] of Object.entries(d.modelMetrics || {})) {
-                const td = mm.tokenDetails || {};
-                const u = mm.usage || {};
-                const tok = {
-                    input: td.input?.tokenCount ?? 0,
-                    cache_read: td.cache_read?.tokenCount ?? u.cacheReadTokens ?? 0,
-                    cache_write: td.cache_write?.tokenCount ?? u.cacheWriteTokens ?? 0,
-                    output: td.output?.tokenCount ?? u.outputTokens ?? 0,
-                };
-                if (Object.keys(td).length === 0) {
-                    tok.input = Math.max(0, (u.inputTokens || 0) - tok.cache_read - tok.cache_write);
-                }
-                models[model] = { credits: (mm.totalNanoAiu || 0) / 1e9, tok, calls: mm.requests?.count ?? 0 };
+        const file = path.join(root, dir, "events.jsonl");
+        let parsed;
+        try {
+            const stat = await fs.promises.stat(file, { bigint: true });
+            if (!stat.isFile()) continue;
+            const key = `${stat.ino}:${stat.size}:${stat.mtimeNs}`;
+            const cached = transcriptCache.get(file);
+            if (cached?.key === key) {
+                parsed = cached.parsed;
+            } else {
+                transcriptStats.reads++;
+                parsed = parseTranscript(await fs.promises.readFile(file));
+                // The key is taken before the read, so a file that grew meanwhile is read again next time.
+                transcriptCache.set(file, { key, parsed });
             }
-            seq.push([event.timestamp, (d.totalNanoAiu || 0) / 1e9, models]);
-        }
-        if (seq.length) out.set(dir, seq);
+        } catch { continue; }
+        seen.add(file);
+        for (const [model, seconds] of parsed.ttls) bump(nested(cacheTtls, model, () => new Map()), seconds);
+        if (parsed.seq.length) out.set(dir, parsed.seq);
+    }
+    for (const file of transcriptCache.keys()) {
+        if (file.startsWith(root + path.sep) && !seen.has(file)) transcriptCache.delete(file);
     }
     return { shutdowns: out, cacheTtls };
 }
@@ -376,7 +417,7 @@ export function shutdownIncrements(seq) {
     const best = new Map();
     for (const [ts, total, models] of seq) {
         if (total <= prevTotal + 1e-9) continue;
-        const delta = {};
+        const delta = Object.create(null);
         for (const [model, cur] of Object.entries(models)) {
             const base = best.get(model);
             const dc = cur.credits - (base ? base.credits : 0);
@@ -452,6 +493,10 @@ function loadProjectRepos(db) {
 
 const emptyBreakdown = () => ({ credits: 0, comps: zeros(), tok: zeros(), calls: 0 });
 
+// Sources that count the same usage disagree a little, and that is forgiven, but only against usage
+// that is already counted. A total with nothing counted yet is real usage however small it is.
+const exceedsCounted = (extra, best, counted) => extra > (counted > 0 ? Math.max(EV_MIN_RESIDUAL, 0.02 * best) : 1e-9);
+
 // Build the whole ledger. Returns a compact, column-oriented object that the dashboard filters in the browser.
 export async function buildLedger({ home = copilotHome(), timeZone = localTimeZone(), now = new Date() } = {}) {
     const store = openReadOnly(path.join(home, "session-store.db"));
@@ -488,7 +533,7 @@ export async function buildLedger({ home = copilotHome(), timeZone = localTimeZo
         const projectRepo = appDb ? loadProjectRepos(appDb) : new Map();
         for (const [sid, a] of app) {
             const m = nested(meta, sid, () => newMeta({ created: a.created, updated: a.updated }));
-            m.surface = SURFACE_BY_APP_TYPE[a.type] || "Copilot app · project session";
+            m.surface = ownValue(SURFACE_BY_APP_TYPE, a.type) || "Copilot app · project session";
             if (!m.repo && projectRepo.has(sid)) m.repo = projectRepo.get(sid);
             if (!m.created) { m.created = a.created; m.updated = a.updated; }
         }
@@ -545,7 +590,7 @@ export async function buildLedger({ home = copilotHome(), timeZone = localTimeZo
 
             // (2) residual not covered by per-call events
             const residual = best - evTotal;
-            if (residual <= Math.max(EV_MIN_RESIDUAL, 0.02 * best)) continue;
+            if (!exceedsCounted(residual, best, evTotal)) continue;
             if (evs.length) {
                 // Per-call events start where the CLI began recording them; anything older is dated at session creation.
                 const evModels = new Map();
@@ -589,7 +634,7 @@ export async function buildLedger({ home = copilotHome(), timeZone = localTimeZo
                     }
                 }
                 const gap = best - placed;
-                if (gap > Math.max(EV_MIN_RESIDUAL, 0.02 * best)) {
+                if (exceedsCounted(gap, best, placed)) {
                     add(createdDay, sid, appModel, "Session total", 1, gap, zeros(), zeros(), 0);
                 }
             }
