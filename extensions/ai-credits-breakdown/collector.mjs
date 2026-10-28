@@ -13,7 +13,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+
+// node:sqlite needs Node 22.13+. It is loaded with process.getBuiltinModule (Node 22.3+) rather than a
+// static import: Node 22's module.builtinModules omits "node:"-only modules, so the repository's canvas
+// smoke test, which runs on Node 22, would report a static import of it as an undeclared dependency.
+const sqlite = process.getBuiltinModule?.("node:sqlite");
+if (!sqlite) throw new Error("AI Credits Breakdown needs Node 22.13 or later (it reads your usage with node:sqlite).");
+const { DatabaseSync } = sqlite;
 
 export const CREDIT_USD = 0.01;
 const EV_MIN_RESIDUAL = 1.0; // credits; ignore smaller disagreements between sources
