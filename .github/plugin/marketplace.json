@@ -2627,6 +2627,28 @@
       "version": "1.0.2"
     },
     {
+      "name": "typescript",
+      "description": "Skills from the TypeScript team for coding agents working with TypeScript, JavaScript, and Node.js. Covers complex TypeScript tasks like upgrades, project setup, strictness, ESM migration, declaration publishing, builds, project validation, and dependency security.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Nathan Shively-Sanders, Ryan Cavanaugh, Emily Fischer"
+      },
+      "repository": "https://github.com/microsoft/typescript-skills",
+      "license": "MIT",
+      "keywords": [
+        "typescript",
+        "javascript",
+        "nodejs",
+        "project-setup"
+      ],
+      "source": {
+        "source": "github",
+        "repo": "microsoft/typescript-skills",
+        "path": "plugins/typescript",
+        "sha": "2480764651ce9afbb7b29c56bb58e9a16b80e7b9"
+      }
+    },
+    {
       "name": "typescript-mcp-development",
       "source": "plugins/typescript-mcp-development",
       "description": "Complete toolkit for building Model Context Protocol (MCP) servers in TypeScript/Node.js using the official SDK. Includes instructions for best practices, a prompt for generating servers, and an expert chat mode for guidance.",
